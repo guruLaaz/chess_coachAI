@@ -6,8 +6,7 @@ from helpers import make_game_json
 class TestFromJson:
     def test_parse_as_white(self):
         data = make_game_json(white_user="Alice", black_user="Bob",
-                              white_result="win", black_result="lose",
-                              termination="checkmate")
+                              white_result="win", black_result="lose")
         game = ChessGame.from_json(data, "Alice")
 
         assert game is not None
@@ -16,12 +15,10 @@ class TestFromJson:
         assert game.black == "Bob"
         assert game.white_result == "win"
         assert game.black_result == "lose"
-        assert game.termination == "checkmate"
 
     def test_parse_as_black(self):
         data = make_game_json(white_user="Alice", black_user="Bob",
-                              white_result="lose", black_result="win",
-                              termination="time")
+                              white_result="lose", black_result="win")
         game = ChessGame.from_json(data, "Bob")
 
         assert game is not None
@@ -58,7 +55,7 @@ class TestFromJson:
         assert isinstance(game.end_time, datetime.datetime)
 
     def test_missing_nested_fields_no_crash(self):
-        data = {"white": {}, "black": {}, "end_time": None, "termination": ""}
+        data = {"white": {}, "black": {}, "end_time": None}
         game = ChessGame.from_json(data, "anyone")
 
         # Username doesn't match empty strings, so returns None
@@ -70,3 +67,88 @@ class TestFromJson:
 
         assert game.my_clock_left == 0
         assert game.opponent_clock_left == 0
+
+    def test_pgn_extracted_from_json(self):
+        pgn_str = '[Event "Live"]\n\n1. e4 e5 1-0'
+        data = make_game_json(pgn=pgn_str)
+        game = ChessGame.from_json(data, "PlayerA")
+
+        assert game.pgn == pgn_str
+
+    def test_pgn_defaults_to_none(self):
+        data = make_game_json()
+        game = ChessGame.from_json(data, "PlayerA")
+
+        assert game.pgn is None
+
+    def test_eco_code_from_pgn_header(self):
+        pgn_str = '[ECO "B90"]\n\n1. e4 c5 1-0'
+        data = make_game_json(pgn=pgn_str)
+        game = ChessGame.from_json(data, "PlayerA")
+
+        assert game.eco_code == "B90"
+
+    def test_eco_code_none_when_no_pgn(self):
+        data = make_game_json()
+        game = ChessGame.from_json(data, "PlayerA")
+
+        assert game.eco_code is None
+
+    def test_eco_code_none_when_no_eco_header(self):
+        pgn_str = '[Event "Live"]\n\n1. e4 e5 1-0'
+        data = make_game_json(pgn=pgn_str)
+        game = ChessGame.from_json(data, "PlayerA")
+
+        assert game.eco_code is None
+
+    def test_eco_name_from_url(self):
+        eco = "https://www.chess.com/openings/Sicilian-Defense-Najdorf-Variation"
+        data = make_game_json(eco_url=eco)
+        game = ChessGame.from_json(data, "PlayerA")
+
+        assert game.eco_name == "Sicilian Defense Najdorf Variation"
+        assert game.eco_url == eco
+
+    def test_eco_name_empty_when_no_url(self):
+        data = make_game_json()
+        game = ChessGame.from_json(data, "PlayerA")
+
+        assert game.eco_name == ""
+        assert game.eco_url == ""
+
+    def test_time_class_parsed_from_json(self):
+        data = make_game_json(time_class="blitz")
+        game = ChessGame.from_json(data, "PlayerA")
+
+        assert game.time_class == "blitz"
+
+    def test_time_class_defaults_to_none(self):
+        data = make_game_json()
+        game = ChessGame.from_json(data, "PlayerA")
+
+        assert game.time_class is None
+
+    def test_time_class_bullet(self):
+        data = make_game_json(time_class="bullet")
+        game = ChessGame.from_json(data, "PlayerA")
+        assert game.time_class == "bullet"
+
+    def test_time_class_rapid(self):
+        data = make_game_json(time_class="rapid")
+        game = ChessGame.from_json(data, "PlayerA")
+        assert game.time_class == "rapid"
+
+    def test_time_class_daily(self):
+        data = make_game_json(time_class="daily")
+        game = ChessGame.from_json(data, "PlayerA")
+        assert game.time_class == "daily"
+
+    def test_game_url_from_json(self):
+        data = make_game_json(game_url="https://www.chess.com/game/live/123456")
+        game = ChessGame.from_json(data, "PlayerA")
+        assert game.game_url == "https://www.chess.com/game/live/123456"
+
+    def test_game_url_defaults_to_empty(self):
+        data = make_game_json()
+        game = ChessGame.from_json(data, "PlayerA")
+        assert game.game_url == ""

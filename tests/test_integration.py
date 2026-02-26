@@ -34,28 +34,28 @@ _old_ts = _ts(_now - datetime.timedelta(days=60))
 MONTH1_GAMES = [
     make_game_json(white_user=USERNAME, black_user="Opp1",
                    white_result="win", black_result="checkmated",
-                   termination="checkmate", end_time=_old_ts),
+                   end_time=_old_ts),
     make_game_json(white_user="Opp2", black_user=USERNAME,
                    white_result="win", black_result="timeout",
-                   termination="time", end_time=_old_ts),
+                   end_time=_old_ts),
     make_game_json(white_user=USERNAME, black_user="Opp3",
                    white_result="stalemate", black_result="stalemate",
-                   termination="stalemate", end_time=_old_ts),
+                   end_time=_old_ts),
 ]
 
 MONTH2_GAMES = [
     make_game_json(white_user=USERNAME, black_user="Opp4",
                    white_result="win", black_result="timeout",
-                   termination="time", end_time=_recent_ts),
+                   end_time=_recent_ts),
     make_game_json(white_user="Opp5", black_user=USERNAME,
                    white_result="lose", black_result="win",
-                   termination="abandon", end_time=_recent_ts),
+                   end_time=_recent_ts),
     make_game_json(white_user="Opp6", black_user=USERNAME,
                    white_result="win", black_result="checkmated",
-                   termination="checkmate", end_time=_mid_ts),
+                   end_time=_mid_ts),
     make_game_json(white_user=USERNAME, black_user="Opp7",
                    white_result="lose", black_result="win",
-                   termination="checkmate", end_time=_recent_ts),
+                   end_time=_recent_ts),
 ]
 
 MONTH1_URL = f"{BASE_URL}/{USERNAME}/games/2025/04"
@@ -102,8 +102,6 @@ class TestFullPipeline:
 
         assert len(games) == 7
         assert stats["total_games"] == 7
-        # Month1: 1 win (white checkmate), 1 loss (black timeout), 1 draw
-        # Month2: 1 win (white time), 1 win (black abandon), 1 loss (black checkmate), 1 loss (white checkmate)
         assert stats["wins"] == 3
         assert stats["losses"] == 3
         assert stats["draws"] == 1
@@ -117,7 +115,6 @@ class TestFullPipeline:
 
         assert len(games) == 3
         assert stats["total_games"] == 3
-        # Recent: win (white time), win (black abandon), loss (white checkmate)
         assert stats["wins"] == 2
         assert stats["losses"] == 1
         assert stats["draws"] == 0
@@ -150,16 +147,16 @@ class TestSingleMonth:
         games_json = [
             make_game_json(white_user=USERNAME, black_user="A",
                            white_result="win", black_result="lose",
-                           termination="checkmate", end_time=_recent_ts),
+                           end_time=_recent_ts),
             make_game_json(white_user="B", black_user=USERNAME,
                            white_result="lose", black_result="win",
-                           termination="time", end_time=_recent_ts),
+                           end_time=_recent_ts),
             make_game_json(white_user=USERNAME, black_user="C",
                            white_result="stalemate", black_result="stalemate",
-                           termination="stalemate", end_time=_recent_ts),
+                           end_time=_recent_ts),
             make_game_json(white_user="D", black_user=USERNAME,
                            white_result="stalemate", black_result="stalemate",
-                           termination="stalemate", end_time=_recent_ts),
+                           end_time=_recent_ts),
         ]
         month_url = f"{BASE_URL}/{USERNAME}/games/2025/06"
 
@@ -172,10 +169,9 @@ class TestSingleMonth:
         assert stats["wins"] == 2
         assert stats["losses"] == 0
         assert stats["draws"] == 2
-        assert stats["win_white_percent"] == 25.0
-        assert stats["win_black_percent"] == 25.0
-        assert stats["checkmate_win_percent"] == 50.0
-        assert stats["time_win_percent"] == 50.0
+        # 1 win / 2 white games = 50%, 1 win / 2 black games = 50%
+        assert stats["win_white_percent"] == 50.0
+        assert stats["win_black_percent"] == 50.0
 
 
 class TestEdgeCases:
@@ -220,24 +216,24 @@ class TestLargeBatch:
         month_urls = [f"{BASE_URL}/{USERNAME}/games/2025/{m:02d}" for m in range(1, 6)]
         all_game_jsons = []
 
-        # 10 games per month: 5 wins as white (checkmate), 3 losses as black, 2 draws
+        # 10 games per month: 5 wins as white, 3 losses as black, 2 draws
         for _ in range(5):
             month_games = []
             for i in range(5):
                 month_games.append(make_game_json(
                     white_user=USERNAME, black_user=f"Opp{i}",
                     white_result="win", black_result="lose",
-                    termination="checkmate", end_time=_recent_ts))
+                    end_time=_recent_ts))
             for i in range(3):
                 month_games.append(make_game_json(
                     white_user=f"Opp{i}", black_user=USERNAME,
                     white_result="win", black_result="checkmated",
-                    termination="checkmate", end_time=_recent_ts))
+                    end_time=_recent_ts))
             for i in range(2):
                 month_games.append(make_game_json(
                     white_user=USERNAME, black_user=f"Opp{i}",
                     white_result="stalemate", black_result="stalemate",
-                    termination="stalemate", end_time=_recent_ts))
+                    end_time=_recent_ts))
             all_game_jsons.append(month_games)
 
         with aioresponses() as mock:
@@ -253,45 +249,6 @@ class TestLargeBatch:
         assert stats["losses"] == 15
         assert stats["draws"] == 10
         assert stats["win_percent"] == 50.0
-        assert stats["checkmate_win_percent"] == 100.0
-
-
-class TestTerminationMix:
-    @pytest.mark.asyncio
-    async def test_mixed_termination_types_across_months(self):
-        """Wins by checkmate, time, and abandon across different months."""
-        month1_url = f"{BASE_URL}/{USERNAME}/games/2025/05"
-        month2_url = f"{BASE_URL}/{USERNAME}/games/2025/06"
-
-        month1 = [
-            make_game_json(white_user=USERNAME, black_user="A",
-                           white_result="win", black_result="lose",
-                           termination="checkmate", end_time=_recent_ts),
-            make_game_json(white_user=USERNAME, black_user="B",
-                           white_result="win", black_result="lose",
-                           termination="checkmate", end_time=_recent_ts),
-        ]
-        month2 = [
-            make_game_json(white_user="C", black_user=USERNAME,
-                           white_result="lose", black_result="win",
-                           termination="time", end_time=_recent_ts),
-            make_game_json(white_user="D", black_user=USERNAME,
-                           white_result="lose", black_result="win",
-                           termination="abandon", end_time=_recent_ts),
-        ]
-
-        with aioresponses() as mock:
-            mock.get(ARCHIVES_URL, payload={"archives": [month1_url, month2_url]})
-            mock.get(month1_url, payload=make_archive_response(month1))
-            mock.get(month2_url, payload=make_archive_response(month2))
-
-            stats, _ = await _run_pipeline(USERNAME, days=0)
-
-        # 4 wins: 2 checkmate, 1 time, 1 abandon
-        assert stats["wins"] == 4
-        assert stats["checkmate_win_percent"] == 50.0
-        assert stats["time_win_percent"] == 25.0
-        assert stats["abandon_win_percent"] == 25.0
 
 
 class TestRealAPI:
@@ -316,8 +273,9 @@ class TestRealAPI:
         assert len(games) > 0
 
         # 3. Verify each game has the fields our pipeline relies on
-        required_keys = {"white", "black", "end_time"}
+        required_keys = {"white", "black", "end_time", "time_class"}
         player_keys = {"username", "result"}
+        valid_time_classes = {"bullet", "blitz", "rapid", "daily"}
 
         for game in games:
             assert required_keys.issubset(game.keys()), (
@@ -327,6 +285,8 @@ class TestRealAPI:
             assert player_keys.issubset(game["black"].keys()), (
                 f"Missing black keys: {player_keys - game['black'].keys()}")
             assert isinstance(game["end_time"], int)
+            assert game["time_class"] in valid_time_classes, (
+                f"Unexpected time_class: {game['time_class']}")
 
         # 4. Verify ChessGame.from_json can parse at least one game
         parsed = ChessGame.from_json(games[0], "laaz")
@@ -335,3 +295,4 @@ class TestRealAPI:
             assert isinstance(parsed.end_time, datetime.datetime)
             assert parsed.white_result != ""
             assert parsed.black_result != ""
+            assert parsed.time_class in valid_time_classes

@@ -1,6 +1,6 @@
 import datetime
 from unittest.mock import patch
-from game_filter import filter_games_by_days
+from game_filter import filter_games_by_days, filter_games_by_time_class
 from helpers import make_chess_game
 
 
@@ -43,3 +43,94 @@ class TestFilterGamesByDays:
     def test_empty_list(self):
         result = filter_games_by_days([], days=7)
         assert result == []
+
+
+class TestFilterGamesByTimeClass:
+    def test_include_blitz_only(self):
+        games = [
+            make_chess_game(time_class="bullet"),
+            make_chess_game(time_class="blitz"),
+            make_chess_game(time_class="rapid"),
+            make_chess_game(time_class="blitz"),
+        ]
+        result = filter_games_by_time_class(games, include={"blitz"})
+        assert len(result) == 2
+        assert all(g.time_class == "blitz" for g in result)
+
+    def test_include_multiple_types(self):
+        games = [
+            make_chess_game(time_class="bullet"),
+            make_chess_game(time_class="blitz"),
+            make_chess_game(time_class="rapid"),
+            make_chess_game(time_class="daily"),
+        ]
+        result = filter_games_by_time_class(games, include={"blitz", "rapid"})
+        assert len(result) == 2
+
+    def test_exclude_bullet(self):
+        games = [
+            make_chess_game(time_class="bullet"),
+            make_chess_game(time_class="blitz"),
+            make_chess_game(time_class="rapid"),
+        ]
+        result = filter_games_by_time_class(games, exclude={"bullet"})
+        assert len(result) == 2
+        assert all(g.time_class != "bullet" for g in result)
+
+    def test_exclude_multiple_types(self):
+        games = [
+            make_chess_game(time_class="bullet"),
+            make_chess_game(time_class="blitz"),
+            make_chess_game(time_class="rapid"),
+            make_chess_game(time_class="daily"),
+        ]
+        result = filter_games_by_time_class(games, exclude={"bullet", "daily"})
+        assert len(result) == 2
+
+    def test_include_takes_priority_over_exclude(self):
+        games = [
+            make_chess_game(time_class="bullet"),
+            make_chess_game(time_class="blitz"),
+            make_chess_game(time_class="rapid"),
+        ]
+        result = filter_games_by_time_class(games, include={"blitz"}, exclude={"blitz"})
+        assert len(result) == 1
+        assert result[0].time_class == "blitz"
+
+    def test_no_filters_returns_all(self):
+        games = [
+            make_chess_game(time_class="bullet"),
+            make_chess_game(time_class="blitz"),
+        ]
+        result = filter_games_by_time_class(games)
+        assert len(result) == 2
+
+    def test_include_nonexistent_type_returns_empty(self):
+        games = [
+            make_chess_game(time_class="bullet"),
+            make_chess_game(time_class="blitz"),
+        ]
+        result = filter_games_by_time_class(games, include={"rapid"})
+        assert len(result) == 0
+
+    def test_empty_list(self):
+        result = filter_games_by_time_class([], include={"blitz"})
+        assert result == []
+
+    def test_games_with_none_time_class(self):
+        games = [
+            make_chess_game(time_class=None),
+            make_chess_game(time_class="blitz"),
+        ]
+        result = filter_games_by_time_class(games, include={"blitz"})
+        assert len(result) == 1
+        assert result[0].time_class == "blitz"
+
+    def test_exclude_with_none_time_class(self):
+        games = [
+            make_chess_game(time_class=None),
+            make_chess_game(time_class="blitz"),
+        ]
+        result = filter_games_by_time_class(games, exclude={"blitz"})
+        assert len(result) == 1
+        assert result[0].time_class is None
