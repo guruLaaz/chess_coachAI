@@ -33,9 +33,9 @@ class TestDeviationFiltering:
     def test_only_player_deviations_included(self):
         """Only deviations where deviating_side == my_color are shown."""
         evals = [
-            _make_eval(deviating_side="white", my_color="white"),    # included
-            _make_eval(deviating_side="black", my_color="white"),    # excluded
-            _make_eval(deviating_side="black", my_color="black"),    # included
+            _make_eval(deviating_side="white", my_color="white", played_move="g1f3"),
+            _make_eval(deviating_side="black", my_color="white", played_move="d2d4"),  # excluded
+            _make_eval(deviating_side="black", my_color="black", played_move="d7d6"),
         ]
         gen = CoachingReportGenerator("player", evals)
         assert len(gen.deviations) == 2
@@ -76,9 +76,9 @@ class TestSorting:
     def test_sorted_by_eval_loss_descending(self):
         """Deviations are sorted by eval_loss_cp descending (biggest mistake first)."""
         evals = [
-            _make_eval(eval_loss_cp=10),
-            _make_eval(eval_loss_cp=120),
-            _make_eval(eval_loss_cp=50),
+            _make_eval(eval_loss_cp=10, played_move="g1f3"),
+            _make_eval(eval_loss_cp=120, played_move="d2d4"),
+            _make_eval(eval_loss_cp=50, played_move="c2c4"),
         ]
         gen = CoachingReportGenerator("player", evals)
         assert [d.eval_loss_cp for d in gen.deviations] == [120, 50, 10]
@@ -111,9 +111,9 @@ class TestMoveConversion:
 class TestOpeningGroups:
     def test_groups_by_eco_and_color(self):
         evals = [
-            _make_eval(eco_code="B90", my_color="white", deviating_side="white"),
-            _make_eval(eco_code="B90", my_color="white", deviating_side="white"),
-            _make_eval(eco_code="C50", my_color="black", deviating_side="black"),
+            _make_eval(eco_code="B90", my_color="white", deviating_side="white", played_move="g1f3"),
+            _make_eval(eco_code="B90", my_color="white", deviating_side="white", played_move="d2d4"),
+            _make_eval(eco_code="C50", my_color="black", deviating_side="black", played_move="e7e6"),
         ]
         gen = CoachingReportGenerator("player", evals)
         groups = gen._get_opening_groups()
@@ -140,10 +140,11 @@ class TestSVGRendering:
 
 
 class TestFlaskRoutes:
-    def _get_app(self, evals=None):
+    def _get_app(self, evals=None, **kwargs):
         if evals is None:
             evals = [_make_eval(), _make_eval(eco_code="C50", eco_name="Italian",
-                                              my_color="black", deviating_side="black")]
+                                              my_color="black", deviating_side="black",
+                                              played_move="d7d6")]
         gen = CoachingReportGenerator("testuser", evals)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -206,3 +207,96 @@ class TestFlaskRoutes:
         client = self._get_app(evals)
         resp = client.get("/")
         assert b"<svg" in resp.data
+
+    def test_times_played_displayed(self):
+        """Times played badge is shown in the report."""
+        evals = [_make_eval()]
+        client = self._get_app(evals)
+        resp = client.get("/")
+        assert b"played" in resp.data
+
+    def test_game_link_displayed(self):
+        """Game URL link is shown when game_url is present."""
+        evals = [_make_eval(game_moves_uci=["e2e4"])]
+        evals[0].game_url = "https://www.chess.com/game/live/12345"
+        client = self._get_app(evals)
+        resp = client.get("/")
+        assert b"chess.com/game/live/12345" in resp.data
+        assert b"view example game" in resp.data
+
+    def test_no_game_link_when_empty(self):
+        """No game link shown when game_url is empty."""
+        evals = [_make_eval()]
+        client = self._get_app(evals)
+        resp = client.get("/")
+        assert b"view example game" not in resp.data
+
+
+class TestDeviationGrouping:
+    """Tests for _group_deviations() and min_times filtering."""
+
+    def test_duplicates_collapsed_to_one(self):
+        """Same (FEN, played_move) appears once with highest eval_loss."""
+        evals = [
+            _make_eval(eval_loss_cp=30),
+            _make_eval(eval_loss_cp=80),
+            _make_eval(eval_loss_cp=50),
+        ]
+        gen = CoachingReportGenerator("player", evals)
+        assert len(gen.deviations) == 1
+        assert gen.deviations[0].eval_loss_cp == 80  # worst kept
+
+    def test_count_tracks_occurrences(self):
+        """deviation_counts reflects how many times position appeared."""
+        evals = [
+            _make_eval(eval_loss_cp=30),
+            _make_eval(eval_loss_cp=80),
+        ]
+        gen = CoachingReportGenerator("player", evals)
+        key = (evals[0].fen_at_deviation, evals[0].played_move_uci)
+        assert gen.deviation_counts[key] == 2
+
+    def test_different_positions_not_grouped(self):
+        """Distinct (FEN, played_move) pairs stay separate."""
+        evals = [
+            _make_eval(played_move="g1f3"),
+            _make_eval(played_move="d2d4"),
+        ]
+        gen = CoachingReportGenerator("player", evals)
+        assert len(gen.deviations) == 2
+
+    def test_min_times_filters_infrequent(self):
+        """min_times=3 excludes positions that occurred fewer than 3 times."""
+        evals = [
+            _make_eval(played_move="g1f3"),  # 1 occurrence
+            _make_eval(played_move="d2d4"),
+            _make_eval(played_move="d2d4"),
+            _make_eval(played_move="d2d4"),  # 3 occurrences
+        ]
+        gen = CoachingReportGenerator("player", evals, min_times=3)
+        assert len(gen.deviations) == 1
+        assert gen.deviations[0].played_move_uci == "d2d4"
+
+    def test_min_times_default_keeps_all(self):
+        """Default min_times=1 keeps all groups."""
+        evals = [
+            _make_eval(played_move="g1f3"),
+            _make_eval(played_move="d2d4"),
+        ]
+        gen = CoachingReportGenerator("player", evals, min_times=1)
+        assert len(gen.deviations) == 2
+
+    def test_min_times_filters_all_returns_empty(self):
+        """When no group meets min_times, deviations is empty."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals, min_times=5)
+        assert gen.deviations == []
+
+    def test_min_times_report_shows_filter_label(self):
+        """Subtitle mentions min_times when > 1."""
+        evals = [_make_eval(), _make_eval()]
+        gen = CoachingReportGenerator("testuser", evals, min_times=2)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b"2+ occurrences" in resp.data

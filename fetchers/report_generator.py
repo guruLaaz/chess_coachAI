@@ -12,20 +12,50 @@ from repertoire_analyzer import OpeningEvaluation
 
 
 class CoachingReportGenerator:
-    """Flask web app that displays coaching recommendations with interactive boards."""
+    """Flask web app that displays coaching recommendations with static SVG boards."""
 
-    def __init__(self, username, evaluations):
+    def __init__(self, username, evaluations, min_times=1):
         self.username = username
+        self.min_times = min_times
         # Filter to player deviations that have coaching data
-        self.deviations = [
+        candidates = [
             ev for ev in evaluations
             if ev.deviating_side == ev.my_color
             and ev.fen_at_deviation
             and ev.played_move_uci
             and not ev.is_fully_booked
         ]
+        # Group by position + played move, keep worst instance per group
+        self.deviations, self.deviation_counts = self._group_deviations(
+            candidates, min_times)
         # Sort worst first (biggest eval loss = biggest mistake)
         self.deviations.sort(key=lambda ev: ev.eval_loss_cp, reverse=True)
+
+    @staticmethod
+    def _group_deviations(candidates, min_times):
+        """Group deviations by (FEN, played_move) and apply min_times filter.
+
+        Returns (deviations, counts) where deviations is a list of the
+        worst-case representative per group, and counts maps
+        (fen, played_move) -> occurrence count.
+        """
+        groups = {}
+        for ev in candidates:
+            key = (ev.fen_at_deviation, ev.played_move_uci)
+            if key not in groups:
+                groups[key] = []
+            groups[key].append(ev)
+
+        deviations = []
+        counts = {}
+        for key, evs in groups.items():
+            if len(evs) >= min_times:
+                # Pick the instance with the highest eval loss as representative
+                worst = max(evs, key=lambda e: e.eval_loss_cp)
+                deviations.append(worst)
+                counts[key] = len(evs)
+
+        return deviations, counts
 
     def _render_board_svg(self, fen, move_uci, color, arrow_color):
         """Render an SVG chessboard with an arrow for a move."""
@@ -84,6 +114,9 @@ class CoachingReportGenerator:
         svg_played = self._render_board_svg(
             ev.fen_at_deviation, ev.played_move_uci, ev.my_color, "#ef4444")
 
+        key = (ev.fen_at_deviation, ev.played_move_uci)
+        count = self.deviation_counts.get(key, 1)
+
         return {
             "eco_name": ev.eco_name,
             "eco_code": ev.eco_code or "?",
@@ -98,6 +131,8 @@ class CoachingReportGenerator:
             "book_moves": ", ".join(book_sans) if book_sans else "None in book",
             "svg_best": svg_best,
             "svg_played": svg_played,
+            "times_played": count,
+            "game_url": ev.game_url,
         }
 
     def _get_opening_groups(self):
@@ -129,6 +164,7 @@ class CoachingReportGenerator:
                 items=items,
                 groups=groups,
                 total=len(self.deviations),
+                min_times=self.min_times,
                 filter_eco=None,
                 filter_color=None,
             )
@@ -147,6 +183,7 @@ class CoachingReportGenerator:
                 items=items,
                 groups=groups,
                 total=len(filtered),
+                min_times=self.min_times,
                 filter_eco=eco_code,
                 filter_color=color,
             )
@@ -272,6 +309,14 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
         .board-panel h4.played { color: #f87171; }
         .board-panel svg { border-radius: 4px; }
         .meta { margin-top: 12px; font-size: 0.9rem; color: #94a3b8; }
+        .times-badge {
+            background: #334155;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            color: #94a3b8;
+        }
+        .times-badge.recurring { background: #3730a3; color: #c7d2fe; }
         .recommendation {
             margin-top: 12px;
             padding: 10px 16px;
@@ -281,6 +326,14 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             font-size: 1rem;
         }
         .recommendation strong { color: #86efac; }
+        .game-link {
+            display: inline-block;
+            margin-top: 8px;
+            font-size: 0.85rem;
+            color: #60a5fa;
+            text-decoration: none;
+        }
+        .game-link:hover { text-decoration: underline; color: #93bbfc; }
         .empty-state { text-align: center; padding: 80px 20px; color: #64748b; }
         .empty-state h2 { color: #94a3b8; margin-bottom: 12px; }
         @media (max-width: 768px) {
@@ -314,9 +367,9 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
         <main class="main">
             <h1>Chess Coach: {{ username }}</h1>
             {% if filter_eco %}
-            <p class="subtitle">Showing {{ items|length }} deviations for {{ filter_eco }} as {{ filter_color }} &mdash; sorted by biggest mistake</p>
+            <p class="subtitle">Showing {{ items|length }} deviations for {{ filter_eco }} as {{ filter_color }} &mdash; sorted by biggest mistake{% if min_times > 1 %} ({{ min_times }}+ occurrences){% endif %}</p>
             {% else %}
-            <p class="subtitle">{{ items|length }} positions where you deviated from book/engine &mdash; sorted by biggest mistake</p>
+            <p class="subtitle">{{ items|length }} positions where you deviated from book/engine &mdash; sorted by biggest mistake{% if min_times > 1 %} ({{ min_times }}+ occurrences){% endif %}</p>
             {% endif %}
 
             {% if items %}
@@ -347,10 +400,14 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
 
                     <p class="meta">
                         Move {{ item.move_label }} &bull;
-                        Book moves: {{ item.book_moves }}
+                        Book moves: {{ item.book_moves }} &bull;
+                        <span class="times-badge {{ 'recurring' if item.times_played > 1 else '' }}">{{ item.times_played }}&times; played</span>
                     </p>
                     <div class="recommendation">
                         Play <strong>{{ item.best_san }}</strong> instead of {{ item.played_san }}
+                        {% if item.game_url %}
+                        &mdash; <a class="game-link" href="{{ item.game_url }}" target="_blank" rel="noopener">view example game &rarr;</a>
+                        {% endif %}
                     </div>
                 </div>
                 {% endfor %}

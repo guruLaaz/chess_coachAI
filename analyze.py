@@ -208,6 +208,8 @@ def main():
                         help="Force fresh fetch and analysis (repopulates cache)")
     parser.add_argument("--report", action="store_true",
                         help="Launch coaching report web app after analysis")
+    parser.add_argument("--min-times", type=int, default=1,
+                        help="Only show deviations that occurred N+ times (default: 1)")
 
     tc_group = parser.add_mutually_exclusive_group()
     tc_group.add_argument("--include", nargs="+", metavar="TYPE",
@@ -252,7 +254,8 @@ def main():
 
         if args.report and all_evals:
             from report_generator import CoachingReportGenerator
-            generator = CoachingReportGenerator(args.username, all_evals)
+            generator = CoachingReportGenerator(args.username, all_evals,
+                                                   min_times=args.min_times)
             generator.run()
     finally:
         cache.close()

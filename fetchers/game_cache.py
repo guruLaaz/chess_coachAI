@@ -106,12 +106,13 @@ class GameCache:
             book_moves_uci=book_moves_raw.split(",") if book_moves_raw else [],
             eval_loss_cp=row["eval_loss_cp"] if row["eval_loss_cp"] is not None else 0,
             game_moves_uci=game_moves_raw.split(",") if game_moves_raw else [],
+            game_url=row["game_url"] if "game_url" in row.keys() else "",
         )
 
     def get_evaluation(self, game_url, depth):
         """Return a cached OpeningEvaluation, or None."""
         row = self._conn.execute(
-            """SELECT eco_code, eco_name, my_color, deviation_ply,
+            """SELECT game_url, eco_code, eco_name, my_color, deviation_ply,
                       deviating_side, eval_cp, is_fully_booked,
                       fen_at_deviation, best_move_uci, played_move_uci,
                       book_moves_uci, eval_loss_cp, game_moves_uci

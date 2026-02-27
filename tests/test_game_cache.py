@@ -278,6 +278,28 @@ class TestEvalLossAndGameMoves:
         result = cache.get_evaluation("https://game/1", 18)
         assert result.game_moves_uci == []
 
+    def test_game_url_round_trip(self, cache):
+        """game_url is populated from the DB row on read-back."""
+        ev = OpeningEvaluation(
+            eco_code="B90", eco_name="Sicilian", my_color="white",
+            deviation_ply=6, deviating_side="white", eval_cp=0,
+            is_fully_booked=False,
+        )
+        cache.save_evaluation("https://www.chess.com/game/live/99", "bob", 18, ev)
+        result = cache.get_evaluation("https://www.chess.com/game/live/99", 18)
+        assert result.game_url == "https://www.chess.com/game/live/99"
+
+    def test_game_url_batch_round_trip(self, cache):
+        """game_url is populated in batch lookups."""
+        ev = OpeningEvaluation(
+            eco_code="B90", eco_name="Sicilian", my_color="white",
+            deviation_ply=6, deviating_side="white", eval_cp=0,
+            is_fully_booked=False,
+        )
+        cache.save_evaluation("https://game/42", "bob", 18, ev)
+        results = cache.get_cached_evaluations(["https://game/42"], 18)
+        assert results["https://game/42"].game_url == "https://game/42"
+
 
 class TestCacheLifecycle:
     def test_close_and_reopen(self, tmp_path):

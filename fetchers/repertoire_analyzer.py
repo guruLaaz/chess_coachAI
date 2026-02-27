@@ -30,6 +30,7 @@ class OpeningEvaluation:
     book_moves_uci: List[str] = field(default_factory=list)
     eval_loss_cp: int = 0       # centipawn loss caused by played move (positive = bad)
     game_moves_uci: List[str] = field(default_factory=list)  # full game as UCI strings
+    game_url: str = ""          # Chess.com game URL
 
 
 @dataclass
@@ -305,6 +306,7 @@ class RepertoireAnalyzer:
             book_moves_uci=[m.uci() for m in deviation.book_moves],
             eval_loss_cp=eval_loss_cp,
             game_moves_uci=[m.uci() for m in moves] if moves else [],
+            game_url=game.game_url if game.game_url else "",
         )
 
     @staticmethod
