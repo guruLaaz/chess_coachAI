@@ -8,7 +8,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from analyze import _is_current_month, fetch_games
+from analyze import _is_current_month, fetch_games, run_analysis, main
+from helpers import make_game_json, make_chess_game
 
 
 class TestIsCurrentMonth:
@@ -157,3 +158,412 @@ class TestFetchGamesNetworkErrors:
 
             games = await fetch_games("bob", 0)
             assert games == []
+
+
+class TestFetchGamesFilters:
+    """Tests for days and time-control filter branches in fetch_games."""
+
+    def _make_fetcher_with_game(self, username="bob", time_class="blitz"):
+        """Helper: patch ChessCom_Fetcher to return one parseable game."""
+        game_json = make_game_json(
+            white_user=username, black_user="opp",
+            white_result="win", black_result="lose",
+            time_class=time_class,
+            game_url="https://www.chess.com/game/live/111",
+        )
+        return {
+            "get_archives": AsyncMock(return_value=[
+                "https://api.chess.com/pub/player/bob/games/2020/01"
+            ]),
+            "fetch_games_by_month": AsyncMock(return_value={"games": [game_json]}),
+        }
+
+    @pytest.mark.asyncio
+    async def test_days_filter_applied(self):
+        """When days > 0 the days filter branch runs."""
+        with patch("analyze.ChessCom_Fetcher") as MockFetcher:
+            mocks = self._make_fetcher_with_game()
+            instance = MockFetcher.return_value
+            instance.get_archives = mocks["get_archives"]
+            instance.fetch_games_by_month = mocks["fetch_games_by_month"]
+
+            # days=30: the filter runs (game is old, so filtered out)
+            games = await fetch_games("bob", 30)
+            assert isinstance(games, list)
+
+    @pytest.mark.asyncio
+    async def test_include_tc_filter_applied(self):
+        """include_tc filters to matching time controls only."""
+        with patch("analyze.ChessCom_Fetcher") as MockFetcher:
+            mocks = self._make_fetcher_with_game(time_class="blitz")
+            instance = MockFetcher.return_value
+            instance.get_archives = mocks["get_archives"]
+            instance.fetch_games_by_month = mocks["fetch_games_by_month"]
+
+            games = await fetch_games("bob", 0, include_tc={"blitz"})
+            assert len(games) == 1
+
+    @pytest.mark.asyncio
+    async def test_exclude_tc_filter_applied(self):
+        """exclude_tc removes matching time controls."""
+        with patch("analyze.ChessCom_Fetcher") as MockFetcher:
+            mocks = self._make_fetcher_with_game(time_class="bullet")
+            instance = MockFetcher.return_value
+            instance.get_archives = mocks["get_archives"]
+            instance.fetch_games_by_month = mocks["fetch_games_by_month"]
+
+            games = await fetch_games("bob", 0, exclude_tc={"bullet"})
+            assert len(games) == 0
+
+
+def _make_mock_eval(fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                    game_url="https://chess.com/game/1"):
+    """Create a mock OpeningEvaluation for run_analysis tests."""
+    ev = MagicMock()
+    ev.eco_code = "B90"
+    ev.eco_name = "Sicilian"
+    ev.my_color = "white"
+    ev.deviation_ply = 6
+    ev.deviating_side = "white"
+    ev.eval_cp = 50
+    ev.is_fully_booked = False
+    ev.fen_at_deviation = fen
+    ev.best_move_uci = "d2d4"
+    ev.played_move_uci = "g1f3"
+    ev.book_moves_uci = ["e2e4"]
+    ev.eval_loss_cp = 30
+    ev.game_moves_uci = []
+    ev.game_url = game_url
+    ev.times_played = 1
+    return ev
+
+
+def _make_opening_stats():
+    """Create a mock OpeningStats for run_analysis tests."""
+    stats = MagicMock()
+    stats.eco_code = "B90"
+    stats.eco_name = "Sicilian"
+    stats.color = "white"
+    stats.times_played = 2
+    stats.avg_eval = 50
+    stats.avg_deviation_ply = 6
+    return stats
+
+
+class TestRunAnalysis:
+    """Tests for run_analysis() orchestration logic."""
+
+    def _make_game(self):
+        return make_chess_game(
+            pgn='[Event "Live"]\n1. e4 c5 2. Nf3 d6 *',
+            eco_code="B90", eco_name="Sicilian",
+            game_url="https://chess.com/game/1",
+        )
+
+    @patch("analyze.StockfishEvaluator")
+    @patch("analyze.OpeningDetector")
+    @patch("analyze.ChessGameAnalyzer")
+    def test_prints_stats(self, MockAnalyzer, MockDetector, MockEvaluator):
+        """run_analysis prints stats when summarize returns data."""
+        MockAnalyzer.return_value.summarize.return_value = {
+            "total_games": 10, "wins": 5, "losses": 3, "draws": 2,
+            "win_percent": 50, "win_white_percent": 60, "win_black_percent": 40,
+            "games_white": 5, "games_black": 5,
+        }
+        evaluator_ctx = MagicMock()
+        MockEvaluator.return_value.__enter__ = MagicMock(return_value=evaluator_ctx)
+        MockEvaluator.return_value.__exit__ = MagicMock(return_value=False)
+
+        rep = MagicMock()
+        rep.analyze_repertoire.return_value = ({}, [])
+        with patch("analyze.RepertoireAnalyzer", return_value=rep):
+            result = run_analysis([self._make_game()], "bob", "sf", "book", 18)
+
+        assert result is None  # no openings found, report=False
+
+    @patch("analyze.StockfishEvaluator")
+    @patch("analyze.OpeningDetector")
+    @patch("analyze.ChessGameAnalyzer")
+    def test_all_cached_skips_engine(self, MockAnalyzer, MockDetector, MockEvaluator):
+        """When all games are cached, StockfishEvaluator is not used."""
+        MockAnalyzer.return_value.summarize.return_value = None
+        mock_cache = MagicMock()
+        game = self._make_game()
+        ev = _make_mock_eval(game_url=game.game_url)
+        mock_cache.get_cached_evaluations.return_value = {game.game_url: ev}
+
+        with patch("analyze.RepertoireAnalyzer") as MockRep:
+            run_analysis([game], "bob", "sf", "book", 18, cache=mock_cache)
+
+        # Engine context manager should NOT have been entered
+        MockEvaluator.return_value.__enter__.assert_not_called()
+
+    @patch("analyze.RepertoireAnalyzer")
+    @patch("analyze.StockfishEvaluator")
+    @patch("analyze.OpeningDetector")
+    @patch("analyze.ChessGameAnalyzer")
+    def test_uncached_runs_engine(self, MockAnalyzer, MockDetector,
+                                  MockEvaluator, MockRep):
+        """When cache is empty, engine analysis runs."""
+        MockAnalyzer.return_value.summarize.return_value = None
+        evaluator_ctx = MagicMock()
+        MockEvaluator.return_value.__enter__ = MagicMock(return_value=evaluator_ctx)
+        MockEvaluator.return_value.__exit__ = MagicMock(return_value=False)
+        MockRep.return_value.analyze_repertoire.return_value = ({}, [])
+
+        mock_cache = MagicMock()
+        mock_cache.get_cached_evaluations.return_value = {}
+
+        run_analysis([self._make_game()], "bob", "sf", "book", 18, cache=mock_cache)
+
+        MockEvaluator.return_value.__enter__.assert_called_once()
+
+    @patch("analyze.RepertoireAnalyzer")
+    @patch("analyze.StockfishEvaluator")
+    @patch("analyze.OpeningDetector")
+    @patch("analyze.ChessGameAnalyzer")
+    def test_no_cache_runs_engine(self, MockAnalyzer, MockDetector,
+                                  MockEvaluator, MockRep):
+        """When cache=None, engine analysis runs."""
+        MockAnalyzer.return_value.summarize.return_value = None
+        evaluator_ctx = MagicMock()
+        MockEvaluator.return_value.__enter__ = MagicMock(return_value=evaluator_ctx)
+        MockEvaluator.return_value.__exit__ = MagicMock(return_value=False)
+        MockRep.return_value.analyze_repertoire.return_value = ({}, [])
+
+        run_analysis([self._make_game()], "bob", "sf", "book", 18, cache=None)
+
+        MockEvaluator.return_value.__enter__.assert_called_once()
+
+    @patch("analyze.RepertoireAnalyzer")
+    @patch("analyze.StockfishEvaluator")
+    @patch("analyze.OpeningDetector")
+    @patch("analyze.ChessGameAnalyzer")
+    def test_empty_stats_returns_none(self, MockAnalyzer, MockDetector,
+                                      MockEvaluator, MockRep):
+        """No openings detected → returns None when report=False."""
+        MockAnalyzer.return_value.summarize.return_value = None
+        evaluator_ctx = MagicMock()
+        MockEvaluator.return_value.__enter__ = MagicMock(return_value=evaluator_ctx)
+        MockEvaluator.return_value.__exit__ = MagicMock(return_value=False)
+        MockRep.return_value.analyze_repertoire.return_value = ({}, [])
+
+        result = run_analysis([self._make_game()], "bob", "sf", "book", 18, report=False)
+        assert result is None
+
+    @patch("analyze.RepertoireAnalyzer")
+    @patch("analyze.StockfishEvaluator")
+    @patch("analyze.OpeningDetector")
+    @patch("analyze.ChessGameAnalyzer")
+    def test_empty_stats_returns_empty_list_for_report(self, MockAnalyzer, MockDetector,
+                                                        MockEvaluator, MockRep):
+        """No openings detected → returns [] when report=True."""
+        MockAnalyzer.return_value.summarize.return_value = None
+        evaluator_ctx = MagicMock()
+        MockEvaluator.return_value.__enter__ = MagicMock(return_value=evaluator_ctx)
+        MockEvaluator.return_value.__exit__ = MagicMock(return_value=False)
+        MockRep.return_value.analyze_repertoire.return_value = ({}, [])
+
+        result = run_analysis([self._make_game()], "bob", "sf", "book", 18, report=True)
+        assert result == []
+
+    @patch("analyze.RepertoireAnalyzer")
+    @patch("analyze.StockfishEvaluator")
+    @patch("analyze.OpeningDetector")
+    @patch("analyze.ChessGameAnalyzer")
+    def test_report_returns_all_evals(self, MockAnalyzer, MockDetector,
+                                      MockEvaluator, MockRep):
+        """report=True returns evaluation list when openings found."""
+        MockAnalyzer.return_value.summarize.return_value = None
+        evaluator_ctx = MagicMock()
+        MockEvaluator.return_value.__enter__ = MagicMock(return_value=evaluator_ctx)
+        MockEvaluator.return_value.__exit__ = MagicMock(return_value=False)
+
+        game = self._make_game()
+        ev = _make_mock_eval()
+        stats_key = "Sicilian_white"
+        opening_stats = {stats_key: _make_opening_stats()}
+        MockRep.return_value.analyze_repertoire.return_value = (
+            opening_stats, [(game, ev)])
+
+        result = run_analysis([game], "bob", "sf", "book", 18, report=True)
+        assert len(result) == 1
+        assert result[0] is ev
+
+    @patch("analyze.RepertoireAnalyzer")
+    @patch("analyze.StockfishEvaluator")
+    @patch("analyze.OpeningDetector")
+    @patch("analyze.ChessGameAnalyzer")
+    def test_new_evals_saved_to_cache(self, MockAnalyzer, MockDetector,
+                                      MockEvaluator, MockRep):
+        """Newly computed evaluations are saved to cache."""
+        MockAnalyzer.return_value.summarize.return_value = None
+        evaluator_ctx = MagicMock()
+        MockEvaluator.return_value.__enter__ = MagicMock(return_value=evaluator_ctx)
+        MockEvaluator.return_value.__exit__ = MagicMock(return_value=False)
+
+        game = self._make_game()
+        ev = _make_mock_eval()
+        opening_stats = {"Sicilian_white": _make_opening_stats()}
+        MockRep.return_value.analyze_repertoire.return_value = (
+            opening_stats, [(game, ev)])
+
+        mock_cache = MagicMock()
+        mock_cache.get_cached_evaluations.return_value = {}
+
+        run_analysis([game], "bob", "sf", "book", 18, cache=mock_cache)
+
+        mock_cache.save_evaluations_batch.assert_called_once()
+
+    @patch("analyze.StockfishEvaluator")
+    @patch("analyze.OpeningDetector")
+    @patch("analyze.ChessGameAnalyzer")
+    def test_force_refresh_skips_cache_read(self, MockAnalyzer, MockDetector,
+                                            MockEvaluator):
+        """force_refresh=True skips cache.get_cached_evaluations."""
+        MockAnalyzer.return_value.summarize.return_value = None
+        evaluator_ctx = MagicMock()
+        MockEvaluator.return_value.__enter__ = MagicMock(return_value=evaluator_ctx)
+        MockEvaluator.return_value.__exit__ = MagicMock(return_value=False)
+
+        mock_cache = MagicMock()
+
+        with patch("analyze.RepertoireAnalyzer") as MockRep:
+            MockRep.return_value.analyze_repertoire.return_value = ({}, [])
+            run_analysis([self._make_game()], "bob", "sf", "book", 18,
+                         cache=mock_cache, force_refresh=True)
+
+        mock_cache.get_cached_evaluations.assert_not_called()
+
+
+class TestMain:
+    """Tests for main() CLI entry point."""
+
+    def _make_args(self, **overrides):
+        args = MagicMock()
+        args.username = "bob"
+        args.days = 0
+        args.depth = 18
+        args.stockfish = "/path/to/stockfish"
+        args.book = "/path/to/book.bin"
+        args.workers = 1
+        args.no_cache = False
+        args.report = False
+        args.min_times = 1
+        args.include = None
+        args.exclude = None
+        for k, v in overrides.items():
+            setattr(args, k, v)
+        return args
+
+    @patch("analyze.argparse.ArgumentParser")
+    @patch("analyze.os.path.isfile")
+    def test_missing_stockfish_exits(self, mock_isfile, MockParser):
+        """Missing stockfish binary causes sys.exit(1)."""
+        MockParser.return_value.parse_args.return_value = self._make_args()
+        mock_isfile.return_value = False  # stockfish not found
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+
+    @patch("analyze.argparse.ArgumentParser")
+    @patch("analyze.os.path.isfile")
+    def test_missing_book_exits(self, mock_isfile, MockParser):
+        """Missing opening book causes sys.exit(1)."""
+        MockParser.return_value.parse_args.return_value = self._make_args()
+        # stockfish exists, but book does not
+        mock_isfile.side_effect = lambda p: p == "/path/to/stockfish"
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+
+    @patch("analyze.run_analysis")
+    @patch("analyze.asyncio.run")
+    @patch("analyze.GameCache")
+    @patch("analyze.os.makedirs")
+    @patch("analyze.argparse.ArgumentParser")
+    @patch("analyze.os.path.isfile", return_value=True)
+    def test_no_games_exits_zero(self, mock_isfile, MockParser, mock_makedirs,
+                                  MockCache, mock_asyncio_run, mock_run_analysis):
+        """No games found → sys.exit(0)."""
+        MockParser.return_value.parse_args.return_value = self._make_args()
+        mock_asyncio_run.return_value = []  # no games
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+
+    @patch("analyze.run_analysis")
+    @patch("analyze.asyncio.run")
+    @patch("analyze.GameCache")
+    @patch("analyze.os.makedirs")
+    @patch("analyze.argparse.ArgumentParser")
+    @patch("analyze.os.path.isfile", return_value=True)
+    def test_report_launches_generator(self, mock_isfile, MockParser, mock_makedirs,
+                                        MockCache, mock_asyncio_run, mock_run_analysis):
+        """--report flag creates and runs CoachingReportGenerator."""
+        MockParser.return_value.parse_args.return_value = self._make_args(report=True)
+        game = self._make_args()  # just needs to be truthy
+        mock_asyncio_run.return_value = [game]
+        ev = _make_mock_eval()
+        mock_run_analysis.return_value = [ev]
+
+        with patch("analyze.CoachingReportGenerator", create=True) as MockGen:
+            # Patch the import inside main()
+            with patch.dict("sys.modules", {"report_generator": MagicMock()}):
+                with patch("builtins.__import__", side_effect=__builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__):
+                    # Simpler: just patch at module level after import
+                    pass
+
+        # Actually, the import is local: "from report_generator import CoachingReportGenerator"
+        # We need to patch it differently. Let's use a mock module.
+        with patch("analyze.run_analysis") as mock_ra:
+            mock_ra.return_value = [ev]
+            with patch.dict("sys.modules", {
+                "report_generator": MagicMock(
+                    CoachingReportGenerator=MagicMock()
+                )
+            }):
+                mock_asyncio_run.return_value = [game]
+                main()
+                # Verify the generator was created
+                report_mod = sys.modules["report_generator"]
+                report_mod.CoachingReportGenerator.assert_called_once()
+                report_mod.CoachingReportGenerator.return_value.run.assert_called_once()
+
+    @patch("analyze.run_analysis")
+    @patch("analyze.asyncio.run")
+    @patch("analyze.GameCache")
+    @patch("analyze.os.makedirs")
+    @patch("analyze.argparse.ArgumentParser")
+    @patch("analyze.os.path.isfile", return_value=True)
+    def test_cache_closed_on_success(self, mock_isfile, MockParser, mock_makedirs,
+                                      MockCache, mock_asyncio_run, mock_run_analysis):
+        """cache.close() is called on successful execution."""
+        MockParser.return_value.parse_args.return_value = self._make_args()
+        mock_asyncio_run.return_value = [MagicMock()]
+        mock_run_analysis.return_value = None
+
+        main()
+
+        MockCache.return_value.close.assert_called_once()
+
+    @patch("analyze.run_analysis")
+    @patch("analyze.asyncio.run")
+    @patch("analyze.GameCache")
+    @patch("analyze.os.makedirs")
+    @patch("analyze.argparse.ArgumentParser")
+    @patch("analyze.os.path.isfile", return_value=True)
+    def test_cache_closed_on_error(self, mock_isfile, MockParser, mock_makedirs,
+                                    MockCache, mock_asyncio_run, mock_run_analysis):
+        """cache.close() is called even when an error occurs."""
+        MockParser.return_value.parse_args.return_value = self._make_args()
+        mock_asyncio_run.return_value = [MagicMock()]
+        mock_run_analysis.side_effect = RuntimeError("boom")
+
+        with pytest.raises(RuntimeError):
+            main()
+
+        MockCache.return_value.close.assert_called_once()

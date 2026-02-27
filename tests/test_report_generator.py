@@ -1,5 +1,6 @@
 """Tests for the coaching report Flask web app."""
 import chess
+from unittest.mock import patch, MagicMock
 from repertoire_analyzer import OpeningEvaluation
 from report_generator import CoachingReportGenerator
 
@@ -106,6 +107,11 @@ class TestMoveConversion:
     def test_move_to_san_none(self):
         gen = CoachingReportGenerator("player", [])
         assert gen._move_to_san(chess.Board().fen(), None) == "N/A"
+
+    def test_move_to_san_invalid_move(self):
+        """Invalid UCI move falls back to returning raw UCI string."""
+        gen = CoachingReportGenerator("player", [])
+        assert gen._move_to_san(chess.Board().fen(), "z9z9") == "z9z9"
 
 
 class TestOpeningGroups:
@@ -300,3 +306,35 @@ class TestDeviationGrouping:
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
         assert b"2+ occurrences" in resp.data
+
+
+class TestInvalidBookMoves:
+    def test_invalid_book_move_shows_uci_fallback(self):
+        """Invalid book moves fall back to raw UCI in the report."""
+        evals = [_make_eval(book_moves=["z9z9"])]
+        gen = CoachingReportGenerator("player", evals)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b"z9z9" in resp.data
+
+
+class TestRunMethod:
+    @patch("report_generator.webbrowser.open")
+    @patch("report_generator.threading.Timer")
+    def test_run_opens_browser_and_starts_server(self, MockTimer, mock_wb_open):
+        """run() sets up a timer for browser and starts Flask."""
+        gen = CoachingReportGenerator("player", [])
+
+        with patch.object(gen, "_build_app") as mock_build:
+            mock_app = MagicMock()
+            mock_build.return_value = mock_app
+
+            gen.run(port=5555)
+
+            MockTimer.assert_called_once()
+            # Timer was started
+            MockTimer.return_value.start.assert_called_once()
+            # Flask app.run was called with correct params
+            mock_app.run.assert_called_once_with(
+                host="127.0.0.1", port=5555, debug=False, use_reloader=False)
