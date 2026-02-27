@@ -655,6 +655,104 @@ class TestEvalLoss:
         assert result.eval_loss_cp == 50
 
 
+class TestMyResult:
+    """Tests for my_result being populated from game outcome."""
+
+    def test_my_result_win_as_white(self):
+        game = _make_game_with_pgn(my_color="white")
+        # Default helper: white_result="win"
+
+        mock_detector = MagicMock()
+        mock_detector.find_deviation.return_value = _mock_deviation()
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate.return_value = _mock_eval(cp=30)
+
+        analyzer = RepertoireAnalyzer("player", mock_detector, mock_evaluator)
+        result = analyzer.analyze_game(game)
+
+        assert result.my_result == "win"
+
+    def test_my_result_loss_as_white(self):
+        game = _make_game_with_pgn(my_color="white")
+        game.white_result = "resigned"
+
+        mock_detector = MagicMock()
+        mock_detector.find_deviation.return_value = _mock_deviation()
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate.return_value = _mock_eval(cp=-50)
+
+        analyzer = RepertoireAnalyzer("player", mock_detector, mock_evaluator)
+        result = analyzer.analyze_game(game)
+
+        assert result.my_result == "loss"
+
+    def test_my_result_draw(self):
+        game = _make_game_with_pgn(my_color="white")
+        game.white_result = "stalemate"
+
+        mock_detector = MagicMock()
+        mock_detector.find_deviation.return_value = _mock_deviation()
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate.return_value = _mock_eval(cp=0)
+
+        analyzer = RepertoireAnalyzer("player", mock_detector, mock_evaluator)
+        result = analyzer.analyze_game(game)
+
+        assert result.my_result == "draw"
+
+    def test_my_result_loss_as_black(self):
+        game = _make_game_with_pgn(my_color="black")
+        game.black_result = "checkmated"
+
+        mock_detector = MagicMock()
+        mock_detector.find_deviation.return_value = _mock_deviation(side="white")
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate.return_value = _mock_eval(cp=50)
+
+        analyzer = RepertoireAnalyzer("player", mock_detector, mock_evaluator)
+        result = analyzer.analyze_game(game)
+
+        assert result.my_result == "loss"
+
+    def test_my_result_populated_in_repertoire(self):
+        """my_result should appear in new_evals from analyze_repertoire."""
+        game = _make_game_with_pgn(my_color="white", game_url="https://game/1")
+
+        mock_detector = MagicMock()
+        mock_detector.find_deviation.return_value = _mock_deviation()
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate.return_value = _mock_eval(cp=10)
+
+        analyzer = RepertoireAnalyzer("player", mock_detector, mock_evaluator)
+        _, new_evals = analyzer.analyze_repertoire([game])
+
+        assert len(new_evals) == 1
+        _, ev = new_evals[0]
+        assert ev.my_result == "win"
+
+    def test_all_loss_variants_detected(self):
+        """All Chess.com loss result strings should map to 'loss'."""
+        for loss_result in ["checkmated", "timeout", "resigned", "abandoned", "lose"]:
+            game = _make_game_with_pgn(my_color="white")
+            game.white_result = loss_result
+
+            mock_detector = MagicMock()
+            mock_detector.find_deviation.return_value = _mock_deviation()
+
+            mock_evaluator = MagicMock()
+            mock_evaluator.evaluate.return_value = _mock_eval(cp=0)
+
+            analyzer = RepertoireAnalyzer("player", mock_detector, mock_evaluator)
+            result = analyzer.analyze_game(game)
+
+            assert result.my_result == "loss", f"Expected 'loss' for '{loss_result}'"
+
+
 class TestGameMovesUci:
     """Tests for game_moves_uci being populated in evaluations."""
 

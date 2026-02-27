@@ -52,6 +52,7 @@ class GameCache:
             ("book_moves_uci", "TEXT DEFAULT ''"),
             ("eval_loss_cp", "INTEGER DEFAULT 0"),
             ("game_moves_uci", "TEXT DEFAULT ''"),
+            ("my_result", "TEXT DEFAULT ''"),
         ]
         for col_name, col_type in new_columns:
             try:
@@ -107,6 +108,7 @@ class GameCache:
             eval_loss_cp=row["eval_loss_cp"] if row["eval_loss_cp"] is not None else 0,
             game_moves_uci=game_moves_raw.split(",") if game_moves_raw else [],
             game_url=row["game_url"] if "game_url" in row.keys() else "",
+            my_result=row["my_result"] if "my_result" in row.keys() else "",
         )
 
     def get_evaluation(self, game_url, depth):
@@ -115,7 +117,7 @@ class GameCache:
             """SELECT game_url, eco_code, eco_name, my_color, deviation_ply,
                       deviating_side, eval_cp, is_fully_booked,
                       fen_at_deviation, best_move_uci, played_move_uci,
-                      book_moves_uci, eval_loss_cp, game_moves_uci
+                      book_moves_uci, eval_loss_cp, game_moves_uci, my_result
                FROM opening_evaluations
                WHERE game_url = ? AND depth = ?""",
             (game_url, depth)
@@ -138,7 +140,7 @@ class GameCache:
                 f"""SELECT game_url, eco_code, eco_name, my_color, deviation_ply,
                            deviating_side, eval_cp, is_fully_booked,
                            fen_at_deviation, best_move_uci, played_move_uci,
-                           book_moves_uci, eval_loss_cp, game_moves_uci
+                           book_moves_uci, eval_loss_cp, game_moves_uci, my_result
                     FROM opening_evaluations
                     WHERE game_url IN ({placeholders}) AND depth = ?""",
                 (*chunk, depth)
@@ -163,14 +165,15 @@ class GameCache:
             ",".join(evaluation.book_moves_uci) if evaluation.book_moves_uci else "",
             evaluation.eval_loss_cp,
             ",".join(evaluation.game_moves_uci) if evaluation.game_moves_uci else "",
+            evaluation.my_result or "",
         )
 
     _INSERT_EVAL_SQL = """INSERT OR REPLACE INTO opening_evaluations
         (game_url, username, depth, eco_code, eco_name, my_color,
          deviation_ply, deviating_side, eval_cp, is_fully_booked,
          fen_at_deviation, best_move_uci, played_move_uci, book_moves_uci,
-         eval_loss_cp, game_moves_uci)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+         eval_loss_cp, game_moves_uci, my_result)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
 
     def save_evaluation(self, game_url, username, depth, evaluation):
         """Cache a single opening evaluation (upsert)."""

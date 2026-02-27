@@ -26,8 +26,8 @@ class CoachingReportGenerator:
             and not ev.is_fully_booked
         ]
         # Group by position + played move, keep worst instance per group
-        self.deviations, self.deviation_counts = self._group_deviations(
-            candidates, min_times)
+        self.deviations, self.deviation_counts, self.deviation_results = (
+            self._group_deviations(candidates, min_times))
         # Sort worst first (biggest eval loss = biggest mistake)
         self.deviations.sort(key=lambda ev: ev.eval_loss_cp, reverse=True)
 
@@ -35,9 +35,10 @@ class CoachingReportGenerator:
     def _group_deviations(candidates, min_times):
         """Group deviations by (FEN, played_move) and apply min_times filter.
 
-        Returns (deviations, counts) where deviations is a list of the
-        worst-case representative per group, and counts maps
-        (fen, played_move) -> occurrence count.
+        Returns (deviations, counts, results) where deviations is a list of
+        the worst-case representative per group, counts maps
+        (fen, played_move) -> occurrence count, and results maps
+        (fen, played_move) -> {"win": N, "loss": N, "draw": N}.
         """
         groups = {}
         for ev in candidates:
@@ -48,14 +49,19 @@ class CoachingReportGenerator:
 
         deviations = []
         counts = {}
+        results = {}
         for key, evs in groups.items():
             if len(evs) >= min_times:
-                # Pick the instance with the highest eval loss as representative
                 worst = max(evs, key=lambda e: e.eval_loss_cp)
                 deviations.append(worst)
                 counts[key] = len(evs)
+                r = {"win": 0, "loss": 0, "draw": 0}
+                for e in evs:
+                    if e.my_result in r:
+                        r[e.my_result] += 1
+                results[key] = r
 
-        return deviations, counts
+        return deviations, counts, results
 
     def _render_board_svg(self, fen, move_uci, color, arrow_color):
         """Render an SVG chessboard with an arrow for a move."""
@@ -117,6 +123,12 @@ class CoachingReportGenerator:
         key = (ev.fen_at_deviation, ev.played_move_uci)
         count = self.deviation_counts.get(key, 1)
 
+        # Win/loss/draw aggregation
+        r = self.deviation_results.get(key, {"win": 0, "loss": 0, "draw": 0})
+        r_total = r["win"] + r["loss"] + r["draw"]
+        win_pct = round(100 * r["win"] / r_total) if r_total else 0
+        loss_pct = round(100 * r["loss"] / r_total) if r_total else 0
+
         return {
             "eco_name": ev.eco_name,
             "eco_code": ev.eco_code or "?",
@@ -133,6 +145,8 @@ class CoachingReportGenerator:
             "svg_played": svg_played,
             "times_played": count,
             "game_url": ev.game_url,
+            "win_pct": win_pct,
+            "loss_pct": loss_pct,
         }
 
     def _get_opening_groups(self):
@@ -295,6 +309,14 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             background: #334155;
             color: #94a3b8;
         }
+        .result-badge {
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .result-badge.win-high { background: #166534; color: #4ade80; }
+        .result-badge.win-low { background: #7f1d1d; color: #fca5a5; }
         /* --- Static SVG fallback boards --- */
         .boards {
             display: flex;
@@ -384,6 +406,7 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                         <div class="eval-badges">
                             <span class="eval-badge {{ item.eval_loss_class }}">{{ item.eval_loss_display }} loss</span>
                             <span class="eval-badge-secondary">pos {{ item.eval_display }}</span>
+                            <span class="result-badge {{ 'win-high' if item.win_pct >= 50 else 'win-low' }}">W {{ item.win_pct }}% / L {{ item.loss_pct }}%</span>
                         </div>
                     </div>
 

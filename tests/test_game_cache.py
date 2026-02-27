@@ -301,6 +301,59 @@ class TestEvalLossAndGameMoves:
         assert results["https://game/42"].game_url == "https://game/42"
 
 
+class TestMyResultCache:
+    """Tests for the my_result column."""
+
+    def test_my_result_round_trip(self, cache):
+        ev = OpeningEvaluation(
+            eco_code="B90", eco_name="Sicilian", my_color="white",
+            deviation_ply=6, deviating_side="black", eval_cp=30,
+            is_fully_booked=False, my_result="win",
+        )
+        cache.save_evaluation("https://game/1", "bob", 18, ev)
+        result = cache.get_evaluation("https://game/1", 18)
+        assert result.my_result == "win"
+
+    def test_my_result_loss_round_trip(self, cache):
+        ev = OpeningEvaluation(
+            eco_code="B90", eco_name="Sicilian", my_color="black",
+            deviation_ply=6, deviating_side="white", eval_cp=-20,
+            is_fully_booked=False, my_result="loss",
+        )
+        cache.save_evaluation("https://game/1", "bob", 18, ev)
+        result = cache.get_evaluation("https://game/1", 18)
+        assert result.my_result == "loss"
+
+    def test_my_result_batch_round_trip(self, cache):
+        evals = [
+            ("https://game/1", OpeningEvaluation(
+                eco_code="B90", eco_name="Sicilian", my_color="white",
+                deviation_ply=6, deviating_side="black", eval_cp=30,
+                is_fully_booked=False, my_result="win",
+            )),
+            ("https://game/2", OpeningEvaluation(
+                eco_code="B90", eco_name="Sicilian", my_color="white",
+                deviation_ply=6, deviating_side="black", eval_cp=-10,
+                is_fully_booked=False, my_result="draw",
+            )),
+        ]
+        cache.save_evaluations_batch("bob", 18, evals)
+        results = cache.get_cached_evaluations(["https://game/1", "https://game/2"], 18)
+        assert results["https://game/1"].my_result == "win"
+        assert results["https://game/2"].my_result == "draw"
+
+    def test_my_result_empty_default(self, cache):
+        """Evaluations without my_result get empty string."""
+        ev = OpeningEvaluation(
+            eco_code="B90", eco_name="Sicilian", my_color="white",
+            deviation_ply=6, deviating_side="black", eval_cp=30,
+            is_fully_booked=False,
+        )
+        cache.save_evaluation("https://game/1", "bob", 18, ev)
+        result = cache.get_evaluation("https://game/1", 18)
+        assert result.my_result == ""
+
+
 class TestCacheLifecycle:
     def test_close_and_reopen(self, tmp_path):
         db_path = str(tmp_path / "lifecycle.db")

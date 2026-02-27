@@ -9,7 +9,7 @@ def _make_eval(eco_code="B90", eco_name="Sicilian", my_color="white",
                deviation_ply=6, deviating_side="white", eval_cp=-50,
                is_fully_booked=False, fen=None, best_move="d2d4",
                played_move="g1f3", book_moves=None, eval_loss_cp=50,
-               game_moves_uci=None):
+               game_moves_uci=None, my_result="win"):
     """Helper to create an OpeningEvaluation with coaching data."""
     if fen is None:
         fen = chess.Board().fen()
@@ -27,6 +27,7 @@ def _make_eval(eco_code="B90", eco_name="Sicilian", my_color="white",
         book_moves_uci=book_moves or ["e2e4", "d2d4"],
         eval_loss_cp=eval_loss_cp,
         game_moves_uci=game_moves_uci or [],
+        my_result=my_result,
     )
 
 
@@ -338,3 +339,57 @@ class TestRunMethod:
             # Flask app.run was called with correct params
             mock_app.run.assert_called_once_with(
                 host="127.0.0.1", port=5555, debug=False, use_reloader=False)
+
+
+class TestWinLossBadge:
+    """Tests for win/loss % badge on deviation cards."""
+
+    def test_win_loss_badge_displayed(self):
+        """Win/loss percentage badge appears in the report."""
+        evals = [
+            _make_eval(my_result="win"),
+            _make_eval(my_result="win"),
+            _make_eval(my_result="loss"),
+        ]
+        gen = CoachingReportGenerator("player", evals)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        # 3 games grouped into 1 deviation: 2 wins, 1 loss = 67% win, 33% loss
+        assert b"W 67%" in resp.data
+        assert b"L 33%" in resp.data
+
+    def test_win_loss_grouped_across_duplicates(self):
+        """Results are aggregated across all games in a grouped deviation."""
+        evals = [
+            _make_eval(played_move="g1f3", my_result="win"),
+            _make_eval(played_move="g1f3", my_result="loss"),
+            _make_eval(played_move="g1f3", my_result="loss"),
+            _make_eval(played_move="g1f3", my_result="draw"),
+        ]
+        gen = CoachingReportGenerator("player", evals)
+        key = (evals[0].fen_at_deviation, "g1f3")
+        r = gen.deviation_results[key]
+        assert r["win"] == 1
+        assert r["loss"] == 2
+        assert r["draw"] == 1
+
+    def test_all_wins_shows_100_percent(self):
+        """All wins shows W 100% / L 0%."""
+        evals = [_make_eval(my_result="win")]
+        gen = CoachingReportGenerator("player", evals)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b"W 100%" in resp.data
+        assert b"L 0%" in resp.data
+
+    def test_empty_result_counted_as_unknown(self):
+        """Evals with empty my_result don't crash and count as neither."""
+        evals = [_make_eval(my_result="")]
+        gen = CoachingReportGenerator("player", evals)
+        key = (evals[0].fen_at_deviation, evals[0].played_move_uci)
+        r = gen.deviation_results[key]
+        assert r["win"] == 0
+        assert r["loss"] == 0
+        assert r["draw"] == 0
