@@ -465,3 +465,57 @@ class TestTimeControlFilter:
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
         assert b'data-time-class="unknown"' in resp.data
+
+
+class TestPlatformFilter:
+    """Tests for the platform filter dropdown (Chess.com / Lichess)."""
+
+    def test_platform_filter_checkboxes_present(self):
+        """Platform filter checkboxes appear in the report."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b'class="platform-filter"' in resp.data
+        assert b"Chess.com" in resp.data
+        assert b"Lichess" in resp.data
+
+    def test_platform_chesscom_from_game_url(self):
+        """Chess.com game_url produces data-platform='chesscom'."""
+        evals = [_make_eval()]
+        evals[0].game_url = "https://www.chess.com/game/live/12345"
+        gen = CoachingReportGenerator("player", evals)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b'data-platform="chesscom"' in resp.data
+
+    def test_platform_lichess_from_game_url(self):
+        """Lichess game_url produces data-platform='lichess'."""
+        evals = [_make_eval()]
+        evals[0].game_url = "https://lichess.org/abc12345"
+        gen = CoachingReportGenerator("player", evals)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b'data-platform="lichess"' in resp.data
+
+    def test_platform_unknown_when_no_url(self):
+        """Empty game_url produces data-platform='unknown'."""
+        evals = [_make_eval()]
+        evals[0].game_url = ""
+        gen = CoachingReportGenerator("player", evals)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b'data-platform="unknown"' in resp.data
+
+    def test_platform_filter_on_filtered_page(self):
+        """Platform filter checkboxes also appear on opening-filtered pages."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/opening/B90/white")
+        assert b'class="platform-filter"' in resp.data

@@ -149,6 +149,7 @@ class CoachingReportGenerator:
             "win_pct": win_pct,
             "loss_pct": loss_pct,
             "time_class": ev.time_class or "unknown",
+            "platform": "lichess" if "lichess.org" in ev.game_url else "chesscom" if ev.game_url else "unknown",
         }
 
     def _get_opening_groups(self):
@@ -452,6 +453,13 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                         <label><input type="checkbox" class="tc-filter" value="rapid" checked> Rapid</label>
                         <label><input type="checkbox" class="tc-filter" value="daily" checked> Daily</label>
                     </div>
+                </span>
+                <span class="filter-wrapper">
+                    <button class="filter-btn" id="platform-btn">Platform &#9662;</button>
+                    <div class="filter-panel" id="platform-panel">
+                        <label><input type="checkbox" class="platform-filter" value="chesscom" checked> Chess.com</label>
+                        <label><input type="checkbox" class="platform-filter" value="lichess" checked> Lichess</label>
+                    </div>
                 </span></div>
             {% else %}
             <div class="subtitle">{{ items|length }} positions where you deviated from book/engine &mdash; sorted by
@@ -467,12 +475,19 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                         <label><input type="checkbox" class="tc-filter" value="rapid" checked> Rapid</label>
                         <label><input type="checkbox" class="tc-filter" value="daily" checked> Daily</label>
                     </div>
+                </span>
+                <span class="filter-wrapper">
+                    <button class="filter-btn" id="platform-btn">Platform &#9662;</button>
+                    <div class="filter-panel" id="platform-panel">
+                        <label><input type="checkbox" class="platform-filter" value="chesscom" checked> Chess.com</label>
+                        <label><input type="checkbox" class="platform-filter" value="lichess" checked> Lichess</label>
+                    </div>
                 </span></div>
             {% endif %}
 
             {% if items %}
                 {% for item in items %}
-                <div class="card {{ 'positive' if item.eval_loss_class == 'good' else '' }}" data-eval-loss="{{ item.eval_loss_raw }}" data-loss-pct="{{ item.loss_pct }}" data-time-class="{{ item.time_class }}">
+                <div class="card {{ 'positive' if item.eval_loss_class == 'good' else '' }}" data-eval-loss="{{ item.eval_loss_raw }}" data-loss-pct="{{ item.loss_pct }}" data-time-class="{{ item.time_class }}" data-platform="{{ item.platform }}">
                     <div class="card-header">
                         <span class="card-title">
                             {{ item.eco_name }}
@@ -537,34 +552,48 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             });
         }
 
-        /* Time control filter */
-        var filterBtn = document.getElementById('filter-btn');
-        var filterPanel = document.getElementById('filter-panel');
-        if (filterBtn && filterPanel) {
-            filterBtn.addEventListener('click', function(e) {
-                e.stopPropagation();
-                filterPanel.classList.toggle('open');
-            });
-            document.addEventListener('click', function(e) {
-                if (!filterPanel.contains(e.target)) {
-                    filterPanel.classList.remove('open');
-                }
-            });
-            var checkboxes = document.querySelectorAll('.tc-filter');
-            checkboxes.forEach(function(cb) {
-                cb.addEventListener('change', function() {
-                    var enabled = new Set();
-                    checkboxes.forEach(function(c) {
-                        if (c.checked) enabled.add(c.value);
-                    });
-                    var cards = document.querySelectorAll('.card');
-                    cards.forEach(function(card) {
-                        var tc = card.getAttribute('data-time-class');
-                        card.style.display = (!tc || enabled.has(tc)) ? '' : 'none';
-                    });
-                });
+        /* Shared filter logic: card visible only if it passes ALL active filters */
+        var tcChecks = document.querySelectorAll('.tc-filter');
+        var platChecks = document.querySelectorAll('.platform-filter');
+
+        function applyFilters() {
+            var enabledTC = new Set();
+            tcChecks.forEach(function(c) { if (c.checked) enabledTC.add(c.value); });
+            var enabledPlat = new Set();
+            platChecks.forEach(function(c) { if (c.checked) enabledPlat.add(c.value); });
+
+            document.querySelectorAll('.card').forEach(function(card) {
+                var tc = card.getAttribute('data-time-class');
+                var pl = card.getAttribute('data-platform');
+                var tcOk = !tc || enabledTC.has(tc);
+                var plOk = !pl || enabledPlat.has(pl);
+                card.style.display = (tcOk && plOk) ? '' : 'none';
             });
         }
+
+        tcChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
+        platChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
+
+        /* Dropdown panel toggles */
+        var panels = [
+            {btn: document.getElementById('filter-btn'), panel: document.getElementById('filter-panel')},
+            {btn: document.getElementById('platform-btn'), panel: document.getElementById('platform-panel')}
+        ];
+        panels.forEach(function(p) {
+            if (p.btn && p.panel) {
+                p.btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    p.panel.classList.toggle('open');
+                });
+            }
+        });
+        document.addEventListener('click', function(e) {
+            panels.forEach(function(p) {
+                if (p.panel && !p.panel.contains(e.target) && e.target !== p.btn) {
+                    p.panel.classList.remove('open');
+                }
+            });
+        });
     })();
     </script>
 </body>
