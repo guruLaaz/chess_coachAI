@@ -77,3 +77,84 @@ class ChessGame:
             time_class=data.get('time_class'),
             game_url=data.get('url', ''),
         )
+
+    # Lichess speed -> our time_class
+    _LICHESS_SPEED_MAP = {
+        "bullet": "bullet",
+        "blitz": "blitz",
+        "rapid": "rapid",
+        "classical": "rapid",
+        "correspondence": "daily",
+        "ultraBullet": "bullet",
+    }
+
+    @classmethod
+    def from_lichess_json(cls, data, my_username):
+        """Convert a Lichess API game JSON dict to a ChessGame.
+
+        Returns None if my_username is not a participant.
+        """
+        my_username_lower = my_username.lower()
+
+        players = data.get("players", {})
+        white_info = players.get("white", {})
+        black_info = players.get("black", {})
+
+        white_name = white_info.get("user", {}).get("name", "").lower()
+        black_name = black_info.get("user", {}).get("name", "").lower()
+
+        if my_username_lower == white_name:
+            my_color = "white"
+        elif my_username_lower == black_name:
+            my_color = "black"
+        else:
+            return None
+
+        # Parse end_time from lastMoveAt (milliseconds)
+        last_move_ms = data.get("lastMoveAt") or data.get("createdAt")
+        if last_move_ms:
+            end_time = datetime.datetime.fromtimestamp(last_move_ms / 1000)
+        else:
+            end_time = datetime.datetime.now()
+
+        # Determine results from winner field
+        winner = data.get("winner")
+        status = data.get("status", "draw")
+
+        if winner == "white":
+            white_result = "win"
+            black_result = "lose"
+        elif winner == "black":
+            white_result = "lose"
+            black_result = "win"
+        else:
+            white_result = status
+            black_result = status
+
+        # PGN and opening data
+        pgn = data.get("pgn")
+        opening = data.get("opening", {})
+        eco_code = opening.get("eco")
+        eco_name = opening.get("name", "")
+
+        # Time class mapping
+        speed = data.get("speed", "")
+        time_class = cls._LICHESS_SPEED_MAP.get(speed, speed)
+
+        # Game URL
+        game_id = data.get("id", "")
+        game_url = f"https://lichess.org/{game_id}" if game_id else ""
+
+        return cls(
+            white=white_info.get("user", {}).get("name", ""),
+            black=black_info.get("user", {}).get("name", ""),
+            end_time=end_time,
+            white_result=white_result,
+            black_result=black_result,
+            my_color=my_color,
+            pgn=pgn,
+            eco_code=eco_code,
+            eco_name=eco_name,
+            time_class=time_class,
+            game_url=game_url,
+        )

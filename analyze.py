@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI to analyze a Chess.com player's opening repertoire via Stockfish evaluation."""
+"""CLI to analyze Chess.com and/or Lichess opening repertoire via Stockfish evaluation."""
 
 import argparse
 import asyncio
@@ -12,6 +12,7 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "fetchers"))
 
 from chesscom_fetcher import ChessCom_Fetcher
+from lichess_fetcher import LichessFetcher
 from chessgame import ChessGame
 from game_filter import filter_games_by_days, filter_games_by_time_class
 from chessgameanalyzer import ChessGameAnalyzer
@@ -90,6 +91,59 @@ async def fetch_games(username, days, include_tc=None, exclude_tc=None,
         print(f"  Time control filter ({label}): {before} -> {len(games)} games")
 
     return games
+
+
+async def fetch_lichess_games(username, days, include_tc=None, exclude_tc=None):
+    """Fetch and parse games from Lichess."""
+    from datetime import datetime, timedelta, timezone
+
+    fetcher = LichessFetcher(user_agent="chess_coachAI/1.0")
+
+    since_ms = None
+    if days > 0:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        since_ms = int(cutoff.timestamp() * 1000)
+
+    print(f"Fetching Lichess games for {username}...")
+    try:
+        raw_games = await fetcher.fetch_games(username, since=since_ms)
+    except Exception as e:
+        print(f"Error: Could not connect to Lichess API: {e}")
+        sys.exit(1)
+
+    games = [g for g in (ChessGame.from_lichess_json(g, username)
+                          for g in raw_games) if g is not None]
+    print(f"  Fetched {len(raw_games)} raw games, {len(games)} as {username}")
+
+    if days > 0:
+        games = filter_games_by_days(games, days)
+        print(f"  Filtered to last {days} days: {len(games)} games")
+
+    if include_tc or exclude_tc:
+        before = len(games)
+        games = filter_games_by_time_class(games, include=include_tc, exclude=exclude_tc)
+        label = ", ".join(include_tc) if include_tc else f"excluding {', '.join(exclude_tc)}"
+        print(f"  Time control filter ({label}): {before} -> {len(games)} games")
+
+    return games
+
+
+async def fetch_all_sources(chesscom_user, lichess_user, days,
+                            include_tc=None, exclude_tc=None,
+                            cache=None, force_refresh=False):
+    """Fetch games from Chess.com and/or Lichess in parallel."""
+    tasks = []
+    if chesscom_user:
+        tasks.append(fetch_games(chesscom_user, days, include_tc, exclude_tc,
+                                 cache=cache, force_refresh=force_refresh))
+    if lichess_user:
+        tasks.append(fetch_lichess_games(lichess_user, days, include_tc, exclude_tc))
+
+    results = await asyncio.gather(*tasks)
+    all_games = []
+    for game_list in results:
+        all_games.extend(game_list)
+    return all_games
 
 
 def run_analysis(games, username, stockfish_path, book_path, depth,
@@ -197,8 +251,12 @@ def run_analysis(games, username, stockfish_path, book_path, depth,
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyze Chess.com opening repertoire with Stockfish")
-    parser.add_argument("username", help="Chess.com username")
+    parser = argparse.ArgumentParser(
+        description="Analyze Chess.com and/or Lichess opening repertoire with Stockfish")
+    parser.add_argument("chesscom_user", nargs="?", default="",
+                        help="Chess.com username (use empty string to skip)")
+    parser.add_argument("lichess_user", nargs="?", default="",
+                        help="Lichess username (use empty string to skip)")
     parser.add_argument("days", nargs="?", type=int, default=0,
                         help="Only analyze games from the last N days (0 = all)")
     parser.add_argument("--depth", type=int, default=18,
@@ -243,25 +301,36 @@ def main():
     if force_refresh:
         print("Cache: force refresh enabled (will re-fetch and re-analyze, then save to cache)")
 
+    chesscom_user = args.chesscom_user.strip()
+    lichess_user = args.lichess_user.strip()
+
+    if not chesscom_user and not lichess_user:
+        parser.error("Provide at least one username (Chess.com and/or Lichess)")
+
+    display_username = chesscom_user or lichess_user
+
     try:
         include_tc = set(args.include) if args.include else None
         exclude_tc = set(args.exclude) if args.exclude else None
-        games = asyncio.run(fetch_games(args.username, args.days,
-                                        include_tc, exclude_tc, cache=cache,
-                                        force_refresh=force_refresh))
+        games = asyncio.run(fetch_all_sources(
+            chesscom_user, lichess_user, args.days,
+            include_tc, exclude_tc,
+            cache=cache, force_refresh=force_refresh))
 
         if not games:
             print("No games found.")
             sys.exit(0)
 
-        all_evals = run_analysis(games, args.username, args.stockfish, args.book,
+        print(f"\nTotal games for analysis: {len(games)}")
+
+        all_evals = run_analysis(games, display_username, args.stockfish, args.book,
                                  args.depth, args.workers, cache=cache,
                                  report=args.report,
                                  force_refresh=force_refresh)
 
         if args.report and all_evals:
             from report_generator import CoachingReportGenerator
-            generator = CoachingReportGenerator(args.username, all_evals,
+            generator = CoachingReportGenerator(display_username, all_evals,
                                                    min_times=args.min_times)
             generator.run()
     finally:

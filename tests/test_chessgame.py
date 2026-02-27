@@ -1,6 +1,6 @@
 import datetime
 from chessgame import ChessGame
-from helpers import make_game_json
+from helpers import make_game_json, make_lichess_game_json
 
 
 class TestFromJson:
@@ -152,3 +152,121 @@ class TestFromJson:
         data = make_game_json()
         game = ChessGame.from_json(data, "PlayerA")
         assert game.game_url == ""
+
+
+class TestFromLichessJson:
+    def test_parse_as_white(self):
+        data = make_lichess_game_json(white_user="Alice", black_user="Bob",
+                                       winner="white")
+        game = ChessGame.from_lichess_json(data, "Alice")
+        assert game is not None
+        assert game.my_color == "white"
+        assert game.white_result == "win"
+        assert game.black_result == "lose"
+
+    def test_parse_as_black(self):
+        data = make_lichess_game_json(white_user="Alice", black_user="Bob",
+                                       winner="black")
+        game = ChessGame.from_lichess_json(data, "Bob")
+        assert game is not None
+        assert game.my_color == "black"
+        assert game.white_result == "lose"
+        assert game.black_result == "win"
+
+    def test_username_not_in_game_returns_none(self):
+        data = make_lichess_game_json(white_user="Alice", black_user="Bob")
+        game = ChessGame.from_lichess_json(data, "Charlie")
+        assert game is None
+
+    def test_case_insensitive_username(self):
+        data = make_lichess_game_json(white_user="Alice", black_user="Bob")
+        game = ChessGame.from_lichess_json(data, "aLiCe")
+        assert game is not None
+        assert game.my_color == "white"
+
+    def test_draw_result(self):
+        data = make_lichess_game_json(white_user="Alice", black_user="Bob",
+                                       winner=None, status="stalemate")
+        game = ChessGame.from_lichess_json(data, "Alice")
+        assert game.white_result == "stalemate"
+        assert game.black_result == "stalemate"
+
+    def test_speed_classical_maps_to_rapid(self):
+        data = make_lichess_game_json(speed="classical")
+        game = ChessGame.from_lichess_json(data, "PlayerA")
+        assert game.time_class == "rapid"
+
+    def test_speed_correspondence_maps_to_daily(self):
+        data = make_lichess_game_json(speed="correspondence")
+        game = ChessGame.from_lichess_json(data, "PlayerA")
+        assert game.time_class == "daily"
+
+    def test_speed_blitz_unchanged(self):
+        data = make_lichess_game_json(speed="blitz")
+        game = ChessGame.from_lichess_json(data, "PlayerA")
+        assert game.time_class == "blitz"
+
+    def test_speed_ultra_bullet_maps_to_bullet(self):
+        data = make_lichess_game_json(speed="ultraBullet")
+        game = ChessGame.from_lichess_json(data, "PlayerA")
+        assert game.time_class == "bullet"
+
+    def test_game_url_format(self):
+        data = make_lichess_game_json(game_id="XyZ12345")
+        game = ChessGame.from_lichess_json(data, "PlayerA")
+        assert game.game_url == "https://lichess.org/XyZ12345"
+
+    def test_end_time_from_last_move_at(self):
+        ts_ms = int(datetime.datetime(2025, 3, 10, 14, 0, 0).timestamp() * 1000)
+        data = make_lichess_game_json(last_move_at=ts_ms)
+        game = ChessGame.from_lichess_json(data, "PlayerA")
+        assert game.end_time == datetime.datetime(2025, 3, 10, 14, 0, 0)
+
+    def test_eco_code_from_opening(self):
+        data = make_lichess_game_json(eco="C50", opening_name="Italian Game")
+        game = ChessGame.from_lichess_json(data, "PlayerA")
+        assert game.eco_code == "C50"
+        assert game.eco_name == "Italian Game"
+
+    def test_pgn_extracted(self):
+        pgn = '[Event "Rated Blitz"]\n\n1. e4 e5 1-0'
+        data = make_lichess_game_json(pgn=pgn)
+        game = ChessGame.from_lichess_json(data, "PlayerA")
+        assert game.pgn == pgn
+
+    def test_last_move_at_absent_falls_back_to_created_at(self):
+        """When lastMoveAt is missing, createdAt is used for end_time."""
+        created_ms = int(datetime.datetime(2025, 5, 1, 10, 0, 0).timestamp() * 1000)
+        data = make_lichess_game_json()
+        del data["lastMoveAt"]
+        data["createdAt"] = created_ms
+        game = ChessGame.from_lichess_json(data, "PlayerA")
+        assert game.end_time == datetime.datetime(2025, 5, 1, 10, 0, 0)
+
+    def test_both_timestamps_absent_falls_back_to_now(self):
+        """When both lastMoveAt and createdAt are absent, falls back to now()."""
+        data = make_lichess_game_json()
+        del data["lastMoveAt"]
+        del data["createdAt"]
+        game = ChessGame.from_lichess_json(data, "PlayerA")
+        assert isinstance(game.end_time, datetime.datetime)
+
+    def test_unknown_speed_passes_through(self):
+        """A speed not in _LICHESS_SPEED_MAP is used as-is."""
+        data = make_lichess_game_json(speed="atomic")
+        game = ChessGame.from_lichess_json(data, "PlayerA")
+        assert game.time_class == "atomic"
+
+    def test_missing_game_id_gives_empty_url(self):
+        """When 'id' is absent, game_url is empty."""
+        data = make_lichess_game_json()
+        del data["id"]
+        game = ChessGame.from_lichess_json(data, "PlayerA")
+        assert game.game_url == ""
+
+    def test_ai_opponent_returns_none_for_spectator(self):
+        """An AI opponent (no 'user' key) returns None if username doesn't match."""
+        data = make_lichess_game_json()
+        data["players"]["black"] = {"aiLevel": 3}  # no user key
+        game = ChessGame.from_lichess_json(data, "SomeoneElse")
+        assert game is None

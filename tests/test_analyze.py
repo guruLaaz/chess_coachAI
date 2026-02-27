@@ -8,8 +8,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from analyze import _is_current_month, fetch_games, run_analysis, main
-from helpers import make_game_json, make_chess_game
+from analyze import (_is_current_month, fetch_games, fetch_lichess_games,
+                     fetch_all_sources, run_analysis, main)
+from helpers import make_game_json, make_chess_game, make_lichess_game_json
 
 
 class TestIsCurrentMonth:
@@ -441,7 +442,8 @@ class TestMain:
 
     def _make_args(self, **overrides):
         args = MagicMock()
-        args.username = "bob"
+        args.chesscom_user = "bob"
+        args.lichess_user = ""
         args.days = 0
         args.depth = 18
         args.stockfish = "/path/to/stockfish"
@@ -567,3 +569,120 @@ class TestMain:
             main()
 
         MockCache.return_value.close.assert_called_once()
+
+    @patch("analyze.GameCache")
+    @patch("analyze.os.makedirs")
+    @patch("analyze.argparse.ArgumentParser")
+    @patch("analyze.os.path.isfile", return_value=True)
+    def test_no_users_provided_exits_with_error(self, mock_isfile, MockParser,
+                                                  mock_makedirs, MockCache):
+        """Both users empty → parser.error is called."""
+        args = self._make_args(chesscom_user="", lichess_user="")
+        MockParser.return_value.parse_args.return_value = args
+
+        # parser.error() raises SystemExit(2) by default
+        MockParser.return_value.error.side_effect = SystemExit(2)
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 2
+        MockParser.return_value.error.assert_called_once()
+
+
+class TestFetchLichessGames:
+    """Tests for fetch_lichess_games()."""
+
+    @pytest.mark.asyncio
+    async def test_fetches_and_parses_lichess_games(self):
+        lichess_game = make_lichess_game_json(
+            white_user="alice", black_user="bob",
+            winner="white", speed="blitz", game_id="test123",
+        )
+        with patch("analyze.LichessFetcher") as MockFetcher:
+            instance = MockFetcher.return_value
+            instance.fetch_games = AsyncMock(return_value=[lichess_game])
+            games = await fetch_lichess_games("alice", 0)
+        assert len(games) == 1
+        assert games[0].game_url == "https://lichess.org/test123"
+        assert games[0].time_class == "blitz"
+
+    @pytest.mark.asyncio
+    async def test_lichess_api_error_exits(self):
+        with patch("analyze.LichessFetcher") as MockFetcher:
+            instance = MockFetcher.return_value
+            instance.fetch_games = AsyncMock(side_effect=Exception("Network error"))
+            with pytest.raises(SystemExit) as exc_info:
+                await fetch_lichess_games("alice", 0)
+            assert exc_info.value.code == 1
+
+    @pytest.mark.asyncio
+    async def test_days_filter_computes_since(self):
+        with patch("analyze.LichessFetcher") as MockFetcher:
+            instance = MockFetcher.return_value
+            instance.fetch_games = AsyncMock(return_value=[])
+            await fetch_lichess_games("alice", 30)
+            call_args = instance.fetch_games.call_args
+            assert call_args[1].get("since") is not None
+
+    @pytest.mark.asyncio
+    async def test_include_tc_filter_applied(self):
+        lichess_game = make_lichess_game_json(
+            white_user="alice", black_user="bob",
+            winner="white", speed="rapid", game_id="r1",
+        )
+        with patch("analyze.LichessFetcher") as MockFetcher:
+            instance = MockFetcher.return_value
+            instance.fetch_games = AsyncMock(return_value=[lichess_game])
+            games = await fetch_lichess_games("alice", 0, include_tc={"rapid"})
+        assert len(games) == 1
+
+    @pytest.mark.asyncio
+    async def test_exclude_tc_filter_applied(self):
+        lichess_game = make_lichess_game_json(
+            white_user="alice", black_user="bob",
+            winner="white", speed="bullet", game_id="b1",
+        )
+        with patch("analyze.LichessFetcher") as MockFetcher:
+            instance = MockFetcher.return_value
+            instance.fetch_games = AsyncMock(return_value=[lichess_game])
+            games = await fetch_lichess_games("alice", 0, exclude_tc={"bullet"})
+        assert len(games) == 0
+
+    @pytest.mark.asyncio
+    async def test_days_zero_sends_no_since(self):
+        """When days=0, since param is not sent to Lichess API."""
+        with patch("analyze.LichessFetcher") as MockFetcher:
+            instance = MockFetcher.return_value
+            instance.fetch_games = AsyncMock(return_value=[])
+            await fetch_lichess_games("alice", 0)
+            call_args = instance.fetch_games.call_args
+            assert call_args[1].get("since") is None
+
+
+class TestFetchAllSources:
+    """Tests for fetch_all_sources() merging both platforms."""
+
+    @pytest.mark.asyncio
+    async def test_chesscom_only(self):
+        with patch("analyze.fetch_games", new_callable=AsyncMock) as mock_cc:
+            mock_cc.return_value = [MagicMock(game_url="cc1")]
+            games = await fetch_all_sources("bob", "", 0)
+        assert len(games) == 1
+        mock_cc.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_lichess_only(self):
+        with patch("analyze.fetch_lichess_games", new_callable=AsyncMock) as mock_li:
+            mock_li.return_value = [MagicMock(game_url="li1")]
+            games = await fetch_all_sources("", "alice", 0)
+        assert len(games) == 1
+        mock_li.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_both_sources_merged(self):
+        with patch("analyze.fetch_games", new_callable=AsyncMock) as mock_cc, \
+             patch("analyze.fetch_lichess_games", new_callable=AsyncMock) as mock_li:
+            mock_cc.return_value = [MagicMock(game_url="cc1")]
+            mock_li.return_value = [MagicMock(game_url="li1")]
+            games = await fetch_all_sources("bob", "alice", 0)
+        assert len(games) == 2
