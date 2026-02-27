@@ -145,6 +145,7 @@ class CoachingReportGenerator:
             "svg_played": svg_played,
             "times_played": count,
             "game_url": ev.game_url,
+            "eval_loss_raw": ev.eval_loss_cp,
             "win_pct": win_pct,
             "loss_pct": loss_pct,
         }
@@ -356,6 +357,17 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             text-decoration: none;
         }
         .game-link:hover { text-decoration: underline; color: #93bbfc; }
+        .sort-controls { display: inline; }
+        .sort-select {
+            background: #334155;
+            color: #e2e8f0;
+            border: 1px solid #475569;
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+        .sort-select:hover { border-color: #60a5fa; }
         .empty-state { text-align: center; padding: 80px 20px; color: #64748b; }
         .empty-state h2 { color: #94a3b8; margin-bottom: 12px; }
         @media (max-width: 768px) {
@@ -389,14 +401,22 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
         <main class="main">
             <h1>Chess Coach: {{ username }}</h1>
             {% if filter_eco %}
-            <p class="subtitle">Showing {{ items|length }} deviations for {{ filter_eco }} as {{ filter_color }} &mdash; sorted by biggest mistake{% if min_times > 1 %} ({{ min_times }}+ occurrences){% endif %}</p>
+            <p class="subtitle">Showing {{ items|length }} deviations for {{ filter_eco }} as {{ filter_color }} &mdash; sorted by
+                <select id="sort-select" class="sort-select">
+                    <option value="eval-loss">Biggest mistake</option>
+                    <option value="loss-pct">Loss %</option>
+                </select>{% if min_times > 1 %} ({{ min_times }}+ occurrences){% endif %}</p>
             {% else %}
-            <p class="subtitle">{{ items|length }} positions where you deviated from book/engine &mdash; sorted by biggest mistake{% if min_times > 1 %} ({{ min_times }}+ occurrences){% endif %}</p>
+            <p class="subtitle">{{ items|length }} positions where you deviated from book/engine &mdash; sorted by
+                <select id="sort-select" class="sort-select">
+                    <option value="eval-loss">Biggest mistake</option>
+                    <option value="loss-pct">Loss %</option>
+                </select>{% if min_times > 1 %} ({{ min_times }}+ occurrences){% endif %}</p>
             {% endif %}
 
             {% if items %}
                 {% for item in items %}
-                <div class="card {{ 'positive' if item.eval_loss_class == 'good' else '' }}">
+                <div class="card {{ 'positive' if item.eval_loss_class == 'good' else '' }}" data-eval-loss="{{ item.eval_loss_raw }}" data-loss-pct="{{ item.loss_pct }}">
                     <div class="card-header">
                         <span class="card-title">
                             {{ item.eco_name }}
@@ -444,5 +464,21 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
         </main>
     </div>
 
+    <script>
+    (function() {
+        var select = document.getElementById('sort-select');
+        if (!select) return;
+        select.addEventListener('change', function() {
+            var container = document.querySelector('.main');
+            var cards = Array.from(container.querySelectorAll('.card'));
+            if (!cards.length) return;
+            var attr = 'data-' + select.value;
+            cards.sort(function(a, b) {
+                return parseFloat(b.getAttribute(attr)) - parseFloat(a.getAttribute(attr));
+            });
+            cards.forEach(function(card) { container.appendChild(card); });
+        });
+    })();
+    </script>
 </body>
 </html>"""

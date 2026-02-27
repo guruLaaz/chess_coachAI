@@ -393,3 +393,37 @@ class TestWinLossBadge:
         assert r["win"] == 0
         assert r["loss"] == 0
         assert r["draw"] == 0
+
+
+class TestSortDropdown:
+    """Tests for the sort dropdown and data attributes."""
+
+    def test_sort_dropdown_present(self):
+        """Sort dropdown select element appears in the report."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b'id="sort-select"' in resp.data
+        assert b"Biggest mistake" in resp.data
+        assert b"Loss %" in resp.data
+
+    def test_data_attributes_on_cards(self):
+        """Cards have data-eval-loss and data-loss-pct attributes."""
+        evals = [_make_eval(eval_loss_cp=120, my_result="loss")]
+        gen = CoachingReportGenerator("player", evals)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b'data-eval-loss="120"' in resp.data
+        assert b'data-loss-pct="100"' in resp.data
+
+    def test_sort_dropdown_on_filtered_page(self):
+        """Sort dropdown also appears on opening-filtered pages."""
+        evals = [_make_eval(eco_code="B90")]
+        gen = CoachingReportGenerator("player", evals)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/opening/B90/white")
+        assert b'id="sort-select"' in resp.data
