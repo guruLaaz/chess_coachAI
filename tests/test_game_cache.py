@@ -354,6 +354,48 @@ class TestMyResultCache:
         assert result.my_result == ""
 
 
+class TestTimeClassCache:
+    """Tests for the time_class column."""
+
+    def test_time_class_round_trip(self, cache):
+        ev = OpeningEvaluation(
+            eco_code="B90", eco_name="Sicilian", my_color="white",
+            deviation_ply=6, deviating_side="black", eval_cp=30,
+            is_fully_booked=False, time_class="blitz",
+        )
+        cache.save_evaluation("https://game/1", "bob", 18, ev)
+        result = cache.get_evaluation("https://game/1", 18)
+        assert result.time_class == "blitz"
+
+    def test_time_class_batch_round_trip(self, cache):
+        evals = [
+            ("https://game/1", OpeningEvaluation(
+                eco_code="B90", eco_name="Sicilian", my_color="white",
+                deviation_ply=6, deviating_side="black", eval_cp=30,
+                is_fully_booked=False, time_class="rapid",
+            )),
+            ("https://game/2", OpeningEvaluation(
+                eco_code="B90", eco_name="Sicilian", my_color="white",
+                deviation_ply=6, deviating_side="black", eval_cp=-10,
+                is_fully_booked=False, time_class="bullet",
+            )),
+        ]
+        cache.save_evaluations_batch("bob", 18, evals)
+        results = cache.get_cached_evaluations(["https://game/1", "https://game/2"], 18)
+        assert results["https://game/1"].time_class == "rapid"
+        assert results["https://game/2"].time_class == "bullet"
+
+    def test_time_class_empty_default(self, cache):
+        ev = OpeningEvaluation(
+            eco_code="B90", eco_name="Sicilian", my_color="white",
+            deviation_ply=6, deviating_side="black", eval_cp=30,
+            is_fully_booked=False,
+        )
+        cache.save_evaluation("https://game/1", "bob", 18, ev)
+        result = cache.get_evaluation("https://game/1", 18)
+        assert result.time_class == ""
+
+
 class TestCacheLifecycle:
     def test_close_and_reopen(self, tmp_path):
         db_path = str(tmp_path / "lifecycle.db")

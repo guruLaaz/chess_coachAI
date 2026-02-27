@@ -427,3 +427,41 @@ class TestSortDropdown:
         app.config["TESTING"] = True
         resp = app.test_client().get("/opening/B90/white")
         assert b'id="sort-select"' in resp.data
+
+
+class TestTimeControlFilter:
+    """Tests for the time control filter dropdown."""
+
+    def test_filter_checkboxes_present(self):
+        """Time control filter checkboxes appear in the report."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b'class="tc-filter"' in resp.data
+        assert b"Bullet" in resp.data
+        assert b"Blitz" in resp.data
+        assert b"Rapid" in resp.data
+        assert b"Daily" in resp.data
+
+    def test_data_time_class_attribute(self):
+        """Cards have data-time-class attribute."""
+        evals = [_make_eval()]
+        # Set time_class on the eval
+        evals[0].time_class = "blitz"
+        gen = CoachingReportGenerator("player", evals)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b'data-time-class="blitz"' in resp.data
+
+    def test_unknown_time_class_fallback(self):
+        """Evals with empty time_class get 'unknown' in template."""
+        evals = [_make_eval()]
+        evals[0].time_class = ""
+        gen = CoachingReportGenerator("player", evals)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b'data-time-class="unknown"' in resp.data

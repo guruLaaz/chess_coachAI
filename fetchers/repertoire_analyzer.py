@@ -32,6 +32,7 @@ class OpeningEvaluation:
     game_moves_uci: List[str] = field(default_factory=list)  # full game as UCI strings
     game_url: str = ""          # Chess.com game URL
     my_result: str = ""         # "win", "loss", or "draw"
+    time_class: str = ""        # "bullet", "blitz", "rapid", "daily"
 
 
 @dataclass
@@ -87,9 +88,15 @@ class RepertoireAnalyzer:
     def analyze_game(self, game):
         """Analyze a single game's opening and return an OpeningEvaluation.
 
-        Returns None if the game has no PGN or is too short.
+        Returns None if the game has no PGN, is too short, or missing time_class.
         """
         if not game.pgn:
+            return None
+
+        if not game.time_class:
+            import warnings
+            url = getattr(game, 'game_url', 'unknown')
+            warnings.warn(f"Skipping game with missing time_class: {url}")
             return None
 
         moves = PGNParser.parse_moves(game.pgn)
@@ -123,6 +130,7 @@ class RepertoireAnalyzer:
             eval_loss_cp=eval_loss_cp,
             game_moves_uci=[m.uci() for m in moves],
             my_result=self._game_result(game),
+            time_class=game.time_class or "",
         )
 
     def _preprocess_game(self, game):
@@ -323,6 +331,7 @@ class RepertoireAnalyzer:
             game_moves_uci=[m.uci() for m in moves] if moves else [],
             game_url=game.game_url if game.game_url else "",
             my_result=self._game_result(game),
+            time_class=game.time_class or "",
         )
 
     @staticmethod

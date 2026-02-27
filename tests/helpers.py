@@ -32,7 +32,7 @@ def make_archive_response(games_data):
 
 def make_chess_game(my_color="white", white_result="win", black_result="lose",
                     end_time=None, pgn=None, eco_code=None, eco_name=None,
-                    time_class=None, game_url=""):
+                    time_class="blitz", game_url=""):
     """Build a ChessGame object directly for analyzer/filter tests."""
     if end_time is None:
         end_time = datetime.datetime(2025, 6, 15, 12, 0, 0)

@@ -753,6 +753,58 @@ class TestMyResult:
             assert result.my_result == "loss", f"Expected 'loss' for '{loss_result}'"
 
 
+class TestTimeClass:
+    """Tests for time_class being populated from game data."""
+
+    def test_time_class_populated(self):
+        game = _make_game_with_pgn(my_color="white")
+        game.time_class = "rapid"
+
+        mock_detector = MagicMock()
+        mock_detector.find_deviation.return_value = _mock_deviation()
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate.return_value = _mock_eval(cp=10)
+
+        analyzer = RepertoireAnalyzer("player", mock_detector, mock_evaluator)
+        result = analyzer.analyze_game(game)
+
+        assert result.time_class == "rapid"
+
+    def test_time_class_none_skips_with_warning(self):
+        game = _make_game_with_pgn(my_color="white")
+        game.time_class = None
+
+        mock_detector = MagicMock()
+        mock_evaluator = MagicMock()
+
+        analyzer = RepertoireAnalyzer("player", mock_detector, mock_evaluator)
+        import warnings
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = analyzer.analyze_game(game)
+            assert result is None
+            assert len(w) == 1
+            assert "missing time_class" in str(w[0].message)
+
+    def test_time_class_in_repertoire(self):
+        game = _make_game_with_pgn(my_color="white", game_url="https://game/1")
+        game.time_class = "blitz"
+
+        mock_detector = MagicMock()
+        mock_detector.find_deviation.return_value = _mock_deviation()
+
+        mock_evaluator = MagicMock()
+        mock_evaluator.evaluate.return_value = _mock_eval(cp=10)
+
+        analyzer = RepertoireAnalyzer("player", mock_detector, mock_evaluator)
+        _, new_evals = analyzer.analyze_repertoire([game])
+
+        assert len(new_evals) == 1
+        _, ev = new_evals[0]
+        assert ev.time_class == "blitz"
+
+
 class TestGameMovesUci:
     """Tests for game_moves_uci being populated in evaluations."""
 

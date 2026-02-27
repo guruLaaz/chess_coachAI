@@ -6,6 +6,7 @@ import asyncio
 import os
 import re
 import sys
+import time
 
 # Add fetchers/ to import path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "fetchers"))
@@ -137,6 +138,7 @@ def run_analysis(games, username, stockfish_path, book_path, depth,
         new_evals = []
         print("  All games already cached, skipping engine analysis.")
     else:
+        t_start = time.perf_counter()
         with StockfishEvaluator(stockfish_path, depth=depth) as evaluator:
             rep_analyzer = RepertoireAnalyzer(username, detector, evaluator)
 
@@ -148,6 +150,11 @@ def run_analysis(games, username, stockfish_path, book_path, depth,
                 uncached_games, progress_callback=progress, workers=workers,
                 cached_evaluations=cached_evals)
             print()  # clear the \r line
+        elapsed = time.perf_counter() - t_start
+        n_analyzed = len(uncached_games)
+        per_game = elapsed / n_analyzed if n_analyzed else 0
+        print(f"  Analysis took {elapsed:.1f}s total, {per_game:.2f}s/game "
+              f"({n_analyzed} games, {workers} worker{'s' if workers != 1 else ''})")
 
     # Cache newly computed evaluations
     if cache and new_evals:

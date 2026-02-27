@@ -148,6 +148,7 @@ class CoachingReportGenerator:
             "eval_loss_raw": ev.eval_loss_cp,
             "win_pct": win_pct,
             "loss_pct": loss_pct,
+            "time_class": ev.time_class or "unknown",
         }
 
     def _get_opening_groups(self):
@@ -368,6 +369,43 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             cursor: pointer;
         }
         .sort-select:hover { border-color: #60a5fa; }
+        .filter-wrapper {
+            display: inline-block;
+            position: relative;
+            margin-left: 12px;
+        }
+        .filter-btn {
+            background: #334155;
+            color: #e2e8f0;
+            border: 1px solid #475569;
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+        .filter-btn:hover { border-color: #60a5fa; }
+        .filter-panel {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            margin-top: 4px;
+            background: #1e293b;
+            border: 1px solid #475569;
+            border-radius: 8px;
+            padding: 8px 12px;
+            z-index: 100;
+            min-width: 140px;
+        }
+        .filter-panel.open { display: block; }
+        .filter-panel label {
+            display: block;
+            padding: 4px 0;
+            font-size: 0.85rem;
+            color: #cbd5e1;
+            cursor: pointer;
+        }
+        .filter-panel input[type="checkbox"] { margin-right: 6px; }
         .empty-state { text-align: center; padding: 80px 20px; color: #64748b; }
         .empty-state h2 { color: #94a3b8; margin-bottom: 12px; }
         @media (max-width: 768px) {
@@ -401,22 +439,40 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
         <main class="main">
             <h1>Chess Coach: {{ username }}</h1>
             {% if filter_eco %}
-            <p class="subtitle">Showing {{ items|length }} deviations for {{ filter_eco }} as {{ filter_color }} &mdash; sorted by
+            <div class="subtitle">Showing {{ items|length }} deviations for {{ filter_eco }} as {{ filter_color }} &mdash; sorted by
                 <select id="sort-select" class="sort-select">
                     <option value="eval-loss">Biggest mistake</option>
                     <option value="loss-pct">Loss %</option>
-                </select>{% if min_times > 1 %} ({{ min_times }}+ occurrences){% endif %}</p>
+                </select>{% if min_times > 1 %} ({{ min_times }}+ occurrences){% endif %}
+                <span class="filter-wrapper">
+                    <button class="filter-btn" id="filter-btn">Time controls &#9662;</button>
+                    <div class="filter-panel" id="filter-panel">
+                        <label><input type="checkbox" class="tc-filter" value="bullet" checked> Bullet</label>
+                        <label><input type="checkbox" class="tc-filter" value="blitz" checked> Blitz</label>
+                        <label><input type="checkbox" class="tc-filter" value="rapid" checked> Rapid</label>
+                        <label><input type="checkbox" class="tc-filter" value="daily" checked> Daily</label>
+                    </div>
+                </span></div>
             {% else %}
-            <p class="subtitle">{{ items|length }} positions where you deviated from book/engine &mdash; sorted by
+            <div class="subtitle">{{ items|length }} positions where you deviated from book/engine &mdash; sorted by
                 <select id="sort-select" class="sort-select">
                     <option value="eval-loss">Biggest mistake</option>
                     <option value="loss-pct">Loss %</option>
-                </select>{% if min_times > 1 %} ({{ min_times }}+ occurrences){% endif %}</p>
+                </select>{% if min_times > 1 %} ({{ min_times }}+ occurrences){% endif %}
+                <span class="filter-wrapper">
+                    <button class="filter-btn" id="filter-btn">Time controls &#9662;</button>
+                    <div class="filter-panel" id="filter-panel">
+                        <label><input type="checkbox" class="tc-filter" value="bullet" checked> Bullet</label>
+                        <label><input type="checkbox" class="tc-filter" value="blitz" checked> Blitz</label>
+                        <label><input type="checkbox" class="tc-filter" value="rapid" checked> Rapid</label>
+                        <label><input type="checkbox" class="tc-filter" value="daily" checked> Daily</label>
+                    </div>
+                </span></div>
             {% endif %}
 
             {% if items %}
                 {% for item in items %}
-                <div class="card {{ 'positive' if item.eval_loss_class == 'good' else '' }}" data-eval-loss="{{ item.eval_loss_raw }}" data-loss-pct="{{ item.loss_pct }}">
+                <div class="card {{ 'positive' if item.eval_loss_class == 'good' else '' }}" data-eval-loss="{{ item.eval_loss_raw }}" data-loss-pct="{{ item.loss_pct }}" data-time-class="{{ item.time_class }}">
                     <div class="card-header">
                         <span class="card-title">
                             {{ item.eco_name }}
@@ -466,18 +522,49 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
 
     <script>
     (function() {
+        /* Sort dropdown */
         var select = document.getElementById('sort-select');
-        if (!select) return;
-        select.addEventListener('change', function() {
-            var container = document.querySelector('.main');
-            var cards = Array.from(container.querySelectorAll('.card'));
-            if (!cards.length) return;
-            var attr = 'data-' + select.value;
-            cards.sort(function(a, b) {
-                return parseFloat(b.getAttribute(attr)) - parseFloat(a.getAttribute(attr));
+        if (select) {
+            select.addEventListener('change', function() {
+                var container = document.querySelector('.main');
+                var cards = Array.from(container.querySelectorAll('.card'));
+                if (!cards.length) return;
+                var attr = 'data-' + select.value;
+                cards.sort(function(a, b) {
+                    return parseFloat(b.getAttribute(attr)) - parseFloat(a.getAttribute(attr));
+                });
+                cards.forEach(function(card) { container.appendChild(card); });
             });
-            cards.forEach(function(card) { container.appendChild(card); });
-        });
+        }
+
+        /* Time control filter */
+        var filterBtn = document.getElementById('filter-btn');
+        var filterPanel = document.getElementById('filter-panel');
+        if (filterBtn && filterPanel) {
+            filterBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                filterPanel.classList.toggle('open');
+            });
+            document.addEventListener('click', function(e) {
+                if (!filterPanel.contains(e.target)) {
+                    filterPanel.classList.remove('open');
+                }
+            });
+            var checkboxes = document.querySelectorAll('.tc-filter');
+            checkboxes.forEach(function(cb) {
+                cb.addEventListener('change', function() {
+                    var enabled = new Set();
+                    checkboxes.forEach(function(c) {
+                        if (c.checked) enabled.add(c.value);
+                    });
+                    var cards = document.querySelectorAll('.card');
+                    cards.forEach(function(card) {
+                        var tc = card.getAttribute('data-time-class');
+                        card.style.display = (!tc || enabled.has(tc)) ? '' : 'none';
+                    });
+                });
+            });
+        }
     })();
     </script>
 </body>
