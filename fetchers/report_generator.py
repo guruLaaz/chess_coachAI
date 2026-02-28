@@ -14,9 +14,10 @@ from repertoire_analyzer import OpeningEvaluation
 class CoachingReportGenerator:
     """Flask web app that displays coaching recommendations with static SVG boards."""
 
-    def __init__(self, username, evaluations, min_times=1):
+    def __init__(self, username, evaluations, min_times=1, endgame_stats=None):
         self.username = username
         self.min_times = min_times
+        self.endgame_stats = endgame_stats or []
         # Filter to player deviations that have coaching data
         candidates = [
             ev for ev in evaluations
@@ -171,6 +172,8 @@ class CoachingReportGenerator:
         """Create and configure the Flask app."""
         app = Flask(__name__)
 
+        endgame_count = sum(s["total"] for s in self.endgame_stats)
+
         @app.route("/")
         def index():
             items = [self._prepare_deviation(ev) for ev in self.deviations]
@@ -184,6 +187,8 @@ class CoachingReportGenerator:
                 min_times=self.min_times,
                 filter_eco=None,
                 filter_color=None,
+                page="openings",
+                endgame_count=endgame_count,
             )
 
         @app.route("/opening/<eco_code>/<color>")
@@ -203,6 +208,21 @@ class CoachingReportGenerator:
                 min_times=self.min_times,
                 filter_eco=eco_code,
                 filter_color=color,
+                page="openings",
+                endgame_count=endgame_count,
+            )
+
+        @app.route("/endgames")
+        def endgames():
+            groups = self._get_opening_groups()
+            return render_template_string(
+                _ENDGAME_TEMPLATE,
+                username=self.username,
+                stats=self.endgame_stats,
+                endgame_count=endgame_count,
+                groups=groups,
+                total=len(self.deviations),
+                page="endgames",
             )
 
         return app
@@ -426,7 +446,7 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
     <div class="layout">
         <nav class="sidebar">
             <h2>Openings</h2>
-            <a href="/" {% if not filter_eco %}class="active"{% endif %}>
+            <a href="/" {% if page == 'openings' and not filter_eco %}class="active"{% endif %}>
                 All deviations <span class="count">{{ total }}</span>
             </a>
             {% for g in groups %}
@@ -436,6 +456,10 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                 <span class="count">{{ g.count }}</span>
             </a>
             {% endfor %}
+            <h2 style="margin-top: 24px;">Analysis</h2>
+            <a href="/endgames" {% if page == 'endgames' %}class="active"{% endif %}>
+                Endgames <span class="count">{{ endgame_count }}</span>
+            </a>
         </nav>
         <main class="main">
             <h1>Chess Coach: {{ username }}</h1>
@@ -444,7 +468,7 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                 <select id="sort-select" class="sort-select">
                     <option value="eval-loss">Biggest mistake</option>
                     <option value="loss-pct">Loss %</option>
-                </select>{% if min_times > 1 %} ({{ min_times }}+ occurrences){% endif %}
+                </select>
                 <span class="filter-wrapper">
                     <button class="filter-btn" id="filter-btn">Time controls &#9662;</button>
                     <div class="filter-panel" id="filter-panel">
@@ -459,6 +483,18 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                     <div class="filter-panel" id="platform-panel">
                         <label><input type="checkbox" class="platform-filter" value="chesscom" checked> Chess.com</label>
                         <label><input type="checkbox" class="platform-filter" value="lichess" checked> Lichess</label>
+                    </div>
+                </span>
+                <span class="filter-wrapper">
+                    <button class="filter-btn" id="min-games-btn">Min games &#9662;</button>
+                    <div class="filter-panel" id="min-games-panel">
+                        <select id="min-games-select" class="sort-select" style="width:100%">
+                            <option value="1" selected>1+ (all)</option>
+                            <option value="2">2+</option>
+                            <option value="3">3+</option>
+                            <option value="5">5+</option>
+                            <option value="10">10+</option>
+                        </select>
                     </div>
                 </span></div>
             {% else %}
@@ -466,7 +502,7 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                 <select id="sort-select" class="sort-select">
                     <option value="eval-loss">Biggest mistake</option>
                     <option value="loss-pct">Loss %</option>
-                </select>{% if min_times > 1 %} ({{ min_times }}+ occurrences){% endif %}
+                </select>
                 <span class="filter-wrapper">
                     <button class="filter-btn" id="filter-btn">Time controls &#9662;</button>
                     <div class="filter-panel" id="filter-panel">
@@ -482,12 +518,24 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                         <label><input type="checkbox" class="platform-filter" value="chesscom" checked> Chess.com</label>
                         <label><input type="checkbox" class="platform-filter" value="lichess" checked> Lichess</label>
                     </div>
+                </span>
+                <span class="filter-wrapper">
+                    <button class="filter-btn" id="min-games-btn">Min games &#9662;</button>
+                    <div class="filter-panel" id="min-games-panel">
+                        <select id="min-games-select" class="sort-select" style="width:100%">
+                            <option value="1" selected>1+ (all)</option>
+                            <option value="2">2+</option>
+                            <option value="3">3+</option>
+                            <option value="5">5+</option>
+                            <option value="10">10+</option>
+                        </select>
+                    </div>
                 </span></div>
             {% endif %}
 
             {% if items %}
                 {% for item in items %}
-                <div class="card {{ 'positive' if item.eval_loss_class == 'good' else '' }}" data-eval-loss="{{ item.eval_loss_raw }}" data-loss-pct="{{ item.loss_pct }}" data-time-class="{{ item.time_class }}" data-platform="{{ item.platform }}">
+                <div class="card {{ 'positive' if item.eval_loss_class == 'good' else '' }}" data-eval-loss="{{ item.eval_loss_raw }}" data-loss-pct="{{ item.loss_pct }}" data-time-class="{{ item.time_class }}" data-platform="{{ item.platform }}" data-times="{{ item.times_played }}">
                     <div class="card-header">
                         <span class="card-title">
                             {{ item.eco_name }}
@@ -555,29 +603,345 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
         /* Shared filter logic: card visible only if it passes ALL active filters */
         var tcChecks = document.querySelectorAll('.tc-filter');
         var platChecks = document.querySelectorAll('.platform-filter');
+        var minGamesSelect = document.getElementById('min-games-select');
 
         function applyFilters() {
             var enabledTC = new Set();
             tcChecks.forEach(function(c) { if (c.checked) enabledTC.add(c.value); });
             var enabledPlat = new Set();
             platChecks.forEach(function(c) { if (c.checked) enabledPlat.add(c.value); });
+            var minGames = minGamesSelect ? parseInt(minGamesSelect.value, 10) : 1;
 
             document.querySelectorAll('.card').forEach(function(card) {
                 var tc = card.getAttribute('data-time-class');
                 var pl = card.getAttribute('data-platform');
+                var times = parseInt(card.getAttribute('data-times'), 10) || 0;
                 var tcOk = !tc || enabledTC.has(tc);
                 var plOk = !pl || enabledPlat.has(pl);
-                card.style.display = (tcOk && plOk) ? '' : 'none';
+                var minOk = times >= minGames;
+                card.style.display = (tcOk && plOk && minOk) ? '' : 'none';
             });
         }
 
         tcChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
         platChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
+        if (minGamesSelect) { minGamesSelect.addEventListener('change', applyFilters); }
 
         /* Dropdown panel toggles */
         var panels = [
             {btn: document.getElementById('filter-btn'), panel: document.getElementById('filter-panel')},
-            {btn: document.getElementById('platform-btn'), panel: document.getElementById('platform-panel')}
+            {btn: document.getElementById('platform-btn'), panel: document.getElementById('platform-panel')},
+            {btn: document.getElementById('min-games-btn'), panel: document.getElementById('min-games-panel')}
+        ];
+        panels.forEach(function(p) {
+            if (p.btn && p.panel) {
+                p.btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    p.panel.classList.toggle('open');
+                });
+            }
+        });
+        document.addEventListener('click', function(e) {
+            panels.forEach(function(p) {
+                if (p.panel && !p.panel.contains(e.target) && e.target !== p.btn) {
+                    p.panel.classList.remove('open');
+                }
+            });
+        });
+    })();
+    </script>
+</body>
+</html>"""
+
+
+_ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Coach - {{ username }} - Endgames</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+        }
+        .layout { display: flex; min-height: 100vh; }
+        .sidebar {
+            width: 280px;
+            background: #1e293b;
+            border-right: 1px solid #334155;
+            padding: 20px 0;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+        .sidebar h2 {
+            padding: 0 16px;
+            font-size: 0.85rem;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        .sidebar a {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 16px;
+            color: #94a3b8;
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: all 0.15s;
+        }
+        .sidebar a:hover { background: #334155; color: #e2e8f0; }
+        .sidebar a.active {
+            background: #1e3a5f;
+            color: #60a5fa;
+            border-left: 3px solid #3b82f6;
+        }
+        .count {
+            background: #334155;
+            color: #94a3b8;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.75rem;
+        }
+        .main {
+            flex: 1;
+            padding: 30px 40px;
+            max-width: 960px;
+        }
+        h1 { font-size: 1.6rem; margin-bottom: 8px; color: #f8fafc; }
+        .subtitle { color: #94a3b8; margin-bottom: 24px; font-size: 0.95rem; }
+        .endgame-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+        .endgame-table th {
+            text-align: left;
+            padding: 10px 14px;
+            border-bottom: 2px solid #334155;
+            color: #94a3b8;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .endgame-table th.num { text-align: right; }
+        .endgame-table td {
+            padding: 10px 14px;
+            border-bottom: 1px solid #1e293b;
+            font-size: 0.95rem;
+        }
+        .endgame-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+        .endgame-table tr:hover { background: #1e293b; }
+        .type-label {
+            font-weight: 600;
+            color: #e2e8f0;
+        }
+        .balance-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        .balance-equal { background: #334155; color: #94a3b8; }
+        .balance-up { background: #14532d; color: #4ade80; }
+        .balance-down { background: #450a0a; color: #f87171; }
+        .pct-good { color: #4ade80; }
+        .pct-bad { color: #f87171; }
+        .pct-neutral { color: #94a3b8; }
+        .sort-select {
+            background: #334155;
+            color: #e2e8f0;
+            border: 1px solid #475569;
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+        .sort-select:hover { border-color: #60a5fa; }
+        .filter-wrapper {
+            display: inline-block;
+            position: relative;
+            margin-left: 12px;
+        }
+        .filter-btn {
+            background: #334155;
+            color: #e2e8f0;
+            border: 1px solid #475569;
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+        .filter-btn:hover { border-color: #60a5fa; }
+        .filter-panel {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            margin-top: 4px;
+            background: #1e293b;
+            border: 1px solid #475569;
+            border-radius: 8px;
+            padding: 8px 12px;
+            z-index: 100;
+            min-width: 140px;
+        }
+        .filter-panel.open { display: block; }
+        .filter-panel label {
+            display: block;
+            padding: 4px 0;
+            font-size: 0.85rem;
+            color: #cbd5e1;
+            cursor: pointer;
+        }
+        .filter-panel input[type="checkbox"] { margin-right: 6px; }
+        .empty-state { text-align: center; padding: 80px 20px; color: #64748b; }
+        .empty-state h2 { color: #94a3b8; margin-bottom: 12px; }
+        @media (max-width: 768px) {
+            .layout { flex-direction: column; }
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: static;
+                border-right: none;
+                border-bottom: 1px solid #334155;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="layout">
+        <nav class="sidebar">
+            <h2>Openings</h2>
+            <a href="/" {% if page == 'openings' and not filter_eco %}class="active"{% endif %}>
+                All deviations <span class="count">{{ total }}</span>
+            </a>
+            {% for g in groups %}
+            <a href="/opening/{{ g.eco_code }}/{{ g.color }}">
+                {{ g.eco_name }} ({{ g.color }})
+                <span class="count">{{ g.count }}</span>
+            </a>
+            {% endfor %}
+            <h2 style="margin-top: 24px;">Analysis</h2>
+            <a href="/endgames" {% if page == 'endgames' %}class="active"{% endif %}>
+                Endgames <span class="count">{{ endgame_count }}</span>
+            </a>
+        </nav>
+        <main class="main">
+            <h1>Chess Coach: {{ username }}</h1>
+            <div class="subtitle">Endgame performance &mdash; {{ endgame_count }} games reached an endgame &mdash; sorted by
+                <select id="eg-sort-select" class="sort-select">
+                    <option value="data-total" selected>Games</option>
+                    <option value="data-win-pct">Win %</option>
+                    <option value="data-loss-pct">Loss %</option>
+                    <option value="data-draw-pct">Draw %</option>
+                </select>
+                <span class="filter-wrapper">
+                    <button class="filter-btn" id="eg-balance-btn">Balance &#9662;</button>
+                    <div class="filter-panel" id="eg-balance-panel">
+                        <label><input type="checkbox" class="balance-filter" value="up" checked> Up</label>
+                        <label><input type="checkbox" class="balance-filter" value="equal" checked> Equal</label>
+                        <label><input type="checkbox" class="balance-filter" value="down" checked> Down</label>
+                    </div>
+                </span>
+                <span class="filter-wrapper">
+                    <button class="filter-btn" id="eg-min-games-btn">Min games &#9662;</button>
+                    <div class="filter-panel" id="eg-min-games-panel">
+                        <select id="eg-min-games-select" class="sort-select" style="width:100%">
+                            <option value="1" selected>1+ (all)</option>
+                            <option value="2">2+</option>
+                            <option value="3">3+</option>
+                            <option value="5">5+</option>
+                            <option value="10">10+</option>
+                        </select>
+                    </div>
+                </span></div>
+
+            {% if stats %}
+            <table class="endgame-table">
+                <thead>
+                    <tr>
+                        <th>Endgame Type</th>
+                        <th>Balance</th>
+                        <th class="num">Games</th>
+                        <th class="num">Win %</th>
+                        <th class="num">Loss %</th>
+                        <th class="num">Draw %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in stats %}
+                    <tr data-win-pct="{{ s.win_pct }}" data-loss-pct="{{ s.loss_pct }}" data-draw-pct="{{ s.draw_pct }}" data-total="{{ s.total }}" data-balance="{{ s.balance }}">
+                        <td><span class="type-label">{{ s.type }}</span></td>
+                        <td><span class="balance-badge balance-{{ s.balance }}">{{ s.balance }}</span></td>
+                        <td class="num">{{ s.total }}</td>
+                        <td class="num {{ 'pct-good' if s.win_pct >= 50 else 'pct-bad' if s.win_pct < 30 else 'pct-neutral' }}">{{ s.win_pct }}%</td>
+                        <td class="num {{ 'pct-bad' if s.loss_pct >= 50 else 'pct-good' if s.loss_pct < 20 else 'pct-neutral' }}">{{ s.loss_pct }}%</td>
+                        <td class="num pct-neutral">{{ s.draw_pct }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty-state">
+                <h2>No endgames detected</h2>
+                <p>None of the analyzed games reached an endgame position.</p>
+            </div>
+            {% endif %}
+        </main>
+    </div>
+
+    <script>
+    (function() {
+        /* Sort dropdown for endgame table */
+        var sortSelect = document.getElementById('eg-sort-select');
+        var tbody = document.querySelector('.endgame-table tbody');
+        if (sortSelect && tbody) {
+            sortSelect.addEventListener('change', function() {
+                var attr = sortSelect.value;
+                var rows = Array.from(tbody.querySelectorAll('tr'));
+                rows.sort(function(a, b) {
+                    return parseFloat(b.getAttribute(attr)) - parseFloat(a.getAttribute(attr));
+                });
+                rows.forEach(function(row) { tbody.appendChild(row); });
+            });
+        }
+
+        /* Combined filter: balance checkboxes + min games */
+        var balanceChecks = document.querySelectorAll('.balance-filter');
+        var minSelect = document.getElementById('eg-min-games-select');
+
+        function applyFilters() {
+            if (!tbody) return;
+            var enabledBalance = new Set();
+            balanceChecks.forEach(function(c) { if (c.checked) enabledBalance.add(c.value); });
+            var min = minSelect ? parseInt(minSelect.value, 10) : 1;
+
+            tbody.querySelectorAll('tr').forEach(function(row) {
+                var balance = row.getAttribute('data-balance');
+                var total = parseInt(row.getAttribute('data-total'), 10) || 0;
+                var balOk = !balance || enabledBalance.has(balance);
+                var minOk = total >= min;
+                row.style.display = (balOk && minOk) ? '' : 'none';
+            });
+        }
+
+        balanceChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
+        if (minSelect) { minSelect.addEventListener('change', applyFilters); }
+
+        /* Dropdown panel toggles */
+        var panels = [
+            {btn: document.getElementById('eg-balance-btn'), panel: document.getElementById('eg-balance-panel')},
+            {btn: document.getElementById('eg-min-games-btn'), panel: document.getElementById('eg-min-games-panel')}
         ];
         panels.forEach(function(p) {
             if (p.btn && p.panel) {

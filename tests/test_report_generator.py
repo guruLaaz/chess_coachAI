@@ -299,14 +299,20 @@ class TestDeviationGrouping:
         gen = CoachingReportGenerator("player", evals, min_times=5)
         assert gen.deviations == []
 
-    def test_min_times_report_shows_filter_label(self):
-        """Subtitle mentions min_times when > 1."""
-        evals = [_make_eval(), _make_eval()]
-        gen = CoachingReportGenerator("testuser", evals, min_times=2)
+    def test_min_times_server_side_still_works(self):
+        """Server-side min_times still filters deviations before rendering."""
+        evals = [
+            _make_eval(played_move="g1f3"),  # 1 occurrence
+            _make_eval(played_move="d2d4"),
+            _make_eval(played_move="d2d4"),
+            _make_eval(played_move="d2d4"),  # 3 occurrences
+        ]
+        gen = CoachingReportGenerator("testuser", evals, min_times=3)
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
-        assert b"2+ occurrences" in resp.data
+        assert resp.status_code == 200
+        assert len(gen.deviations) == 1
 
 
 class TestInvalidBookMoves:
@@ -519,3 +525,210 @@ class TestPlatformFilter:
         app.config["TESTING"] = True
         resp = app.test_client().get("/opening/B90/white")
         assert b'class="platform-filter"' in resp.data
+
+
+class TestMinGamesFilter:
+    """Tests for the client-side min games filter dropdown."""
+
+    def test_min_games_select_present(self):
+        """Min games select dropdown appears in the report."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b'id="min-games-select"' in resp.data
+        assert b"Min games" in resp.data
+
+    def test_min_games_options(self):
+        """Min games select has expected threshold options."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        html = resp.data.decode()
+        assert 'value="1"' in html
+        assert 'value="2"' in html
+        assert 'value="5"' in html
+        assert 'value="10"' in html
+
+    def test_data_times_attribute_on_cards(self):
+        """Cards have data-times attribute with times_played value."""
+        evals = [
+            _make_eval(played_move="g1f3"),
+            _make_eval(played_move="g1f3"),
+            _make_eval(played_move="g1f3"),
+        ]
+        gen = CoachingReportGenerator("player", evals)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b'data-times="3"' in resp.data
+
+    def test_min_games_on_filtered_page(self):
+        """Min games filter also appears on opening-filtered pages."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/opening/B90/white")
+        assert b'id="min-games-select"' in resp.data
+
+
+class TestEndgamePage:
+    """Tests for the /endgames report page."""
+
+    _SAMPLE_STATS = [
+        {"type": "R vs R", "balance": "equal", "total": 30,
+         "wins": 14, "losses": 12, "draws": 4,
+         "win_pct": 47, "loss_pct": 40, "draw_pct": 13},
+        {"type": "Pawn", "balance": "up", "total": 10,
+         "wins": 8, "losses": 1, "draws": 1,
+         "win_pct": 80, "loss_pct": 10, "draw_pct": 10},
+    ]
+
+    def test_endgames_route_returns_200(self):
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._SAMPLE_STATS)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/endgames")
+        assert resp.status_code == 200
+
+    def test_endgames_table_shows_types(self):
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._SAMPLE_STATS)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/endgames")
+        assert b"R vs R" in resp.data
+        assert b"Pawn" in resp.data
+
+    def test_endgames_table_shows_percentages(self):
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._SAMPLE_STATS)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/endgames")
+        assert b"47%" in resp.data
+        assert b"80%" in resp.data
+
+    def test_endgames_shows_balance_badges(self):
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._SAMPLE_STATS)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/endgames")
+        assert b"balance-equal" in resp.data
+        assert b"balance-up" in resp.data
+
+    def test_sidebar_has_endgames_link(self):
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._SAMPLE_STATS)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b"/endgames" in resp.data
+        assert b"Endgames" in resp.data
+
+    def test_empty_endgame_stats(self):
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals, endgame_stats=[])
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/endgames")
+        assert b"No endgames detected" in resp.data
+
+    def test_endgame_count_in_sidebar(self):
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._SAMPLE_STATS)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        # Total endgame count: 30 + 10 = 40
+        assert b"40" in resp.data
+
+    def test_sort_dropdown_present(self):
+        """Sort dropdown appears on endgames page."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._SAMPLE_STATS)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/endgames")
+        assert b'id="eg-sort-select"' in resp.data
+        assert b"Win %" in resp.data
+        assert b"Loss %" in resp.data
+        assert b"Draw %" in resp.data
+
+    def test_sort_data_attributes_on_rows(self):
+        """Table rows have data attributes for sorting."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._SAMPLE_STATS)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/endgames")
+        html = resp.data.decode()
+        assert 'data-win-pct="47"' in html
+        assert 'data-loss-pct="40"' in html
+        assert 'data-draw-pct="13"' in html
+        assert 'data-total="30"' in html
+
+    def test_min_games_filter_present(self):
+        """Min games filter dropdown appears on endgames page."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._SAMPLE_STATS)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/endgames")
+        assert b'id="eg-min-games-select"' in resp.data
+        assert b"Min games" in resp.data
+
+    def test_min_games_filter_options(self):
+        """Min games select has expected threshold options."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._SAMPLE_STATS)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/endgames")
+        html = resp.data.decode()
+        assert 'value="1"' in html
+        assert 'value="2"' in html
+        assert 'value="5"' in html
+        assert 'value="10"' in html
+
+    def test_balance_filter_checkboxes_present(self):
+        """Balance filter checkboxes appear on endgames page."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._SAMPLE_STATS)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/endgames")
+        assert b'class="balance-filter"' in resp.data
+        assert b"Balance" in resp.data
+        assert b'value="up"' in resp.data
+        assert b'value="equal"' in resp.data
+        assert b'value="down"' in resp.data
+
+    def test_data_balance_attribute_on_rows(self):
+        """Table rows have data-balance attribute."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._SAMPLE_STATS)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/endgames")
+        html = resp.data.decode()
+        assert 'data-balance="equal"' in html
+        assert 'data-balance="up"' in html

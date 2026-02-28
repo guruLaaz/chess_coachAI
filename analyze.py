@@ -20,6 +20,7 @@ from opening_detector import OpeningDetector
 from stockfish_evaluator import StockfishEvaluator
 from repertoire_analyzer import RepertoireAnalyzer
 from game_cache import GameCache
+from endgame_detector import EndgameClassifier
 
 # Paths relative to this script
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -44,11 +45,11 @@ async def fetch_games(username, days, include_tc=None, exclude_tc=None,
     """Fetch and parse games from Chess.com, using cache when available."""
     fetcher = ChessCom_Fetcher(user_agent="chess_coachAI/1.0")
 
-    print(f"Fetching archives for {username}...")
+    print(f"[Chess.com] Fetching archives for {username}...")
     try:
         archive_urls = await fetcher.get_archives(username)
     except Exception as e:
-        print(f"Error: Could not connect to Chess.com API: {e}")
+        print(f"[Chess.com] Error: Could not connect to API: {e}")
         sys.exit(1)
 
     raw_games = []
@@ -75,20 +76,20 @@ async def fetch_games(username, days, include_tc=None, exclude_tc=None,
                 cache.save_archive(url, username, month_data)
 
     if cache:
-        print(f"  Archives: {fetched_months} fetched from API, {cached_months} from cache")
+        print(f"[Chess.com]   Archives: {fetched_months} fetched from API, {cached_months} from cache")
 
     games = [g for g in (ChessGame.from_json(g, username) for g in raw_games) if g is not None]
-    print(f"  Found {len(raw_games)} raw games, {len(games)} as {username}")
+    print(f"[Chess.com]   Found {len(raw_games)} raw games, {len(games)} as {username}")
 
     if days > 0:
         games = filter_games_by_days(games, days)
-        print(f"  Filtered to last {days} days: {len(games)} games")
+        print(f"[Chess.com]   Filtered to last {days} days: {len(games)} games")
 
     if include_tc or exclude_tc:
         before = len(games)
         games = filter_games_by_time_class(games, include=include_tc, exclude=exclude_tc)
         label = ", ".join(include_tc) if include_tc else f"excluding {', '.join(exclude_tc)}"
-        print(f"  Time control filter ({label}): {before} -> {len(games)} games")
+        print(f"[Chess.com]   Time control filter ({label}): {before} -> {len(games)} games")
 
     return games
 
@@ -104,26 +105,26 @@ async def fetch_lichess_games(username, days, include_tc=None, exclude_tc=None):
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         since_ms = int(cutoff.timestamp() * 1000)
 
-    print(f"Fetching Lichess games for {username}...")
+    print(f"[Lichess] Fetching games for {username}...")
     try:
         raw_games = await fetcher.fetch_games(username, since=since_ms)
     except Exception as e:
-        print(f"Error: Could not connect to Lichess API: {e}")
+        print(f"[Lichess] Error: Could not connect to API: {e}")
         sys.exit(1)
 
     games = [g for g in (ChessGame.from_lichess_json(g, username)
                           for g in raw_games) if g is not None]
-    print(f"  Fetched {len(raw_games)} raw games, {len(games)} as {username}")
+    print(f"[Lichess]   Fetched {len(raw_games)} raw games, {len(games)} as {username}")
 
     if days > 0:
         games = filter_games_by_days(games, days)
-        print(f"  Filtered to last {days} days: {len(games)} games")
+        print(f"[Lichess]   Filtered to last {days} days: {len(games)} games")
 
     if include_tc or exclude_tc:
         before = len(games)
         games = filter_games_by_time_class(games, include=include_tc, exclude=exclude_tc)
         label = ", ".join(include_tc) if include_tc else f"excluding {', '.join(exclude_tc)}"
-        print(f"  Time control filter ({label}): {before} -> {len(games)} games")
+        print(f"[Lichess]   Time control filter ({label}): {before} -> {len(games)} games")
 
     return games
 
@@ -323,6 +324,19 @@ def main():
 
         print(f"\nTotal games for analysis: {len(games)}")
 
+        # Endgame analysis (fast, no Stockfish needed)
+        endgame_stats = EndgameClassifier.aggregate(games)
+        endgame_total = sum(s["total"] for s in endgame_stats)
+        if endgame_stats:
+            print(f"\n--- Endgame Stats ({endgame_total} games reached endgame"
+                  f" out of {len(games)}) ---")
+            for s in endgame_stats[:10]:
+                print(f"  {s['type']} ({s['balance']}): {s['total']:>4} games"
+                      f" | W {s['win_pct']:>3}% | L {s['loss_pct']:>3}%"
+                      f" | D {s['draw_pct']:>3}%")
+            if len(endgame_stats) > 10:
+                print(f"  ... and {len(endgame_stats) - 10} more types")
+
         all_evals = run_analysis(games, display_username, args.stockfish, args.book,
                                  args.depth, args.workers, cache=cache,
                                  report=args.report,
@@ -331,7 +345,8 @@ def main():
         if args.report and all_evals:
             from report_generator import CoachingReportGenerator
             generator = CoachingReportGenerator(display_username, all_evals,
-                                                   min_times=args.min_times)
+                                                   min_times=args.min_times,
+                                                   endgame_stats=endgame_stats)
             generator.run()
     finally:
         cache.close()

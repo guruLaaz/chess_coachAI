@@ -497,6 +497,7 @@ class TestMain:
             main()
         assert exc_info.value.code == 0
 
+    @patch("analyze.EndgameClassifier")
     @patch("analyze.run_analysis")
     @patch("analyze.asyncio.run")
     @patch("analyze.GameCache")
@@ -504,8 +505,10 @@ class TestMain:
     @patch("analyze.argparse.ArgumentParser")
     @patch("analyze.os.path.isfile", return_value=True)
     def test_report_launches_generator(self, mock_isfile, MockParser, mock_makedirs,
-                                        MockCache, mock_asyncio_run, mock_run_analysis):
+                                        MockCache, mock_asyncio_run, mock_run_analysis,
+                                        MockEndgame):
         """--report flag creates and runs CoachingReportGenerator."""
+        MockEndgame.aggregate.return_value = []
         MockParser.return_value.parse_args.return_value = self._make_args(report=True)
         game = self._make_args()  # just needs to be truthy
         mock_asyncio_run.return_value = [game]
@@ -535,6 +538,7 @@ class TestMain:
                 report_mod.CoachingReportGenerator.assert_called_once()
                 report_mod.CoachingReportGenerator.return_value.run.assert_called_once()
 
+    @patch("analyze.EndgameClassifier")
     @patch("analyze.run_analysis")
     @patch("analyze.asyncio.run")
     @patch("analyze.GameCache")
@@ -542,8 +546,10 @@ class TestMain:
     @patch("analyze.argparse.ArgumentParser")
     @patch("analyze.os.path.isfile", return_value=True)
     def test_cache_closed_on_success(self, mock_isfile, MockParser, mock_makedirs,
-                                      MockCache, mock_asyncio_run, mock_run_analysis):
+                                      MockCache, mock_asyncio_run, mock_run_analysis,
+                                      MockEndgame):
         """cache.close() is called on successful execution."""
+        MockEndgame.aggregate.return_value = []
         MockParser.return_value.parse_args.return_value = self._make_args()
         mock_asyncio_run.return_value = [MagicMock()]
         mock_run_analysis.return_value = None
@@ -552,6 +558,7 @@ class TestMain:
 
         MockCache.return_value.close.assert_called_once()
 
+    @patch("analyze.EndgameClassifier")
     @patch("analyze.run_analysis")
     @patch("analyze.asyncio.run")
     @patch("analyze.GameCache")
@@ -559,8 +566,10 @@ class TestMain:
     @patch("analyze.argparse.ArgumentParser")
     @patch("analyze.os.path.isfile", return_value=True)
     def test_cache_closed_on_error(self, mock_isfile, MockParser, mock_makedirs,
-                                    MockCache, mock_asyncio_run, mock_run_analysis):
+                                    MockCache, mock_asyncio_run, mock_run_analysis,
+                                    MockEndgame):
         """cache.close() is called even when an error occurs."""
+        MockEndgame.aggregate.return_value = []
         MockParser.return_value.parse_args.return_value = self._make_args()
         mock_asyncio_run.return_value = [MagicMock()]
         mock_run_analysis.side_effect = RuntimeError("boom")
