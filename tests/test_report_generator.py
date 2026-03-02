@@ -582,10 +582,18 @@ class TestEndgamePage:
     _SAMPLE_STATS = [
         {"type": "R vs R", "balance": "equal", "total": 30,
          "wins": 14, "losses": 12, "draws": 4,
-         "win_pct": 47, "loss_pct": 40, "draw_pct": 13},
+         "win_pct": 47, "loss_pct": 40, "draw_pct": 13,
+         "example_fen": "r3k3/pppp1ppp/8/8/8/8/PPPP1PPP/R3K3 w - - 0 1",
+         "example_game_url": "https://www.chess.com/game/live/99999",
+         "example_color": "white",
+         "example_material_diff": 0},
         {"type": "Pawn", "balance": "up", "total": 10,
          "wins": 8, "losses": 1, "draws": 1,
-         "win_pct": 80, "loss_pct": 10, "draw_pct": 10},
+         "win_pct": 80, "loss_pct": 10, "draw_pct": 10,
+         "example_fen": "4k3/pppp1ppp/8/8/4P3/8/PPPP1PPP/4K3 w - - 0 1",
+         "example_game_url": "https://lichess.org/abc12345",
+         "example_color": "white",
+         "example_material_diff": 1},
     ]
 
     def test_endgames_route_returns_200(self):
@@ -722,7 +730,7 @@ class TestEndgamePage:
         assert b'value="down"' in resp.data
 
     def test_data_balance_attribute_on_rows(self):
-        """Table rows have data-balance attribute."""
+        """Cards have data-balance attribute."""
         evals = [_make_eval()]
         gen = CoachingReportGenerator("player", evals,
                                       endgame_stats=self._SAMPLE_STATS)
@@ -732,3 +740,59 @@ class TestEndgamePage:
         html = resp.data.decode()
         assert 'data-balance="equal"' in html
         assert 'data-balance="up"' in html
+
+    def test_svg_board_rendered(self):
+        """SVG board appears on endgames page for stats with example_fen."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._SAMPLE_STATS)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/endgames")
+        assert b"<svg" in resp.data
+        assert b"Example game" in resp.data
+
+    def test_game_link_on_endgames(self):
+        """Game link appears for stats with example_game_url."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._SAMPLE_STATS)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/endgames")
+        assert b"view example game" in resp.data
+        assert b"chess.com/game/live/99999" in resp.data
+        assert b"lichess.org/abc12345" in resp.data
+
+    def test_eval_badge_displayed(self):
+        """Material evaluation badge appears next to the example board."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._SAMPLE_STATS)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/endgames")
+        html = resp.data.decode()
+        assert "eval-badge" in html
+        # R vs R has diff=0 → "0 pawns" with eval-zero class
+        assert "eval-zero" in html
+        # Pawn has diff=+1 → "+1 pawns" with eval-positive class
+        assert "eval-positive" in html
+        assert "+1 pawns" in html
+
+    def test_no_board_when_no_fen(self):
+        """No SVG board when example_fen is empty."""
+        stats_no_fen = [
+            {"type": "R vs R", "balance": "equal", "total": 5,
+             "wins": 3, "losses": 1, "draws": 1,
+             "win_pct": 60, "loss_pct": 20, "draw_pct": 20,
+             "example_fen": "", "example_game_url": "", "example_color": "white"},
+        ]
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=stats_no_fen)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/endgames")
+        assert b"<svg" not in resp.data
+        assert b"view example game" not in resp.data

@@ -28,6 +28,9 @@ class EndgameInfo:
     endgame_ply: int           # ply at which endgame was first detected
     material_balance: str      # "equal", "up", "down"
     my_result: str             # "win", "loss", "draw"
+    fen_at_endgame: str = ""   # FEN when endgame was first detected
+    game_url: str = ""         # link to the game
+    material_diff: int = 0     # my_material - opponent_material (in pawns)
 
 
 class EndgameClassifier:
@@ -86,7 +89,7 @@ class EndgameClassifier:
     def classify_position(board, my_color):
         """Classify an endgame position.
 
-        Returns (endgame_type, material_balance).
+        Returns (endgame_type, material_balance, material_diff).
         """
         color_map = {"white": chess.WHITE, "black": chess.BLACK}
         my_c = color_map[my_color]
@@ -109,14 +112,16 @@ class EndgameClassifier:
         my_mat = EndgameClassifier._material_value(board, my_c)
         opp_mat = EndgameClassifier._material_value(board, opp_c)
 
-        if my_mat > opp_mat:
+        material_diff = my_mat - opp_mat
+
+        if material_diff > 0:
             material_balance = "up"
-        elif my_mat < opp_mat:
+        elif material_diff < 0:
             material_balance = "down"
         else:
             material_balance = "equal"
 
-        return endgame_type, material_balance
+        return endgame_type, material_balance, material_diff
 
     @staticmethod
     def _game_result(game):
@@ -146,13 +151,16 @@ class EndgameClassifier:
         for ply, move in enumerate(moves):
             board.push(move)
             if cls.is_endgame(board):
-                endgame_type, material_balance = cls.classify_position(
-                    board, game.my_color)
+                endgame_type, material_balance, material_diff = (
+                    cls.classify_position(board, game.my_color))
                 return EndgameInfo(
                     endgame_type=endgame_type,
                     endgame_ply=ply,
                     material_balance=material_balance,
                     my_result=cls._game_result(game),
+                    fen_at_endgame=board.fen(),
+                    game_url=game.game_url or "",
+                    material_diff=material_diff,
                 )
 
         return None
@@ -161,12 +169,11 @@ class EndgameClassifier:
     def aggregate(cls, games):
         """Analyze all games and return grouped endgame statistics.
 
-        Returns a list of dicts sorted by game count descending:
-        [{"type": "R vs R", "balance": "equal", "total": 30,
-          "wins": 14, "losses": 12, "draws": 4,
-          "win_pct": 47, "loss_pct": 40, "draw_pct": 13}, ...]
+        Returns a list of dicts sorted by game count descending.
+        Each dict includes an example game (most recent) with FEN and URL.
         """
         counts = {}  # (type, balance) -> {"wins": n, "losses": n, "draws": n}
+        representatives = {}  # (type, balance) -> {"fen", "game_url", "color", "end_time"}
 
         for game in games:
             info = cls.analyze_game(game)
@@ -184,9 +191,22 @@ class EndgameClassifier:
             else:
                 counts[key]["draws"] += 1
 
+            # Track most recent game as representative example
+            end_time = getattr(game, "end_time", None)
+            prev = representatives.get(key)
+            if prev is None or (end_time and end_time > prev["end_time"]):
+                representatives[key] = {
+                    "fen": info.fen_at_endgame,
+                    "game_url": info.game_url,
+                    "color": game.my_color,
+                    "end_time": end_time,
+                    "material_diff": info.material_diff,
+                }
+
         results = []
         for (eg_type, balance), c in counts.items():
             total = c["wins"] + c["losses"] + c["draws"]
+            rep = representatives.get((eg_type, balance), {})
             results.append({
                 "type": eg_type,
                 "balance": balance,
@@ -197,6 +217,10 @@ class EndgameClassifier:
                 "win_pct": round(100 * c["wins"] / total) if total else 0,
                 "loss_pct": round(100 * c["losses"] / total) if total else 0,
                 "draw_pct": round(100 * c["draws"] / total) if total else 0,
+                "example_fen": rep.get("fen", ""),
+                "example_game_url": rep.get("game_url", ""),
+                "example_color": rep.get("color", "white"),
+                "example_material_diff": rep.get("material_diff", 0),
             })
 
         results.sort(key=lambda x: x["total"], reverse=True)

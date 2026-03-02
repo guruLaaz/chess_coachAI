@@ -1,5 +1,7 @@
 """Tests for endgame detection and classification."""
 
+import datetime
+
 import chess
 import pytest
 
@@ -123,44 +125,48 @@ class TestMaterialValue:
 class TestClassifyPosition:
     def test_rook_vs_rook_equal(self):
         board = chess.Board(ROOK_ENDGAME_FEN)
-        eg_type, balance = EndgameClassifier.classify_position(board, "white")
+        eg_type, balance, diff = EndgameClassifier.classify_position(board, "white")
         assert eg_type == "R vs R"
         assert balance == "equal"
+        assert diff == 0
 
     def test_pawn_endgame(self):
         board = chess.Board(PAWN_ENDGAME_FEN)
-        eg_type, balance = EndgameClassifier.classify_position(board, "white")
+        eg_type, balance, diff = EndgameClassifier.classify_position(board, "white")
         assert eg_type == "Pawn"
         assert balance == "equal"
+        assert diff == 0
 
     def test_queen_endgame(self):
         board = chess.Board(QUEEN_ENDGAME_FEN)
-        eg_type, balance = EndgameClassifier.classify_position(board, "white")
+        eg_type, balance, _diff = EndgameClassifier.classify_position(board, "white")
         assert eg_type == "Q vs Q"
 
     def test_rook_bishop_vs_rook(self):
         board = chess.Board(RB_VS_R_FEN)
-        eg_type, balance = EndgameClassifier.classify_position(board, "white")
+        eg_type, balance, diff = EndgameClassifier.classify_position(board, "white")
         assert eg_type == "RB vs R"
         assert balance == "up"
+        assert diff == 3  # bishop worth 3 pawns
 
     def test_rook_bishop_vs_rook_from_black(self):
         """Same position from black's perspective → down material."""
         board = chess.Board(RB_VS_R_FEN)
-        eg_type, balance = EndgameClassifier.classify_position(board, "black")
+        eg_type, balance, diff = EndgameClassifier.classify_position(board, "black")
         assert eg_type == "R vs RB"
         assert balance == "down"
+        assert diff == -3
 
     def test_rook_vs_nothing(self):
         board = chess.Board(R_VS_NONE_FEN)
-        eg_type, balance = EndgameClassifier.classify_position(board, "white")
+        eg_type, balance, _diff = EndgameClassifier.classify_position(board, "white")
         assert eg_type == "R vs -"
         assert balance == "up"
 
     def test_nothing_vs_rook(self):
         """From the disadvantaged side."""
         board = chess.Board(R_VS_NONE_FEN)
-        eg_type, balance = EndgameClassifier.classify_position(board, "black")
+        eg_type, balance, _diff = EndgameClassifier.classify_position(board, "black")
         assert eg_type == "- vs R"
         assert balance == "down"
 
@@ -169,7 +175,7 @@ class TestClassifyPosition:
         # White: Ke1 + 4 pawns, Black: Ke8 + 3 pawns
         fen = "4k3/ppp2ppp/8/8/4P3/8/PPPP1PPP/4K3 w - - 0 1"
         board = chess.Board(fen)
-        eg_type, balance = EndgameClassifier.classify_position(board, "white")
+        eg_type, balance, _diff = EndgameClassifier.classify_position(board, "white")
         assert eg_type == "Pawn"
         assert balance == "up"
 
@@ -264,6 +270,51 @@ class TestAnalyzeGame:
         assert isinstance(info.endgame_type, str)
         assert info.material_balance in ("equal", "up", "down")
 
+    def test_fen_at_endgame_populated(self):
+        """analyze_game populates fen_at_endgame with a valid FEN."""
+        game = make_chess_game(
+            pgn=ROOK_ENDGAME_PGN, my_color="white",
+            white_result="win", black_result="resigned",
+        )
+        info = EndgameClassifier.analyze_game(game)
+        assert info is not None
+        assert info.fen_at_endgame != ""
+        # Verify it's a valid FEN by parsing it
+        board = chess.Board(info.fen_at_endgame)
+        assert board is not None
+
+    def test_game_url_populated(self):
+        """analyze_game captures game_url from the game object."""
+        game = make_chess_game(
+            pgn=ROOK_ENDGAME_PGN, my_color="white",
+            white_result="win", black_result="resigned",
+            game_url="https://www.chess.com/game/live/12345",
+        )
+        info = EndgameClassifier.analyze_game(game)
+        assert info is not None
+        assert info.game_url == "https://www.chess.com/game/live/12345"
+
+    def test_game_url_empty_when_missing(self):
+        """analyze_game returns empty game_url when game has none."""
+        game = make_chess_game(
+            pgn=ROOK_ENDGAME_PGN, my_color="white",
+            white_result="win", black_result="resigned",
+            game_url="",
+        )
+        info = EndgameClassifier.analyze_game(game)
+        assert info is not None
+        assert info.game_url == ""
+
+    def test_material_diff_populated(self):
+        """analyze_game populates material_diff as an integer."""
+        game = make_chess_game(
+            pgn=ROOK_ENDGAME_PGN, my_color="white",
+            white_result="win", black_result="resigned",
+        )
+        info = EndgameClassifier.analyze_game(game)
+        assert info is not None
+        assert isinstance(info.material_diff, int)
+
 
 class TestAggregate:
     def test_multiple_games(self):
@@ -352,6 +403,50 @@ class TestAggregate:
         stats = EndgameClassifier.aggregate(games)
         for i in range(len(stats) - 1):
             assert stats[i]["total"] >= stats[i + 1]["total"]
+
+    def test_aggregate_includes_example_fields(self):
+        """Each aggregate result includes example_fen, example_game_url, example_color, example_material_diff."""
+        games = [
+            make_chess_game(
+                pgn=ROOK_ENDGAME_PGN, my_color="white",
+                white_result="win", black_result="resigned",
+                game_url="https://www.chess.com/game/live/111",
+            ),
+        ]
+        stats = EndgameClassifier.aggregate(games)
+        assert len(stats) >= 1
+        s = stats[0]
+        assert "example_fen" in s
+        assert s["example_fen"] != ""
+        assert s["example_game_url"] == "https://www.chess.com/game/live/111"
+        assert s["example_color"] == "white"
+        assert "example_material_diff" in s
+        assert isinstance(s["example_material_diff"], int)
+
+    def test_aggregate_picks_most_recent_game(self):
+        """Representative example is the most recent game by end_time."""
+        old_time = datetime.datetime(2025, 1, 1, 12, 0, 0)
+        new_time = datetime.datetime(2025, 6, 15, 12, 0, 0)
+        games = [
+            make_chess_game(
+                pgn=ROOK_ENDGAME_PGN, my_color="white",
+                white_result="win", black_result="resigned",
+                game_url="https://www.chess.com/game/live/old",
+                end_time=old_time,
+            ),
+            make_chess_game(
+                pgn=ROOK_ENDGAME_PGN, my_color="white",
+                white_result="win", black_result="resigned",
+                game_url="https://www.chess.com/game/live/new",
+                end_time=new_time,
+            ),
+        ]
+        stats = EndgameClassifier.aggregate(games)
+        assert len(stats) >= 1
+        # Both games have same type+balance, so they merge into one group
+        # The most recent game (new_time) should be the representative
+        s = stats[0]
+        assert s["example_game_url"] == "https://www.chess.com/game/live/new"
 
     def test_empty_games_list(self):
         stats = EndgameClassifier.aggregate([])

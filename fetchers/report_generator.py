@@ -215,10 +215,22 @@ class CoachingReportGenerator:
         @app.route("/endgames")
         def endgames():
             groups = self._get_opening_groups()
+            # Render SVG boards for each endgame example
+            enriched = []
+            for s in self.endgame_stats:
+                entry = dict(s)
+                fen = s.get("example_fen", "")
+                color = s.get("example_color", "white")
+                if fen:
+                    entry["svg_board"] = self._render_board_svg(
+                        fen, None, color, "")
+                else:
+                    entry["svg_board"] = ""
+                enriched.append(entry)
             return render_template_string(
                 _ENDGAME_TEMPLATE,
                 username=self.username,
-                stats=self.endgame_stats,
+                stats=enriched,
                 endgame_count=endgame_count,
                 groups=groups,
                 total=len(self.deviations),
@@ -718,28 +730,6 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
         }
         h1 { font-size: 1.6rem; margin-bottom: 8px; color: #f8fafc; }
         .subtitle { color: #94a3b8; margin-bottom: 24px; font-size: 0.95rem; }
-        .endgame-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 16px;
-        }
-        .endgame-table th {
-            text-align: left;
-            padding: 10px 14px;
-            border-bottom: 2px solid #334155;
-            color: #94a3b8;
-            font-size: 0.85rem;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        .endgame-table th.num { text-align: right; }
-        .endgame-table td {
-            padding: 10px 14px;
-            border-bottom: 1px solid #1e293b;
-            font-size: 0.95rem;
-        }
-        .endgame-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
-        .endgame-table tr:hover { background: #1e293b; }
         .type-label {
             font-weight: 600;
             color: #e2e8f0;
@@ -757,6 +747,58 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
         .pct-good { color: #4ade80; }
         .pct-bad { color: #f87171; }
         .pct-neutral { color: #94a3b8; }
+        .eg-card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin-bottom: 16px;
+            border-left: 4px solid #334155;
+        }
+        .eg-card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .eg-games {
+            color: #94a3b8;
+            font-size: 0.9rem;
+            margin-left: auto;
+        }
+        .eg-stat {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        .eg-card-body {
+            margin-top: 16px;
+            text-align: center;
+        }
+        .board-panel { display: inline-block; text-align: center; }
+        .board-panel h4 {
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+            color: #94a3b8;
+        }
+        .board-panel svg { border-radius: 4px; }
+        .game-link {
+            display: inline-block;
+            margin-top: 10px;
+            font-size: 0.85rem;
+            color: #60a5fa;
+            text-decoration: none;
+        }
+        .game-link:hover { text-decoration: underline; color: #93bbfc; }
+        .eval-badge {
+            display: inline-block;
+            margin-top: 6px;
+            padding: 2px 10px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .eval-positive { background: #166534; color: #4ade80; }
+        .eval-negative { background: #7f1d1d; color: #f87171; }
+        .eval-zero     { background: #334155; color: #94a3b8; }
         .sort-select {
             background: #334155;
             color: #e2e8f0;
@@ -867,30 +909,33 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                 </span></div>
 
             {% if stats %}
-            <table class="endgame-table">
-                <thead>
-                    <tr>
-                        <th>Endgame Type</th>
-                        <th>Balance</th>
-                        <th class="num">Games</th>
-                        <th class="num">Win %</th>
-                        <th class="num">Loss %</th>
-                        <th class="num">Draw %</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for s in stats %}
-                    <tr data-win-pct="{{ s.win_pct }}" data-loss-pct="{{ s.loss_pct }}" data-draw-pct="{{ s.draw_pct }}" data-total="{{ s.total }}" data-balance="{{ s.balance }}">
-                        <td><span class="type-label">{{ s.type }}</span></td>
-                        <td><span class="balance-badge balance-{{ s.balance }}">{{ s.balance }}</span></td>
-                        <td class="num">{{ s.total }}</td>
-                        <td class="num {{ 'pct-good' if s.win_pct >= 50 else 'pct-bad' if s.win_pct < 30 else 'pct-neutral' }}">{{ s.win_pct }}%</td>
-                        <td class="num {{ 'pct-bad' if s.loss_pct >= 50 else 'pct-good' if s.loss_pct < 20 else 'pct-neutral' }}">{{ s.loss_pct }}%</td>
-                        <td class="num pct-neutral">{{ s.draw_pct }}%</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                {% for s in stats %}
+                <div class="eg-card" data-win-pct="{{ s.win_pct }}" data-loss-pct="{{ s.loss_pct }}" data-draw-pct="{{ s.draw_pct }}" data-total="{{ s.total }}" data-balance="{{ s.balance }}">
+                    <div class="eg-card-header">
+                        <span class="type-label">{{ s.type }}</span>
+                        <span class="balance-badge balance-{{ s.balance }}">{{ s.balance }}</span>
+                        <span class="eg-games">{{ s.total }} games</span>
+                        <span class="eg-stat {{ 'pct-good' if s.win_pct >= 50 else 'pct-bad' if s.win_pct < 30 else 'pct-neutral' }}">W {{ s.win_pct }}%</span>
+                        <span class="eg-stat {{ 'pct-bad' if s.loss_pct >= 50 else 'pct-good' if s.loss_pct < 20 else 'pct-neutral' }}">L {{ s.loss_pct }}%</span>
+                        <span class="eg-stat pct-neutral">D {{ s.draw_pct }}%</span>
+                    </div>
+                    {% if s.svg_board %}
+                    <div class="eg-card-body">
+                        <div class="board-panel">
+                            <h4>Example game</h4>
+                            {{ s.svg_board | safe }}
+                            {% set diff = s.get("example_material_diff", 0) %}
+                            <div class="eval-badge {{ 'eval-positive' if diff > 0 else 'eval-negative' if diff < 0 else 'eval-zero' }}">
+                                {{ "+%d"|format(diff) if diff > 0 else diff }} pawns
+                            </div>
+                        </div>
+                        {% if s.example_game_url %}
+                        <a class="game-link" href="{{ s.example_game_url }}" target="_blank" rel="noopener">view example game &rarr;</a>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
             {% else %}
             <div class="empty-state">
                 <h2>No endgames detected</h2>
@@ -902,17 +947,17 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
 
     <script>
     (function() {
-        /* Sort dropdown for endgame table */
+        /* Sort dropdown for endgame cards */
         var sortSelect = document.getElementById('eg-sort-select');
-        var tbody = document.querySelector('.endgame-table tbody');
-        if (sortSelect && tbody) {
+        var container = document.querySelector('.main');
+        if (sortSelect && container) {
             sortSelect.addEventListener('change', function() {
                 var attr = sortSelect.value;
-                var rows = Array.from(tbody.querySelectorAll('tr'));
-                rows.sort(function(a, b) {
+                var cards = Array.from(container.querySelectorAll('.eg-card'));
+                cards.sort(function(a, b) {
                     return parseFloat(b.getAttribute(attr)) - parseFloat(a.getAttribute(attr));
                 });
-                rows.forEach(function(row) { tbody.appendChild(row); });
+                cards.forEach(function(card) { container.appendChild(card); });
             });
         }
 
@@ -921,17 +966,15 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
         var minSelect = document.getElementById('eg-min-games-select');
 
         function applyFilters() {
-            if (!tbody) return;
-            var enabledBalance = new Set();
-            balanceChecks.forEach(function(c) { if (c.checked) enabledBalance.add(c.value); });
-            var min = minSelect ? parseInt(minSelect.value, 10) : 1;
-
-            tbody.querySelectorAll('tr').forEach(function(row) {
-                var balance = row.getAttribute('data-balance');
-                var total = parseInt(row.getAttribute('data-total'), 10) || 0;
+            document.querySelectorAll('.eg-card').forEach(function(card) {
+                var balance = card.getAttribute('data-balance');
+                var total = parseInt(card.getAttribute('data-total'), 10) || 0;
+                var enabledBalance = new Set();
+                balanceChecks.forEach(function(c) { if (c.checked) enabledBalance.add(c.value); });
+                var min = minSelect ? parseInt(minSelect.value, 10) : 1;
                 var balOk = !balance || enabledBalance.has(balance);
                 var minOk = total >= min;
-                row.style.display = (balOk && minOk) ? '' : 'none';
+                card.style.display = (balOk && minOk) ? '' : 'none';
             });
         }
 
