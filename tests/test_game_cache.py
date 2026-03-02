@@ -396,6 +396,128 @@ class TestTimeClassCache:
         assert result.time_class == ""
 
 
+class TestEndgameCache:
+    """Tests for the endgame_analyses table."""
+
+    def test_save_and_get_endgame(self, cache):
+        from endgame_detector import EndgameInfo
+        info = EndgameInfo(
+            endgame_type="R vs R", endgame_ply=20,
+            material_balance="equal", my_result="win",
+            fen_at_endgame="r3k3/pppp1ppp/8/8/8/8/PPPP1PPP/R3K3 w - - 0 1",
+            game_url="https://chess.com/game/1", material_diff=0,
+        )
+        cache.save_endgames_batch([("https://chess.com/game/1", "queens-off", info)])
+        results = cache.get_endgames(["https://chess.com/game/1"])
+        assert "https://chess.com/game/1" in results
+        assert "queens-off" in results["https://chess.com/game/1"]
+        cached = results["https://chess.com/game/1"]["queens-off"]
+        assert cached.endgame_type == "R vs R"
+        assert cached.endgame_ply == 20
+        assert cached.material_balance == "equal"
+        assert cached.my_result == "win"
+        assert cached.material_diff == 0
+
+    def test_save_none_endgame(self, cache):
+        """None (no endgame reached) round-trips as None."""
+        cache.save_endgames_batch([("https://chess.com/game/1", "material", None)])
+        results = cache.get_endgames(["https://chess.com/game/1"])
+        assert results["https://chess.com/game/1"]["material"] is None
+
+    def test_multiple_definitions_per_game(self, cache):
+        from endgame_detector import EndgameInfo
+        info1 = EndgameInfo("R vs R", 20, "equal", "win", "", "", 0)
+        info2 = EndgameInfo("R vs R", 22, "equal", "win", "", "", 0)
+        cache.save_endgames_batch([
+            ("game1", "queens-off", info1),
+            ("game1", "material", info2),
+            ("game1", "minor-or-queen", None),
+        ])
+        results = cache.get_endgames(["game1"])
+        assert len(results["game1"]) == 3
+        assert results["game1"]["queens-off"].endgame_ply == 20
+        assert results["game1"]["material"].endgame_ply == 22
+        assert results["game1"]["minor-or-queen"] is None
+
+    def test_get_endgames_miss_returns_empty(self, cache):
+        results = cache.get_endgames(["nonexistent"])
+        assert results == {}
+
+    def test_get_endgames_empty_list(self, cache):
+        results = cache.get_endgames([])
+        assert results == {}
+
+    def test_batch_multiple_games(self, cache):
+        from endgame_detector import EndgameInfo
+        info = EndgameInfo("Pawn", 30, "up", "win", "", "", 2)
+        cache.save_endgames_batch([
+            ("game1", "queens-off", info),
+            ("game2", "queens-off", None),
+        ])
+        results = cache.get_endgames(["game1", "game2"])
+        assert results["game1"]["queens-off"].endgame_type == "Pawn"
+        assert results["game2"]["queens-off"] is None
+
+    def test_clock_times_round_trip(self, cache):
+        from endgame_detector import EndgameInfo
+        info = EndgameInfo(
+            endgame_type="R vs R", endgame_ply=20,
+            material_balance="equal", my_result="win",
+            fen_at_endgame="", game_url="", material_diff=0,
+            my_clock=345.5, opp_clock=290.0,
+        )
+        cache.save_endgames_batch([("game1", "queens-off", info)])
+        results = cache.get_endgames(["game1"])
+        cached = results["game1"]["queens-off"]
+        assert cached.my_clock == 345.5
+        assert cached.opp_clock == 290.0
+
+    def test_clock_times_none_round_trip(self, cache):
+        from endgame_detector import EndgameInfo
+        info = EndgameInfo("R vs R", 20, "equal", "win", "", "", 0)
+        cache.save_endgames_batch([("game1", "queens-off", info)])
+        results = cache.get_endgames(["game1"])
+        cached = results["game1"]["queens-off"]
+        assert cached.my_clock is None
+        assert cached.opp_clock is None
+
+    def test_endgame_clock_migration(self, tmp_path):
+        """Clock columns are added via migration for existing DBs."""
+        import sqlite3
+        db_path = str(tmp_path / "migrate.db")
+        # Create DB with old schema (no clock columns)
+        conn = sqlite3.connect(db_path)
+        conn.execute("""CREATE TABLE IF NOT EXISTS endgame_analyses (
+            game_url TEXT NOT NULL, definition TEXT NOT NULL,
+            endgame_type TEXT, endgame_ply INTEGER,
+            material_balance TEXT, my_result TEXT,
+            fen_at_endgame TEXT, material_diff INTEGER,
+            game_url_link TEXT DEFAULT '',
+            PRIMARY KEY (game_url, definition))""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS archive_months (
+            archive_url TEXT PRIMARY KEY, username TEXT NOT NULL,
+            raw_json TEXT NOT NULL, fetched_at TEXT NOT NULL)""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS opening_evaluations (
+            game_url TEXT NOT NULL, username TEXT NOT NULL,
+            depth INTEGER NOT NULL, eco_code TEXT, eco_name TEXT NOT NULL,
+            my_color TEXT NOT NULL, deviation_ply INTEGER NOT NULL,
+            deviating_side TEXT NOT NULL, eval_cp INTEGER NOT NULL,
+            is_fully_booked INTEGER NOT NULL,
+            PRIMARY KEY (game_url, depth))""")
+        conn.commit()
+        conn.close()
+        # Opening GameCache should run migration and add clock columns
+        cache = GameCache(db_path)
+        from endgame_detector import EndgameInfo
+        info = EndgameInfo("R vs R", 20, "equal", "win", "", "", 0,
+                           my_clock=100.0, opp_clock=200.0)
+        cache.save_endgames_batch([("game1", "queens-off", info)])
+        results = cache.get_endgames(["game1"])
+        assert results["game1"]["queens-off"].my_clock == 100.0
+        assert results["game1"]["queens-off"].opp_clock == 200.0
+        cache.close()
+
+
 class TestCacheLifecycle:
     def test_close_and_reopen(self, tmp_path):
         db_path = str(tmp_path / "lifecycle.db")

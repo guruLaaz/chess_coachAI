@@ -780,6 +780,96 @@ class TestEndgamePage:
         assert "eval-positive" in html
         assert "+1 pawns" in html
 
+    _STATS_WITH_PLY = [
+        {"type": "R vs R", "balance": "equal", "total": 30,
+         "wins": 14, "losses": 12, "draws": 4,
+         "win_pct": 47, "loss_pct": 40, "draw_pct": 13,
+         "example_fen": "r3k3/pppp1ppp/8/8/8/8/PPPP1PPP/R3K3 w - - 0 1",
+         "example_game_url": "https://www.chess.com/game/live/99999",
+         "example_color": "white",
+         "example_material_diff": 0,
+         "example_endgame_ply": 24,
+         "avg_my_clock": 350, "avg_opp_clock": 280},
+        {"type": "Pawn", "balance": "up", "total": 10,
+         "wins": 8, "losses": 1, "draws": 1,
+         "win_pct": 80, "loss_pct": 10, "draw_pct": 10,
+         "example_fen": "4k3/pppp1ppp/8/8/4P3/8/PPPP1PPP/4K3 w - - 0 1",
+         "example_game_url": "https://lichess.org/abc12345",
+         "example_color": "white",
+         "example_material_diff": 1,
+         "example_endgame_ply": 40,
+         "avg_my_clock": None, "avg_opp_clock": None},
+    ]
+
+    def test_deep_link_chesscom(self):
+        """Chess.com game link uses analysis URL with move= query param."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._STATS_WITH_PLY)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/endgames")
+        html = resp.data.decode()
+        # ply 24 -> analysis URL with move=24
+        assert "chess.com/analysis/game/live/99999?tab=analysis&amp;move=24" in html
+
+    def test_deep_link_lichess(self):
+        """Lichess game link includes ply fragment."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._STATS_WITH_PLY)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/endgames")
+        html = resp.data.decode()
+        # ply 40 -> lichess #41
+        assert "lichess.org/abc12345#41" in html
+
+    def test_clock_display_shown(self):
+        """Clock times appear on endgame cards with color-coded labels."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._STATS_WITH_PLY)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/endgames")
+        html = resp.data.decode()
+        # 350 seconds = 5:50 (green / you), 280 seconds = 4:40 (grey / opp)
+        assert '<span class="clock-you">5:50</span>' in html
+        assert '<span class="clock-opp">4:40</span>' in html
+
+    def test_clock_not_shown_when_none(self):
+        """No clock span in card when avg_my_clock is None."""
+        stats = [
+            {"type": "R vs R", "balance": "equal", "total": 5,
+             "wins": 3, "losses": 1, "draws": 1,
+             "win_pct": 60, "loss_pct": 20, "draw_pct": 20,
+             "example_fen": "", "example_game_url": "",
+             "example_color": "white",
+             "avg_my_clock": None, "avg_opp_clock": None},
+        ]
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals, endgame_stats=stats)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/endgames")
+        html = resp.data.decode()
+        # The clock span should not appear inside any card
+        assert '<span class="eg-clock"' not in html
+
+    def test_format_clock_minutes(self):
+        assert CoachingReportGenerator._format_clock(350) == "5:50"
+        assert CoachingReportGenerator._format_clock(0) == "0:00"
+        assert CoachingReportGenerator._format_clock(59) == "0:59"
+        assert CoachingReportGenerator._format_clock(60) == "1:00"
+
+    def test_format_clock_hours(self):
+        assert CoachingReportGenerator._format_clock(3661) == "1:01:01"
+        assert CoachingReportGenerator._format_clock(3600) == "1:00:00"
+
+    def test_format_clock_none(self):
+        assert CoachingReportGenerator._format_clock(None) == "?"
+
     def test_no_board_when_no_fen(self):
         """No SVG board when example_fen is empty."""
         stats_no_fen = [

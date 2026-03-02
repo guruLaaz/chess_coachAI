@@ -57,6 +57,9 @@ class OpeningDetector:
                     )
 
                 last_booked_board = board.copy()
+                if move not in board.legal_moves:
+                    print(f"  Warning: Skipping game with illegal move {move.uci()} at ply {ply}")
+                    return None
                 board.push(move)
 
         # All moves were in the book

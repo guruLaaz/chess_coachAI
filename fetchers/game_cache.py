@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from repertoire_analyzer import OpeningEvaluation
+from endgame_detector import EndgameInfo
 
 
 class GameCache:
@@ -39,9 +40,36 @@ class GameCache:
                 is_fully_booked INTEGER NOT NULL,
                 PRIMARY KEY (game_url, depth)
             );
+
+            CREATE TABLE IF NOT EXISTS endgame_analyses (
+                game_url          TEXT NOT NULL,
+                definition        TEXT NOT NULL,
+                endgame_type      TEXT,
+                endgame_ply       INTEGER,
+                material_balance  TEXT,
+                my_result         TEXT,
+                fen_at_endgame    TEXT,
+                material_diff     INTEGER,
+                game_url_link     TEXT DEFAULT '',
+                my_clock          REAL,
+                opp_clock         REAL,
+                PRIMARY KEY (game_url, definition)
+            );
         """)
         self._conn.commit()
+        self._migrate_endgame_columns()
         self._migrate_coaching_columns()
+
+    def _migrate_endgame_columns(self):
+        """Add clock columns to endgame_analyses if they don't exist."""
+        for col_name, col_type in [("my_clock", "REAL"), ("opp_clock", "REAL")]:
+            try:
+                self._conn.execute(
+                    f"ALTER TABLE endgame_analyses ADD COLUMN {col_name} {col_type}"
+                )
+            except sqlite3.OperationalError:
+                pass  # column already exists
+        self._conn.commit()
 
     def _migrate_coaching_columns(self):
         """Add coaching columns if they don't exist (schema v2)."""
@@ -196,6 +224,80 @@ class GameCache:
         ]
         self._conn.executemany(self._INSERT_EVAL_SQL, rows)
         self._conn.commit()
+
+    # --- Endgame caching ---
+
+    _INSERT_ENDGAME_SQL = """INSERT OR REPLACE INTO endgame_analyses
+        (game_url, definition, endgame_type, endgame_ply,
+         material_balance, my_result, fen_at_endgame, material_diff,
+         game_url_link, my_clock, opp_clock)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+
+    def save_endgames_batch(self, rows):
+        """Batch insert endgame results.
+
+        rows: list of (game_url, definition, EndgameInfo_or_None).
+        None means no endgame was reached for that definition.
+        """
+        sql_rows = []
+        for game_url, definition, info in rows:
+            if info is None:
+                sql_rows.append((game_url, definition,
+                                 None, None, None, None, None, None, "",
+                                 None, None))
+            else:
+                sql_rows.append((game_url, definition,
+                                 info.endgame_type, info.endgame_ply,
+                                 info.material_balance, info.my_result,
+                                 info.fen_at_endgame, info.material_diff,
+                                 info.game_url,
+                                 info.my_clock, info.opp_clock))
+        self._conn.executemany(self._INSERT_ENDGAME_SQL, sql_rows)
+        self._conn.commit()
+
+    def get_endgames(self, game_urls):
+        """Batch lookup endgame results.
+
+        Returns dict of game_url -> dict of definition -> EndgameInfo or None.
+        Only returns entries for game_urls that exist in the cache.
+        """
+        if not game_urls:
+            return {}
+
+        results = {}
+        for i in range(0, len(game_urls), 500):
+            chunk = game_urls[i:i + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            rows = self._conn.execute(
+                f"""SELECT game_url, definition, endgame_type, endgame_ply,
+                           material_balance, my_result, fen_at_endgame,
+                           material_diff, game_url_link, my_clock, opp_clock
+                    FROM endgame_analyses
+                    WHERE game_url IN ({placeholders})""",
+                chunk
+            ).fetchall()
+
+            for row in rows:
+                url = row["game_url"]
+                defn = row["definition"]
+                if url not in results:
+                    results[url] = {}
+                if row["endgame_type"] is None:
+                    results[url][defn] = None
+                else:
+                    results[url][defn] = EndgameInfo(
+                        endgame_type=row["endgame_type"],
+                        endgame_ply=row["endgame_ply"],
+                        material_balance=row["material_balance"],
+                        my_result=row["my_result"],
+                        fen_at_endgame=row["fen_at_endgame"] or "",
+                        game_url=row["game_url_link"] or "",
+                        material_diff=row["material_diff"] or 0,
+                        my_clock=row["my_clock"],
+                        opp_clock=row["opp_clock"],
+                    )
+
+        return results
 
     def close(self):
         """Close the database connection."""

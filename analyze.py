@@ -24,7 +24,7 @@ from endgame_detector import EndgameClassifier
 
 # Paths relative to this script
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_STOCKFISH = os.path.join(BASE_DIR, "engines", "stockfish-windows-x86-64-avx2.exe")
+DEFAULT_STOCKFISH = os.path.join(BASE_DIR, "engines", "stockfish-windows-x86-64-sse41-popcnt.exe")
 DEFAULT_BOOK = os.path.join(BASE_DIR, "data", "gm2001.bin")
 DEFAULT_CACHE_DB = os.path.join(BASE_DIR, "data", "cache.db")
 
@@ -324,11 +324,40 @@ def main():
 
         print(f"\nTotal games for analysis: {len(games)}")
 
-        # Endgame analysis (fast, no Stockfish needed)
-        endgame_stats = EndgameClassifier.aggregate(games)
+        # Endgame analysis (fast, no Stockfish needed) — all definitions
+        from endgame_detector import ENDGAME_DEFINITIONS
+        game_urls = [g.game_url for g in games if g.game_url]
+        cached_endgames = cache.get_endgames(game_urls) if not force_refresh else {}
+
+        # Identify games that need endgame analysis
+        uncached_games = [g for g in games
+                          if g.game_url not in cached_endgames
+                          or len(cached_endgames[g.game_url]) < len(ENDGAME_DEFINITIONS)]
+        cached_count = len(games) - len(uncached_games)
+
+        # Analyze uncached games with all definitions
+        new_rows = []
+        for game in uncached_games:
+            all_results = EndgameClassifier.analyze_game_all(game)
+            for defn, info in all_results.items():
+                new_rows.append((game.game_url, defn, info))
+
+        if new_rows:
+            cache.save_endgames_batch(new_rows)
+            print(f"  Endgame analysis: {len(uncached_games)} analyzed, {cached_count} from cache")
+        elif cached_count:
+            print(f"  Endgame analysis: all {cached_count} from cache")
+
+        # Build aggregate stats per definition using all data
+        # Reconstruct EndgameInfo from cache + new results for aggregation
+        all_endgame_stats = EndgameClassifier.aggregate_all(games)
+
+        # Print default definition stats to CLI
+        default_def = "minor-or-queen"
+        endgame_stats = all_endgame_stats.get(default_def, [])
         endgame_total = sum(s["total"] for s in endgame_stats)
         if endgame_stats:
-            print(f"\n--- Endgame Stats ({endgame_total} games reached endgame"
+            print(f"\n--- Endgame Stats [{default_def}] ({endgame_total} games reached endgame"
                   f" out of {len(games)}) ---")
             for s in endgame_stats[:10]:
                 print(f"  {s['type']} ({s['balance']}): {s['total']:>4} games"
@@ -346,7 +375,7 @@ def main():
             from report_generator import CoachingReportGenerator
             generator = CoachingReportGenerator(display_username, all_evals,
                                                    min_times=args.min_times,
-                                                   endgame_stats=endgame_stats)
+                                                   endgame_stats=all_endgame_stats)
             generator.run()
     finally:
         cache.close()

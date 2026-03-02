@@ -17,7 +17,12 @@ class CoachingReportGenerator:
     def __init__(self, username, evaluations, min_times=1, endgame_stats=None):
         self.username = username
         self.min_times = min_times
-        self.endgame_stats = endgame_stats or []
+        # endgame_stats: dict[definition -> list[dict]] or legacy list[dict]
+        if isinstance(endgame_stats, dict):
+            self.endgame_stats_by_def = endgame_stats
+        else:
+            # Legacy: single list treated as minor-or-queen
+            self.endgame_stats_by_def = {"minor-or-queen": endgame_stats or []}
         # Filter to player deviations that have coaching data
         candidates = [
             ev for ev in evaluations
@@ -84,6 +89,21 @@ class CoachingReportGenerator:
             return board.san(move)
         except (ValueError, chess.IllegalMoveError):
             return move_uci
+
+    @staticmethod
+    def _format_clock(seconds):
+        """Format seconds as m:ss or h:mm:ss."""
+        if seconds is None:
+            return "?"
+        seconds = int(seconds)
+        if seconds >= 3600:
+            h = seconds // 3600
+            m = (seconds % 3600) // 60
+            s = seconds % 60
+            return f"{h}:{m:02d}:{s:02d}"
+        m = seconds // 60
+        s = seconds % 60
+        return f"{m}:{s:02d}"
 
     def _ply_to_move_label(self, ply, color):
         """Convert a 0-based ply to a human-readable move number."""
@@ -172,7 +192,9 @@ class CoachingReportGenerator:
         """Create and configure the Flask app."""
         app = Flask(__name__)
 
-        endgame_count = sum(s["total"] for s in self.endgame_stats)
+        default_def = "minor-or-queen"
+        default_stats = self.endgame_stats_by_def.get(default_def, [])
+        endgame_count = sum(s["total"] for s in default_stats)
 
         @app.route("/")
         def index():
@@ -215,18 +237,37 @@ class CoachingReportGenerator:
         @app.route("/endgames")
         def endgames():
             groups = self._get_opening_groups()
-            # Render SVG boards for each endgame example
+            # Render SVG boards for each endgame example, across all definitions
             enriched = []
-            for s in self.endgame_stats:
-                entry = dict(s)
-                fen = s.get("example_fen", "")
-                color = s.get("example_color", "white")
-                if fen:
-                    entry["svg_board"] = self._render_board_svg(
-                        fen, None, color, "")
-                else:
-                    entry["svg_board"] = ""
-                enriched.append(entry)
+            for defn, stats_list in self.endgame_stats_by_def.items():
+                for s in stats_list:
+                    entry = dict(s)
+                    entry["definition"] = defn
+                    fen = s.get("example_fen", "")
+                    color = s.get("example_color", "white")
+                    if fen:
+                        entry["svg_board"] = self._render_board_svg(
+                            fen, None, color, "")
+                    else:
+                        entry["svg_board"] = ""
+                    # Build deep-link URL that opens at the endgame move
+                    game_url = s.get("example_game_url", "")
+                    ply = s.get("example_endgame_ply", 0)
+                    if game_url and ply:
+                        if "lichess.org" in game_url:
+                            entry["example_game_url"] = f"{game_url}#{ply + 1}"
+                        elif "chess.com" in game_url:
+                            # Chess.com strips URL fragments; use the
+                            # analysis page with a move= query parameter.
+                            analysis_url = game_url.replace(
+                                "chess.com/game/",
+                                "chess.com/analysis/game/")
+                            entry["example_game_url"] = (
+                                f"{analysis_url}?tab=analysis&move={ply}")
+                    # Format average clock times for display
+                    entry["avg_my_clock_fmt"] = self._format_clock(s.get("avg_my_clock"))
+                    entry["avg_opp_clock_fmt"] = self._format_clock(s.get("avg_opp_clock"))
+                    enriched.append(entry)
             return render_template_string(
                 _ENDGAME_TEMPLATE,
                 username=self.username,
@@ -235,6 +276,8 @@ class CoachingReportGenerator:
                 groups=groups,
                 total=len(self.deviations),
                 page="endgames",
+                definitions=list(self.endgame_stats_by_def.keys()),
+                default_definition=default_def,
             )
 
         return app
@@ -769,6 +812,29 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
             font-weight: 600;
             font-size: 0.9rem;
         }
+        .eg-clock {
+            font-size: 0.85rem;
+            margin-left: 4px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .eg-clock-icon {
+            color: #94a3b8;
+        }
+        .clock-you {
+            background: #16a34a22;
+            color: #4ade80;
+            padding: 1px 5px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .clock-opp {
+            background: #64748b22;
+            color: #94a3b8;
+            padding: 1px 5px;
+            border-radius: 4px;
+        }
         .eg-card-body {
             margin-top: 16px;
             text-align: center;
@@ -880,13 +946,23 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
         </nav>
         <main class="main">
             <h1>Chess Coach: {{ username }}</h1>
-            <div class="subtitle">Endgame performance &mdash; {{ endgame_count }} games reached an endgame &mdash; sorted by
+            <div class="subtitle">Endgame performance &mdash; sorted by
                 <select id="eg-sort-select" class="sort-select">
                     <option value="data-total" selected>Games</option>
                     <option value="data-win-pct">Win %</option>
                     <option value="data-loss-pct">Loss %</option>
                     <option value="data-draw-pct">Draw %</option>
                 </select>
+                <span class="filter-wrapper">
+                    <button class="filter-btn" id="eg-def-btn">Definition &#9662;</button>
+                    <div class="filter-panel" id="eg-def-panel">
+                        <select id="eg-def-select" class="sort-select" style="width:100%">
+                            {% for d in definitions %}
+                            <option value="{{ d }}" {{ 'selected' if d == default_definition else '' }}>{{ d }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </span>
                 <span class="filter-wrapper">
                     <button class="filter-btn" id="eg-balance-btn">Balance &#9662;</button>
                     <div class="filter-panel" id="eg-balance-panel">
@@ -910,7 +986,7 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
 
             {% if stats %}
                 {% for s in stats %}
-                <div class="eg-card" data-win-pct="{{ s.win_pct }}" data-loss-pct="{{ s.loss_pct }}" data-draw-pct="{{ s.draw_pct }}" data-total="{{ s.total }}" data-balance="{{ s.balance }}">
+                <div class="eg-card" data-win-pct="{{ s.win_pct }}" data-loss-pct="{{ s.loss_pct }}" data-draw-pct="{{ s.draw_pct }}" data-total="{{ s.total }}" data-balance="{{ s.balance }}" data-definition="{{ s.definition }}">
                     <div class="eg-card-header">
                         <span class="type-label">{{ s.type }}</span>
                         <span class="balance-badge balance-{{ s.balance }}">{{ s.balance }}</span>
@@ -918,6 +994,9 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                         <span class="eg-stat {{ 'pct-good' if s.win_pct >= 50 else 'pct-bad' if s.win_pct < 30 else 'pct-neutral' }}">W {{ s.win_pct }}%</span>
                         <span class="eg-stat {{ 'pct-bad' if s.loss_pct >= 50 else 'pct-good' if s.loss_pct < 20 else 'pct-neutral' }}">L {{ s.loss_pct }}%</span>
                         <span class="eg-stat pct-neutral">D {{ s.draw_pct }}%</span>
+                        {% if s.avg_my_clock is not none %}
+                        <span class="eg-clock" title="Avg time remaining when entering endgame (you / opponent)"><span class="eg-clock-icon">&#9201;</span> <span class="clock-you">{{ s.avg_my_clock_fmt }}</span><span class="clock-opp">{{ s.avg_opp_clock_fmt }}</span></span>
+                        {% endif %}
                     </div>
                     {% if s.svg_board %}
                     <div class="eg-card-body">
@@ -961,28 +1040,36 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
             });
         }
 
-        /* Combined filter: balance checkboxes + min games */
+        /* Combined filter: definition + balance checkboxes + min games */
         var balanceChecks = document.querySelectorAll('.balance-filter');
         var minSelect = document.getElementById('eg-min-games-select');
+        var defSelect = document.getElementById('eg-def-select');
 
         function applyFilters() {
+            var selectedDef = defSelect ? defSelect.value : '';
             document.querySelectorAll('.eg-card').forEach(function(card) {
                 var balance = card.getAttribute('data-balance');
                 var total = parseInt(card.getAttribute('data-total'), 10) || 0;
+                var defn = card.getAttribute('data-definition');
                 var enabledBalance = new Set();
                 balanceChecks.forEach(function(c) { if (c.checked) enabledBalance.add(c.value); });
                 var min = minSelect ? parseInt(minSelect.value, 10) : 1;
+                var defOk = !selectedDef || defn === selectedDef;
                 var balOk = !balance || enabledBalance.has(balance);
                 var minOk = total >= min;
-                card.style.display = (balOk && minOk) ? '' : 'none';
+                card.style.display = (defOk && balOk && minOk) ? '' : 'none';
             });
         }
 
         balanceChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
         if (minSelect) { minSelect.addEventListener('change', applyFilters); }
+        if (defSelect) { defSelect.addEventListener('change', applyFilters); }
+        /* Apply initial filter to show only default definition */
+        applyFilters();
 
         /* Dropdown panel toggles */
         var panels = [
+            {btn: document.getElementById('eg-def-btn'), panel: document.getElementById('eg-def-panel')},
             {btn: document.getElementById('eg-balance-btn'), panel: document.getElementById('eg-balance-panel')},
             {btn: document.getElementById('eg-min-games-btn'), panel: document.getElementById('eg-min-games-panel')}
         ];

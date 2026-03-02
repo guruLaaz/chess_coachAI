@@ -153,6 +153,26 @@ class TestFromJson:
         game = ChessGame.from_json(data, "PlayerA")
         assert game.game_url == ""
 
+    def test_chess960_game_returns_none(self):
+        data = make_game_json()
+        data["rules"] = "chess960"
+        assert ChessGame.from_json(data, "PlayerA") is None
+
+    def test_oddschess_game_returns_none(self):
+        data = make_game_json()
+        data["rules"] = "oddschess"
+        assert ChessGame.from_json(data, "PlayerA") is None
+
+    def test_standard_chess_rules_accepted(self):
+        data = make_game_json()
+        data["rules"] = "chess"
+        assert ChessGame.from_json(data, "PlayerA") is not None
+
+    def test_missing_rules_field_defaults_to_standard(self):
+        data = make_game_json()
+        assert "rules" not in data
+        assert ChessGame.from_json(data, "PlayerA") is not None
+
 
 class TestFromLichessJson:
     def test_parse_as_white(self):
@@ -270,3 +290,23 @@ class TestFromLichessJson:
         data["players"]["black"] = {"aiLevel": 3}  # no user key
         game = ChessGame.from_lichess_json(data, "SomeoneElse")
         assert game is None
+
+    def test_chess960_variant_returns_none(self):
+        data = make_lichess_game_json()
+        data["variant"] = "chess960"
+        assert ChessGame.from_lichess_json(data, "PlayerA") is None
+
+    def test_from_position_variant_returns_none(self):
+        data = make_lichess_game_json()
+        data["variant"] = "fromPosition"
+        assert ChessGame.from_lichess_json(data, "PlayerA") is None
+
+    def test_standard_variant_accepted(self):
+        data = make_lichess_game_json()
+        data["variant"] = "standard"
+        assert ChessGame.from_lichess_json(data, "PlayerA") is not None
+
+    def test_missing_variant_field_defaults_to_standard(self):
+        data = make_lichess_game_json()
+        assert "variant" not in data
+        assert ChessGame.from_lichess_json(data, "PlayerA") is not None

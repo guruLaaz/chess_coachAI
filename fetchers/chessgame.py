@@ -28,6 +28,10 @@ class ChessGame:
     def from_json(cls, data, my_username):
         my_username_lower = my_username.lower()
 
+        # Skip non-standard variants (chess960, oddschess, etc.)
+        if data.get("rules", "chess") != "chess":
+            return None
+
         # Determine my color
         white_user = data.get('white', {}).get('username', '').lower()
         black_user = data.get('black', {}).get('username', '').lower()
@@ -95,6 +99,10 @@ class ChessGame:
         Returns None if my_username is not a participant.
         """
         my_username_lower = my_username.lower()
+
+        # Skip non-standard variants (chess960, antichess, etc.)
+        if data.get("variant", "standard") != "standard":
+            return None
 
         players = data.get("players", {})
         white_info = players.get("white", {})

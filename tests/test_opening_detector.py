@@ -213,6 +213,41 @@ class TestFindDeviation:
         assert result.played_move == chess.Move.from_uci("e2e4")
         assert result.book_moves == []
 
+    def test_illegal_move_in_book_line_returns_none(self):
+        """Games with corrupt move sequences return None instead of crashing."""
+        # Book claims e5f6 is a valid book move for the starting position,
+        # but it's actually illegal — the guard should catch this and return None.
+        book = {
+            _starting_fen(): [chess.Move.from_uci("e5f6")],
+        }
+        fake = FakeReader(book_moves_by_fen=book)
+
+        detector = OpeningDetector("dummy_path")
+        moves = [chess.Move.from_uci("e5f6")]
+
+        with patch("opening_detector.chess.polyglot.open_reader", return_value=fake):
+            result = detector.find_deviation(moves)
+
+        assert result is None
+
+    def test_illegal_move_in_book_line_logs_warning(self, capsys):
+        """A warning is printed for corrupt move sequences."""
+        book = {
+            _starting_fen(): [chess.Move.from_uci("e5f6")],
+        }
+        fake = FakeReader(book_moves_by_fen=book)
+
+        detector = OpeningDetector("dummy_path")
+        moves = [chess.Move.from_uci("e5f6")]
+
+        with patch("opening_detector.chess.polyglot.open_reader", return_value=fake):
+            detector.find_deviation(moves)
+
+        output = capsys.readouterr().out
+        assert "Warning" in output
+        assert "e5f6" in output
+        assert "ply 0" in output
+
     def test_multiple_book_moves_available(self):
         """Book has multiple candidate moves; game plays one of them → no deviation."""
         book = {

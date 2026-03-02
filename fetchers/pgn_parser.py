@@ -25,6 +25,28 @@ class PGNParser:
         return moves if moves else None
 
     @staticmethod
+    def parse_moves_with_clocks(pgn_string):
+        """Parse a PGN string and return a list of (chess.Move, clock_seconds).
+
+        clock_seconds is a float or None if no clock annotation for that move.
+        Returns None if the PGN is invalid or empty.
+        """
+        if not pgn_string or not pgn_string.strip():
+            return None
+
+        game = chess.pgn.read_game(io.StringIO(pgn_string))
+        if game is None:
+            return None
+
+        result = []
+        node = game
+        while node.variations:
+            node = node.variation(0)
+            result.append((node.move, node.clock()))
+
+        return result if result else None
+
+    @staticmethod
     def replay_to_position(pgn_string, move_index):
         """Replay a PGN up to move_index and return the resulting board.
 

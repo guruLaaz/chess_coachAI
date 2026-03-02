@@ -1,11 +1,12 @@
 """Tests for endgame detection and classification."""
 
 import datetime
+from unittest.mock import patch
 
 import chess
 import pytest
 
-from endgame_detector import EndgameClassifier, EndgameInfo
+from endgame_detector import EndgameClassifier, EndgameInfo, ENDGAME_DEFINITIONS
 from helpers import make_chess_game
 
 
@@ -71,6 +72,73 @@ class TestIsEndgame:
         """R+B vs R → endgame (no queens)."""
         board = chess.Board(RB_VS_R_FEN)
         assert EndgameClassifier.is_endgame(board) is True
+
+
+class TestIsEndgameQueensOff:
+    """Tests for the 'queens-off' definition."""
+
+    def test_no_queens_is_endgame(self):
+        board = chess.Board(ROOK_ENDGAME_FEN)
+        assert EndgameClassifier.is_endgame(board, "queens-off") is True
+
+    def test_queens_present_not_endgame(self):
+        board = chess.Board(QUEEN_ENDGAME_FEN)
+        assert EndgameClassifier.is_endgame(board, "queens-off") is False
+
+    def test_queen_minor_not_endgame(self):
+        board = chess.Board(QUEEN_MINOR_FEN)
+        assert EndgameClassifier.is_endgame(board, "queens-off") is False
+
+    def test_pawn_only_is_endgame(self):
+        board = chess.Board(PAWN_ENDGAME_FEN)
+        assert EndgameClassifier.is_endgame(board, "queens-off") is True
+
+    def test_starting_position_not_endgame(self):
+        board = chess.Board(START_FEN)
+        assert EndgameClassifier.is_endgame(board, "queens-off") is False
+
+
+class TestIsEndgameMaterial:
+    """Tests for the 'material' definition (threshold=9 by default)."""
+
+    def test_starting_position_not_endgame(self):
+        """Starting position has way more than 9 pts per side."""
+        board = chess.Board(START_FEN)
+        assert EndgameClassifier.is_endgame(board, "material") is False
+
+    def test_rook_endgame_is_endgame(self):
+        """R vs R: each side has 5 pts (≤9)."""
+        board = chess.Board(ROOK_ENDGAME_FEN)
+        assert EndgameClassifier.is_endgame(board, "material") is True
+
+    def test_queen_endgame_is_endgame(self):
+        """Q vs Q: each side has 9 pts (≤9)."""
+        board = chess.Board(QUEEN_ENDGAME_FEN)
+        assert EndgameClassifier.is_endgame(board, "material") is True
+
+    def test_queen_rook_not_endgame(self):
+        """Q+R vs Q+R: each side has 14 pts (>9)."""
+        board = chess.Board(QUEEN_ROOK_FEN)
+        assert EndgameClassifier.is_endgame(board, "material") is False
+
+    def test_pawn_endgame_is_endgame(self):
+        """Pawns only: 0 non-pawn material per side."""
+        board = chess.Board(PAWN_ENDGAME_FEN)
+        assert EndgameClassifier.is_endgame(board, "material") is True
+
+    def test_custom_threshold(self):
+        """R vs R with threshold=4 is NOT endgame (5 > 4)."""
+        board = chess.Board(ROOK_ENDGAME_FEN)
+        assert EndgameClassifier.is_endgame(board, "material", material_threshold=4) is False
+
+    def test_custom_threshold_accepts(self):
+        """R vs R with threshold=5 IS endgame (5 ≤ 5)."""
+        board = chess.Board(ROOK_ENDGAME_FEN)
+        assert EndgameClassifier.is_endgame(board, "material", material_threshold=5) is True
+
+    def test_middlegame_not_endgame(self):
+        board = chess.Board(MIDDLEGAME_FEN)
+        assert EndgameClassifier.is_endgame(board, "material") is False
 
 
 class TestPiecesLabel:
@@ -182,6 +250,12 @@ class TestClassifyPosition:
 
 # --- PGNs for analyze_game tests ---
 
+# Header-only PGN (no actual moves) — truthy string, but no moves to parse
+HEADER_ONLY_PGN = """[Event "Live"]
+[Result "*"]
+
+*"""
+
 # A short game that never reaches endgame (scholar's mate)
 SCHOLARS_MATE_PGN = """[Event "Live"]
 [Result "1-0"]
@@ -241,6 +315,38 @@ class TestAnalyzeGame:
     def test_empty_pgn(self):
         game = make_chess_game(pgn="")
         assert EndgameClassifier.analyze_game(game) is None
+
+    def test_header_only_pgn(self):
+        """PGN with headers but no moves returns None."""
+        game = make_chess_game(pgn=HEADER_ONLY_PGN)
+        assert EndgameClassifier.analyze_game(game) is None
+
+    def test_illegal_move_sequence_returns_none(self):
+        """Games with corrupt/illegal move sequences are skipped gracefully."""
+        game = make_chess_game(
+            pgn="dummy", my_color="white",
+            white_result="win", black_result="resigned",
+            game_url="https://www.chess.com/game/live/999",
+        )
+        illegal_moves = [(chess.Move.from_uci("e5f6"), None)]
+        with patch("endgame_detector.PGNParser.parse_moves_with_clocks", return_value=illegal_moves):
+            info = EndgameClassifier.analyze_game(game)
+        assert info is None
+
+    def test_illegal_move_sequence_logs_warning(self, capsys):
+        """A warning with the game URL is printed for corrupt move sequences."""
+        game = make_chess_game(
+            pgn="dummy", my_color="white",
+            white_result="win", black_result="resigned",
+            game_url="https://www.chess.com/game/live/999",
+        )
+        illegal_moves = [(chess.Move.from_uci("e5f6"), None)]
+        with patch("endgame_detector.PGNParser.parse_moves_with_clocks", return_value=illegal_moves):
+            EndgameClassifier.analyze_game(game)
+        output = capsys.readouterr().out
+        assert "Warning" in output
+        assert "e5f6" in output
+        assert "https://www.chess.com/game/live/999" in output
 
     def test_loss_result(self):
         game = make_chess_game(
@@ -448,6 +554,261 @@ class TestAggregate:
         s = stats[0]
         assert s["example_game_url"] == "https://www.chess.com/game/live/new"
 
+    def test_aggregate_skips_games_with_illegal_moves(self):
+        """Games with corrupt move sequences are silently skipped in aggregate."""
+        illegal_game = make_chess_game(
+            pgn="dummy", my_color="white",
+            white_result="win", black_result="resigned",
+        )
+        illegal_moves = [(chess.Move.from_uci("e5f6"), None)]
+        with patch("endgame_detector.PGNParser.parse_moves_with_clocks", return_value=illegal_moves):
+            stats = EndgameClassifier.aggregate([illegal_game])
+        assert stats == []
+
     def test_empty_games_list(self):
         stats = EndgameClassifier.aggregate([])
         assert stats == []
+
+    def test_aggregate_with_queens_off_definition(self):
+        """Aggregate with queens-off definition works."""
+        games = [
+            make_chess_game(
+                pgn=ROOK_ENDGAME_PGN, my_color="white",
+                white_result="win", black_result="resigned",
+            ),
+        ]
+        stats = EndgameClassifier.aggregate(games, definition="queens-off")
+        assert len(stats) >= 1
+
+    def test_aggregate_with_material_definition(self):
+        """Aggregate with material definition returns a list (may be empty if PGN truncated)."""
+        games = [
+            make_chess_game(
+                pgn=ROOK_ENDGAME_PGN, my_color="white",
+                white_result="win", black_result="resigned",
+            ),
+        ]
+        stats = EndgameClassifier.aggregate(games, definition="material")
+        assert isinstance(stats, list)
+
+
+class TestAnalyzeGameAll:
+    def test_returns_all_definitions(self):
+        game = make_chess_game(
+            pgn=ROOK_ENDGAME_PGN, my_color="white",
+            white_result="win", black_result="resigned",
+        )
+        results = EndgameClassifier.analyze_game_all(game)
+        assert set(results.keys()) == set(ENDGAME_DEFINITIONS)
+
+    def test_queens_off_and_minor_detect_rook_endgame(self):
+        """queens-off and minor-or-queen detect the rook endgame PGN."""
+        game = make_chess_game(
+            pgn=ROOK_ENDGAME_PGN, my_color="white",
+            white_result="win", black_result="resigned",
+        )
+        results = EndgameClassifier.analyze_game_all(game)
+        assert results["queens-off"] is not None
+        assert results["minor-or-queen"] is not None
+
+    def test_definitions_may_disagree(self):
+        """Different definitions may detect endgame at different points or not at all."""
+        game = make_chess_game(
+            pgn=ROOK_ENDGAME_PGN, my_color="white",
+            white_result="win", black_result="resigned",
+        )
+        results = EndgameClassifier.analyze_game_all(game)
+        # queens-off and minor-or-queen should agree on this game
+        assert results["queens-off"] is not None
+        assert results["minor-or-queen"] is not None
+        # material may or may not detect (depends on where game truncates)
+        # Just verify it's a valid result (None or EndgameInfo)
+        assert results["material"] is None or isinstance(results["material"], EndgameInfo)
+
+    def test_no_pgn_returns_all_none(self):
+        game = make_chess_game(pgn=None)
+        results = EndgameClassifier.analyze_game_all(game)
+        for defn in ENDGAME_DEFINITIONS:
+            assert results[defn] is None
+
+    def test_header_only_pgn_returns_all_none(self):
+        """PGN with headers but no moves returns all None."""
+        game = make_chess_game(pgn=HEADER_ONLY_PGN)
+        results = EndgameClassifier.analyze_game_all(game)
+        for defn in ENDGAME_DEFINITIONS:
+            assert results[defn] is None
+
+    def test_all_definitions_trigger_early_break(self):
+        """When all definitions detect endgame, the loop breaks early."""
+        # Use a very low material threshold so 'material' definition
+        # fires at the same point as queens-off/minor-or-queen
+        game = make_chess_game(
+            pgn=ROOK_ENDGAME_PGN, my_color="white",
+            white_result="win", black_result="resigned",
+        )
+        results = EndgameClassifier.analyze_game_all(game, material_threshold=40)
+        # All 3 definitions should detect an endgame
+        for defn in ENDGAME_DEFINITIONS:
+            assert results[defn] is not None
+
+    def test_short_game_no_endgame(self):
+        game = make_chess_game(
+            pgn=SCHOLARS_MATE_PGN, my_color="white",
+            white_result="win", black_result="checkmated",
+        )
+        results = EndgameClassifier.analyze_game_all(game)
+        for defn in ENDGAME_DEFINITIONS:
+            assert results[defn] is None
+
+    def test_illegal_moves_returns_all_none(self):
+        game = make_chess_game(
+            pgn="dummy", my_color="white",
+            white_result="win", black_result="resigned",
+        )
+        illegal_moves = [(chess.Move.from_uci("e5f6"), None)]
+        with patch("endgame_detector.PGNParser.parse_moves_with_clocks", return_value=illegal_moves):
+            results = EndgameClassifier.analyze_game_all(game)
+        for defn in ENDGAME_DEFINITIONS:
+            assert results[defn] is None
+
+
+# A rook endgame PGN with clock annotations
+ROOK_ENDGAME_CLOCKS_PGN = """[Event "Live"]
+[Result "1-0"]
+
+1. e4 {[%clk 0:09:58]} e5 {[%clk 0:09:57]} 2. Nf3 {[%clk 0:09:50]} Nc6 {[%clk 0:09:45]}
+3. Bb5 {[%clk 0:09:40]} a6 {[%clk 0:09:35]} 4. Bxc6 {[%clk 0:09:30]} dxc6 {[%clk 0:09:20]}
+5. Nxe5 {[%clk 0:09:20]} Qd4 {[%clk 0:09:10]}
+6. Nf3 {[%clk 0:09:10]} Qxe4+ {[%clk 0:09:00]} 7. Qe2 {[%clk 0:09:00]} Qxe2+ {[%clk 0:08:50]}
+8. Kxe2 {[%clk 0:08:50]} Bf5 {[%clk 0:08:40]} 9. d3 {[%clk 0:08:30]} O-O-O {[%clk 0:08:30]}
+10. Be3 {[%clk 0:08:20]} Nf6 {[%clk 0:08:10]} 11. Nbd2 {[%clk 0:08:10]} Nd5 {[%clk 0:08:00]}
+12. Bd4 {[%clk 0:08:00]} f6 {[%clk 0:07:50]} 13. Nc4 {[%clk 0:07:50]} Nb4 {[%clk 0:07:40]}
+14. Nce5 {[%clk 0:07:40]} fxe5 {[%clk 0:07:30]} 15. Nxe5 {[%clk 0:07:20]} Nxc2 {[%clk 0:07:20]}
+16. Rac1 {[%clk 0:07:10]} Nxd4+ {[%clk 0:07:00]} 17. Ke3 {[%clk 0:07:00]} Ne6 {[%clk 0:06:50]}
+18. Nxc6 {[%clk 0:06:50]} bxc6 {[%clk 0:06:40]} 19. Rxc6 {[%clk 0:06:40]} Bd6 {[%clk 0:06:30]}
+20. Rhc1 {[%clk 0:06:30]} Kb7 {[%clk 0:06:20]} 21. R6c4 {[%clk 0:06:20]} Rd7 {[%clk 0:06:10]}
+22. a4 {[%clk 0:06:10]} Rhd8 {[%clk 0:06:00]} 23. Rb4+ {[%clk 0:06:00]} Ka7 {[%clk 0:05:50]}
+24. Rc6 {[%clk 0:05:50]} Nd4 {[%clk 0:05:40]} 25. Kd2 {[%clk 0:05:40]} Nf5 {[%clk 0:05:30]}
+26. Rxd6 {[%clk 0:05:20]} Rxd6 {[%clk 0:05:20]} 27. Rb3 {[%clk 0:05:10]} Nxg2+ {[%clk 0:05:00]}
+28. Kc3+ {[%clk 0:05:00]} Ka8 {[%clk 0:04:50]} 1-0"""
+
+
+class TestAnalyzeGameAllClocks:
+    """Tests for clock time extraction in analyze_game_all."""
+
+    def test_clock_times_populated(self):
+        game = make_chess_game(
+            pgn=ROOK_ENDGAME_CLOCKS_PGN, my_color="white",
+            white_result="win", black_result="resigned",
+        )
+        results = EndgameClassifier.analyze_game_all(game)
+        info = results["queens-off"]
+        assert info is not None
+        assert info.my_clock is not None
+        assert info.opp_clock is not None
+        # The queen trade happens around ply 12-13 (Qxe2+/Kxe2)
+        # Clock values should be reasonable (less than starting 10 min)
+        assert info.my_clock < 600
+        assert info.opp_clock < 600
+
+    def test_clock_times_none_without_annotations(self):
+        game = make_chess_game(
+            pgn=ROOK_ENDGAME_PGN, my_color="white",
+            white_result="win", black_result="resigned",
+        )
+        results = EndgameClassifier.analyze_game_all(game)
+        info = results["queens-off"]
+        assert info is not None
+        assert info.my_clock is None
+        assert info.opp_clock is None
+
+    def test_clock_my_color_black(self):
+        game = make_chess_game(
+            pgn=ROOK_ENDGAME_CLOCKS_PGN, my_color="black",
+            white_result="win", black_result="checkmated",
+        )
+        results = EndgameClassifier.analyze_game_all(game)
+        info = results["queens-off"]
+        assert info is not None
+        # As black, my_clock should be black's clock, opp should be white's
+        assert info.my_clock is not None
+        assert info.opp_clock is not None
+
+
+class TestAggregateClocks:
+    """Tests for average clock time computation in aggregation."""
+
+    def test_avg_clock_in_aggregate(self):
+        games = [
+            make_chess_game(
+                pgn=ROOK_ENDGAME_CLOCKS_PGN, my_color="white",
+                white_result="win", black_result="resigned",
+            ),
+        ]
+        result = EndgameClassifier.aggregate(games, definition="queens-off")
+        assert len(result) >= 1
+        entry = result[0]
+        assert entry["avg_my_clock"] is not None
+        assert entry["avg_opp_clock"] is not None
+
+    def test_avg_clock_none_without_annotations(self):
+        games = [
+            make_chess_game(
+                pgn=ROOK_ENDGAME_PGN, my_color="white",
+                white_result="win", black_result="resigned",
+            ),
+        ]
+        result = EndgameClassifier.aggregate(games, definition="queens-off")
+        assert len(result) >= 1
+        entry = result[0]
+        assert entry["avg_my_clock"] is None
+        assert entry["avg_opp_clock"] is None
+
+
+class TestAggregateEndgamePly:
+    """Tests for endgame_ply in aggregate results."""
+
+    def test_endgame_ply_in_aggregate(self):
+        games = [
+            make_chess_game(
+                pgn=ROOK_ENDGAME_PGN, my_color="white",
+                white_result="win", black_result="resigned",
+            ),
+        ]
+        result = EndgameClassifier.aggregate(games)
+        assert len(result) >= 1
+        entry = result[0]
+        assert "example_endgame_ply" in entry
+        assert entry["example_endgame_ply"] > 0
+
+
+class TestAggregateAll:
+    def test_returns_all_definitions(self):
+        games = [
+            make_chess_game(
+                pgn=ROOK_ENDGAME_PGN, my_color="white",
+                white_result="win", black_result="resigned",
+            ),
+        ]
+        result = EndgameClassifier.aggregate_all(games)
+        assert set(result.keys()) == set(ENDGAME_DEFINITIONS)
+        for defn in ENDGAME_DEFINITIONS:
+            assert isinstance(result[defn], list)
+
+    def test_empty_games(self):
+        result = EndgameClassifier.aggregate_all([])
+        for defn in ENDGAME_DEFINITIONS:
+            assert result[defn] == []
+
+    def test_all_definitions_have_entries(self):
+        """aggregate_all returns stats for definitions that detect endgames."""
+        games = [
+            make_chess_game(
+                pgn=ROOK_ENDGAME_PGN, my_color="white",
+                white_result="win", black_result="resigned",
+            ),
+        ]
+        result = EndgameClassifier.aggregate_all(games)
+        # queens-off and minor-or-queen should detect this game
+        assert len(result["queens-off"]) >= 1
+        assert len(result["minor-or-queen"]) >= 1

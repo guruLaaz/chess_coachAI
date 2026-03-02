@@ -65,6 +65,48 @@ class TestParseMoves:
             assert PGNParser.parse_moves("some pgn text") is None
 
 
+CLOCKS_PGN = """[Event "Live Chess"]
+[Result "1-0"]
+
+1. e4 {[%clk 0:09:58]} e5 {[%clk 0:09:55]} 2. Nf3 {[%clk 0:09:50]} Nc6 {[%clk 0:09:45]} 1-0"""
+
+
+class TestParseMovesWithClocks:
+    def test_returns_moves_and_clocks(self):
+        result = PGNParser.parse_moves_with_clocks(CLOCKS_PGN)
+        assert result is not None
+        assert len(result) == 4
+        for move, clock in result:
+            assert isinstance(move, chess.Move)
+            assert isinstance(clock, float)
+
+    def test_first_clock_value(self):
+        result = PGNParser.parse_moves_with_clocks(CLOCKS_PGN)
+        _, clock = result[0]
+        assert clock == 598.0  # 9:58 = 598 seconds
+
+    def test_no_clock_annotations_returns_none_clocks(self):
+        result = PGNParser.parse_moves_with_clocks(SHORT_PGN)
+        assert result is not None
+        for move, clock in result:
+            assert isinstance(move, chess.Move)
+            assert clock is None
+
+    def test_none_input_returns_none(self):
+        assert PGNParser.parse_moves_with_clocks(None) is None
+
+    def test_empty_string_returns_none(self):
+        assert PGNParser.parse_moves_with_clocks("") is None
+
+    def test_header_only_returns_none(self):
+        assert PGNParser.parse_moves_with_clocks(HEADER_ONLY_PGN) is None
+
+    def test_read_game_returns_none(self):
+        """When chess.pgn.read_game returns None, parse_moves_with_clocks returns None."""
+        with patch("pgn_parser.chess.pgn.read_game", return_value=None):
+            assert PGNParser.parse_moves_with_clocks("some pgn text") is None
+
+
 class TestReplayToPosition:
     def test_replay_to_first_move(self):
         board = PGNParser.replay_to_position(SAMPLE_PGN, 0)
