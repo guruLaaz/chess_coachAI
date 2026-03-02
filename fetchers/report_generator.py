@@ -6,7 +6,7 @@ from typing import List
 
 import chess
 import chess.svg
-from flask import Flask, render_template_string
+from flask import Flask, render_template_string, request
 
 from repertoire_analyzer import OpeningEvaluation
 
@@ -278,6 +278,84 @@ class CoachingReportGenerator:
                 page="endgames",
                 definitions=list(self.endgame_stats_by_def.keys()),
                 default_definition=default_def,
+            )
+
+        @app.route("/endgames/all")
+        def endgames_all_games():
+            defn = request.args.get("def", default_def)
+            eg_type = request.args.get("type", "")
+            balance = request.args.get("balance", "")
+            groups = self._get_opening_groups()
+
+            # Find the matching aggregate entry
+            stats_list = self.endgame_stats_by_def.get(defn, [])
+            match = None
+            for s in stats_list:
+                if s["type"] == eg_type and s["balance"] == balance:
+                    match = s
+                    break
+            if match is None:
+                return render_template_string(
+                    _ENDGAME_ALL_GAMES_TEMPLATE,
+                    username=self.username,
+                    eg_type=eg_type,
+                    balance=balance,
+                    definition=defn,
+                    games=[],
+                    groups=groups,
+                    endgame_count=endgame_count,
+                    total=len(self.deviations),
+                    page="endgames_all",
+                )
+
+            # Enrich each game with SVG, deep-link, formatted clocks
+            enriched_games = []
+            for g in match.get("all_games", []):
+                entry = dict(g)
+                fen = g.get("fen", "")
+                color = g.get("my_color", "white")
+                if fen:
+                    entry["svg_board"] = self._render_board_svg(
+                        fen, None, color, "")
+                else:
+                    entry["svg_board"] = ""
+                # Deep-link
+                game_url = g.get("game_url", "")
+                ply = g.get("endgame_ply", 0)
+                entry["deep_link"] = ""
+                if game_url and ply:
+                    if "lichess.org" in game_url:
+                        entry["deep_link"] = f"{game_url}#{ply + 1}"
+                    elif "chess.com" in game_url:
+                        analysis_url = game_url.replace(
+                            "chess.com/game/",
+                            "chess.com/analysis/game/")
+                        entry["deep_link"] = (
+                            f"{analysis_url}?tab=analysis&move={ply}")
+                elif game_url:
+                    entry["deep_link"] = game_url
+                # Format clocks
+                entry["my_clock_fmt"] = self._format_clock(g.get("my_clock"))
+                entry["opp_clock_fmt"] = self._format_clock(g.get("opp_clock"))
+                # Result badge class
+                result = g.get("my_result", "draw")
+                entry["result_class"] = (
+                    "win" if result == "win"
+                    else "loss" if result == "loss"
+                    else "draw")
+                enriched_games.append(entry)
+
+            return render_template_string(
+                _ENDGAME_ALL_GAMES_TEMPLATE,
+                username=self.username,
+                eg_type=eg_type,
+                balance=balance,
+                definition=defn,
+                games=enriched_games,
+                groups=groups,
+                endgame_count=endgame_count,
+                total=len(self.deviations),
+                page="endgames_all",
             )
 
         return app
@@ -1005,12 +1083,13 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                             {{ s.svg_board | safe }}
                             {% set diff = s.get("example_material_diff", 0) %}
                             <div class="eval-badge {{ 'eval-positive' if diff > 0 else 'eval-negative' if diff < 0 else 'eval-zero' }}">
-                                {{ "+%d"|format(diff) if diff > 0 else diff }} pawns
+                                material {{ "+%d"|format(diff) if diff > 0 else diff }}
                             </div>
                         </div>
                         {% if s.example_game_url %}
                         <a class="game-link" href="{{ s.example_game_url }}" target="_blank" rel="noopener">view example game &rarr;</a>
                         {% endif %}
+                        <a class="game-link" href="/endgames/all?def={{ s.definition|urlencode }}&type={{ s.type|urlencode }}&balance={{ s.balance|urlencode }}" style="margin-left: 16px;">show all games &rarr;</a>
                     </div>
                     {% endif %}
                 </div>
@@ -1090,5 +1169,225 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
         });
     })();
     </script>
+</body>
+</html>"""
+
+
+_ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Coach - {{ username }} - {{ eg_type }} ({{ balance }})</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+        }
+        .layout { display: flex; min-height: 100vh; }
+        .sidebar {
+            width: 280px;
+            background: #1e293b;
+            border-right: 1px solid #334155;
+            padding: 20px 0;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+        .sidebar h2 {
+            padding: 0 16px;
+            font-size: 0.85rem;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        .sidebar a {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 16px;
+            color: #94a3b8;
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: all 0.15s;
+        }
+        .sidebar a:hover { background: #334155; color: #e2e8f0; }
+        .sidebar a.active {
+            background: #1e3a5f;
+            color: #60a5fa;
+            border-left: 3px solid #3b82f6;
+        }
+        .count {
+            background: #334155;
+            color: #94a3b8;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.75rem;
+        }
+        .main {
+            flex: 1;
+            padding: 30px 40px;
+            max-width: 960px;
+        }
+        h1 { font-size: 1.6rem; margin-bottom: 8px; color: #f8fafc; }
+        .subtitle { color: #94a3b8; margin-bottom: 24px; font-size: 0.95rem; }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 16px;
+            color: #60a5fa;
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+        .back-link:hover { text-decoration: underline; }
+        .balance-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        .balance-equal { background: #334155; color: #94a3b8; }
+        .balance-up { background: #14532d; color: #4ade80; }
+        .balance-down { background: #450a0a; color: #f87171; }
+        .game-row {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: flex-start;
+            gap: 20px;
+        }
+        .game-board { flex-shrink: 0; text-align: center; }
+        .game-board svg { border-radius: 4px; }
+        .game-info { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+        .game-badges { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .result-tag {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .result-win { background: #166534; color: #4ade80; }
+        .result-loss { background: #7f1d1d; color: #f87171; }
+        .result-draw { background: #334155; color: #94a3b8; }
+        .eval-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .eval-positive { background: #166534; color: #4ade80; }
+        .eval-negative { background: #7f1d1d; color: #f87171; }
+        .eval-zero     { background: #334155; color: #94a3b8; }
+        .clock-badge {
+            font-size: 0.85rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .clock-icon { color: #94a3b8; }
+        .clock-you {
+            background: #16a34a22;
+            color: #4ade80;
+            padding: 1px 5px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .clock-opp {
+            background: #64748b22;
+            color: #94a3b8;
+            padding: 1px 5px;
+            border-radius: 4px;
+        }
+        .game-link {
+            font-size: 0.85rem;
+            color: #60a5fa;
+            text-decoration: none;
+        }
+        .game-link:hover { text-decoration: underline; color: #93bbfc; }
+        .empty-state { text-align: center; padding: 80px 20px; color: #64748b; }
+        .empty-state h2 { color: #94a3b8; margin-bottom: 12px; }
+        @media (max-width: 768px) {
+            .layout { flex-direction: column; }
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: static;
+                border-right: none;
+                border-bottom: 1px solid #334155;
+            }
+            .game-row { flex-direction: column; align-items: center; }
+        }
+    </style>
+</head>
+<body>
+    <div class="layout">
+        <nav class="sidebar">
+            <h2>Openings</h2>
+            <a href="/">
+                All deviations <span class="count">{{ total }}</span>
+            </a>
+            {% for g in groups %}
+            <a href="/opening/{{ g.eco_code }}/{{ g.color }}">
+                {{ g.eco_name }} ({{ g.color }})
+                <span class="count">{{ g.count }}</span>
+            </a>
+            {% endfor %}
+            <h2 style="margin-top: 24px;">Analysis</h2>
+            <a href="/endgames" {% if page == 'endgames_all' %}class="active"{% endif %}>
+                Endgames <span class="count">{{ endgame_count }}</span>
+            </a>
+        </nav>
+        <main class="main">
+            <a class="back-link" href="/endgames">&larr; Back to endgames</a>
+            <h1>{{ eg_type }} <span class="balance-badge balance-{{ balance }}">{{ balance }}</span></h1>
+            <div class="subtitle">{{ games|length }} games &mdash; definition: {{ definition }} &mdash; sorted by most recent</div>
+
+            {% if games %}
+                {% for g in games %}
+                <div class="game-row">
+                    {% if g.svg_board %}
+                    <div class="game-board">
+                        {{ g.svg_board | safe }}
+                    </div>
+                    {% endif %}
+                    <div class="game-info">
+                        <div class="game-badges">
+                            <span class="result-tag result-{{ g.result_class }}">{{ g.my_result|upper }}</span>
+                            {% set diff = g.get("material_diff", 0) %}
+                            <span class="eval-badge {{ 'eval-positive' if diff > 0 else 'eval-negative' if diff < 0 else 'eval-zero' }}">
+                                material {{ "+%d"|format(diff) if diff > 0 else diff }}
+                            </span>
+                            {% if g.my_clock_fmt %}
+                            <span class="clock-badge" title="Time remaining (you / opponent)">
+                                <span class="clock-icon">&#9201;</span>
+                                <span class="clock-you">{{ g.my_clock_fmt }}</span>
+                                {% if g.opp_clock_fmt %}<span class="clock-opp">{{ g.opp_clock_fmt }}</span>{% endif %}
+                            </span>
+                            {% endif %}
+                        </div>
+                        {% if g.deep_link %}
+                        <a class="game-link" href="{{ g.deep_link }}" target="_blank" rel="noopener">view game &rarr;</a>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="empty-state">
+                    <h2>No games found</h2>
+                    <p>No games matched this endgame type and balance.</p>
+                </div>
+            {% endif %}
+        </main>
+    </div>
 </body>
 </html>"""

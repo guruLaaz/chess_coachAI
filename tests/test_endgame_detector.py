@@ -812,3 +812,81 @@ class TestAggregateAll:
         # queens-off and minor-or-queen should detect this game
         assert len(result["queens-off"]) >= 1
         assert len(result["minor-or-queen"]) >= 1
+
+
+class TestAggregateAllGames:
+    """Tests for the all_games per-game data in aggregate results."""
+
+    def test_all_games_field_present(self):
+        """Each aggregate entry should have an all_games list."""
+        games = [
+            make_chess_game(
+                pgn=ROOK_ENDGAME_PGN, my_color="white",
+                white_result="win", black_result="resigned",
+            ),
+        ]
+        stats = EndgameClassifier.aggregate(games)
+        assert len(stats) >= 1
+        for entry in stats:
+            assert "all_games" in entry
+            assert isinstance(entry["all_games"], list)
+
+    def test_all_games_count_matches_total(self):
+        """all_games list length should match the total game count."""
+        games = [
+            make_chess_game(
+                pgn=ROOK_ENDGAME_PGN, my_color="white",
+                white_result="win", black_result="resigned",
+            ),
+        ]
+        stats = EndgameClassifier.aggregate(games)
+        for entry in stats:
+            assert len(entry["all_games"]) == entry["total"]
+
+    def test_all_games_has_required_fields(self):
+        """Each game dict in all_games has all required fields."""
+        games = [
+            make_chess_game(
+                pgn=ROOK_ENDGAME_PGN, my_color="white",
+                white_result="win", black_result="resigned",
+            ),
+        ]
+        stats = EndgameClassifier.aggregate(games)
+        for entry in stats:
+            for g in entry["all_games"]:
+                assert "fen" in g
+                assert "game_url" in g
+                assert "endgame_ply" in g
+                assert "my_result" in g
+                assert "material_diff" in g
+                assert "my_clock" in g
+                assert "opp_clock" in g
+                assert "end_time" in g
+                assert "my_color" in g
+
+    def test_all_games_sorted_most_recent_first(self):
+        """all_games should be sorted by end_time descending."""
+        import datetime
+        old_time = datetime.datetime(2025, 1, 1, 12, 0, 0)
+        new_time = datetime.datetime(2025, 6, 15, 12, 0, 0)
+        games = [
+            make_chess_game(
+                pgn=ROOK_ENDGAME_PGN, my_color="white",
+                white_result="win", black_result="resigned",
+                game_url="https://www.chess.com/game/live/old",
+                end_time=old_time,
+            ),
+            make_chess_game(
+                pgn=ROOK_ENDGAME_PGN, my_color="white",
+                white_result="win", black_result="resigned",
+                game_url="https://www.chess.com/game/live/new",
+                end_time=new_time,
+            ),
+        ]
+        stats = EndgameClassifier.aggregate(games)
+        assert len(stats) >= 1
+        entry = stats[0]
+        assert len(entry["all_games"]) == 2
+        # Most recent (new_time) should be first
+        assert entry["all_games"][0]["game_url"] == "https://www.chess.com/game/live/new"
+        assert entry["all_games"][1]["game_url"] == "https://www.chess.com/game/live/old"

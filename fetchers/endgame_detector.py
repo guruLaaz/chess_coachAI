@@ -280,16 +280,20 @@ class EndgameClassifier:
         """Aggregate a list of (EndgameInfo, game) pairs into grouped stats.
 
         Returns a list of dicts sorted by game count descending.
+        Each entry also includes an ``all_games`` list with per-game data
+        (sorted most-recent first) for the "show all games" detail page.
         """
         counts = {}
         representatives = {}
         clock_data = {}  # key -> list of (my_clock, opp_clock) pairs
+        all_games = {}   # key -> list of per-game dicts
 
         for info, game in infos_with_games:
             key = (info.endgame_type, info.material_balance)
             if key not in counts:
                 counts[key] = {"wins": 0, "losses": 0, "draws": 0}
                 clock_data[key] = []
+                all_games[key] = []
 
             if info.my_result == "win":
                 counts[key]["wins"] += 1
@@ -302,6 +306,20 @@ class EndgameClassifier:
                 clock_data[key].append((info.my_clock, info.opp_clock))
 
             end_time = getattr(game, "end_time", None)
+
+            # Collect per-game data for the detail page
+            all_games[key].append({
+                "fen": info.fen_at_endgame,
+                "game_url": info.game_url,
+                "endgame_ply": info.endgame_ply,
+                "my_result": info.my_result,
+                "material_diff": info.material_diff,
+                "my_clock": info.my_clock,
+                "opp_clock": info.opp_clock,
+                "end_time": end_time,
+                "my_color": game.my_color,
+            })
+
             prev = representatives.get(key)
             if prev is None or (end_time and end_time > prev["end_time"]):
                 representatives[key] = {
@@ -325,6 +343,11 @@ class EndgameClassifier:
             avg_my_clock = round(sum(my_clocks) / len(my_clocks)) if my_clocks else None
             avg_opp_clock = round(sum(opp_clocks) / len(opp_clocks)) if opp_clocks else None
 
+            # Sort all_games by end_time descending (most recent first)
+            games_list = all_games.get((eg_type, balance), [])
+            games_list.sort(
+                key=lambda g: g["end_time"] or 0, reverse=True)
+
             results.append({
                 "type": eg_type,
                 "balance": balance,
@@ -342,6 +365,7 @@ class EndgameClassifier:
                 "example_endgame_ply": rep.get("endgame_ply", 0),
                 "avg_my_clock": avg_my_clock,
                 "avg_opp_clock": avg_opp_clock,
+                "all_games": games_list,
             })
 
         results.sort(key=lambda x: x["total"], reverse=True)

@@ -774,11 +774,11 @@ class TestEndgamePage:
         resp = app.test_client().get("/endgames")
         html = resp.data.decode()
         assert "eval-badge" in html
-        # R vs R has diff=0 → "0 pawns" with eval-zero class
+        # R vs R has diff=0 → "material 0" with eval-zero class
         assert "eval-zero" in html
-        # Pawn has diff=+1 → "+1 pawns" with eval-positive class
+        # Pawn has diff=+1 → "material +1" with eval-positive class
         assert "eval-positive" in html
-        assert "+1 pawns" in html
+        assert "material +1" in html
 
     _STATS_WITH_PLY = [
         {"type": "R vs R", "balance": "equal", "total": 30,
@@ -886,3 +886,150 @@ class TestEndgamePage:
         resp = app.test_client().get("/endgames")
         assert b"<svg" not in resp.data
         assert b"view example game" not in resp.data
+
+    # ------ Show all games link & page ------
+
+    _STATS_WITH_ALL_GAMES = [
+        {"type": "R vs R", "balance": "equal", "total": 2,
+         "wins": 1, "losses": 1, "draws": 0,
+         "win_pct": 50, "loss_pct": 50, "draw_pct": 0,
+         "example_fen": "r3k3/pppp1ppp/8/8/8/8/PPPP1PPP/R3K3 w - - 0 1",
+         "example_game_url": "https://www.chess.com/game/live/99999",
+         "example_color": "white",
+         "example_material_diff": 0,
+         "example_endgame_ply": 24,
+         "avg_my_clock": 350, "avg_opp_clock": 280,
+         "all_games": [
+             {"fen": "r3k3/pppp1ppp/8/8/8/8/PPPP1PPP/R3K3 w - - 0 1",
+              "game_url": "https://www.chess.com/game/live/99999",
+              "endgame_ply": 24, "my_result": "win",
+              "material_diff": 0, "my_clock": 400, "opp_clock": 300,
+              "end_time": 1700000000, "my_color": "white"},
+             {"fen": "r3k3/pppp1ppp/8/8/8/8/PPPP1PPP/R3K3 w - - 0 1",
+              "game_url": "https://lichess.org/abc12345",
+              "endgame_ply": 30, "my_result": "loss",
+              "material_diff": -2, "my_clock": 200, "opp_clock": 350,
+              "end_time": 1699999000, "my_color": "black"},
+         ]},
+    ]
+
+    def test_show_all_games_link(self):
+        """Each endgame card has a 'show all games' link."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._STATS_WITH_ALL_GAMES)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/endgames")
+        html = resp.data.decode()
+        assert "show all games" in html
+        assert "/endgames/all?" in html
+
+    def test_all_games_route_renders(self):
+        """The /endgames/all route renders a page with individual games."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._STATS_WITH_ALL_GAMES)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get(
+            "/endgames/all?def=minor-or-queen&type=R+vs+R&balance=equal")
+        html = resp.data.decode()
+        assert resp.status_code == 200
+        assert "R vs R" in html
+        assert "2 games" in html
+
+    def test_all_games_shows_results(self):
+        """Each game on the all-games page has a result badge."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._STATS_WITH_ALL_GAMES)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get(
+            "/endgames/all?def=minor-or-queen&type=R+vs+R&balance=equal")
+        html = resp.data.decode()
+        assert "result-win" in html
+        assert "result-loss" in html
+
+    def test_all_games_deep_links(self):
+        """Game links on the all-games page use correct deep-link format."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._STATS_WITH_ALL_GAMES)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get(
+            "/endgames/all?def=minor-or-queen&type=R+vs+R&balance=equal")
+        html = resp.data.decode()
+        # Chess.com analysis deep-link
+        assert "chess.com/analysis/game/live/99999?tab=analysis" in html
+        # Lichess ply deep-link
+        assert "lichess.org/abc12345#31" in html
+
+    def test_all_games_clocks(self):
+        """Clock times appear for each game on the all-games page."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._STATS_WITH_ALL_GAMES)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get(
+            "/endgames/all?def=minor-or-queen&type=R+vs+R&balance=equal")
+        html = resp.data.decode()
+        # 400s = 6:40, 300s = 5:00
+        assert '<span class="clock-you">6:40</span>' in html
+        assert '<span class="clock-opp">5:00</span>' in html
+
+    def test_all_games_material_eval(self):
+        """Material diff badges appear on each game row."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._STATS_WITH_ALL_GAMES)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get(
+            "/endgames/all?def=minor-or-queen&type=R+vs+R&balance=equal")
+        html = resp.data.decode()
+        assert "eval-zero" in html      # material_diff == 0
+        assert "eval-negative" in html   # material_diff == -2
+        assert "material -2" in html
+
+    def test_all_games_has_back_link(self):
+        """The all-games page has a back link to the endgames overview."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._STATS_WITH_ALL_GAMES)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get(
+            "/endgames/all?def=minor-or-queen&type=R+vs+R&balance=equal")
+        html = resp.data.decode()
+        assert "Back to endgames" in html
+        assert 'href="/endgames"' in html
+
+    def test_all_games_empty_when_no_match(self):
+        """Returns empty state when no matching endgame type found."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._STATS_WITH_ALL_GAMES)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get(
+            "/endgames/all?def=minor-or-queen&type=NONEXISTENT&balance=equal")
+        html = resp.data.decode()
+        assert resp.status_code == 200
+        assert "No games found" in html
+
+    def test_all_games_has_boards(self):
+        """SVG boards render for each game on the all-games page."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator("player", evals,
+                                      endgame_stats=self._STATS_WITH_ALL_GAMES)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get(
+            "/endgames/all?def=minor-or-queen&type=R+vs+R&balance=equal")
+        html = resp.data.decode()
+        # Two games, each should have an SVG board
+        assert html.count("<svg") == 2
