@@ -24,7 +24,7 @@ from endgame_detector import EndgameClassifier
 
 # Paths relative to this script
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_STOCKFISH = os.path.join(BASE_DIR, "engines", "stockfish-windows-x86-64-sse41-popcnt.exe")
+DEFAULT_STOCKFISH = os.path.join(BASE_DIR, "engines", "stockfish-windows-x86-64-avx2.exe")
 DEFAULT_BOOK = os.path.join(BASE_DIR, "data", "gm2001.bin")
 DEFAULT_CACHE_DB = os.path.join(BASE_DIR, "data", "cache.db")
 
