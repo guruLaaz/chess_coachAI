@@ -39,7 +39,7 @@ class TestDeviationFiltering:
             _make_eval(deviating_side="black", my_color="white", played_move="d2d4"),  # excluded
             _make_eval(deviating_side="black", my_color="black", played_move="d7d6"),
         ]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         assert len(gen.deviations) == 2
 
     def test_fully_booked_excluded(self):
@@ -48,7 +48,7 @@ class TestDeviationFiltering:
             _make_eval(is_fully_booked=True),
             _make_eval(is_fully_booked=False),
         ]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         assert len(gen.deviations) == 1
 
     def test_missing_fen_excluded(self):
@@ -57,7 +57,7 @@ class TestDeviationFiltering:
             _make_eval(fen=""),
             _make_eval(),
         ]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         assert len(gen.deviations) == 1
 
     def test_missing_played_move_excluded(self):
@@ -66,11 +66,11 @@ class TestDeviationFiltering:
             _make_eval(played_move=None),
             _make_eval(),
         ]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         assert len(gen.deviations) == 1
 
     def test_empty_evaluations(self):
-        gen = CoachingReportGenerator("player", [])
+        gen = CoachingReportGenerator([], chesscom_user="player")
         assert gen.deviations == []
 
 
@@ -82,36 +82,36 @@ class TestSorting:
             _make_eval(eval_loss_cp=120, played_move="d2d4"),
             _make_eval(eval_loss_cp=50, played_move="c2c4"),
         ]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         assert [d.eval_loss_cp for d in gen.deviations] == [120, 50, 10]
 
 
 class TestMoveConversion:
     def test_ply_to_move_label_white(self):
-        gen = CoachingReportGenerator("player", [])
+        gen = CoachingReportGenerator([], chesscom_user="player")
         assert gen._ply_to_move_label(0, "white") == "1."
         assert gen._ply_to_move_label(2, "white") == "2."
         assert gen._ply_to_move_label(4, "white") == "3."
 
     def test_ply_to_move_label_black(self):
-        gen = CoachingReportGenerator("player", [])
+        gen = CoachingReportGenerator([], chesscom_user="player")
         assert gen._ply_to_move_label(1, "black") == "1..."
         assert gen._ply_to_move_label(3, "black") == "2..."
         assert gen._ply_to_move_label(5, "black") == "3..."
 
     def test_move_to_san(self):
-        gen = CoachingReportGenerator("player", [])
+        gen = CoachingReportGenerator([], chesscom_user="player")
         fen = chess.Board().fen()
         assert gen._move_to_san(fen, "e2e4") == "e4"
         assert gen._move_to_san(fen, "g1f3") == "Nf3"
 
     def test_move_to_san_none(self):
-        gen = CoachingReportGenerator("player", [])
+        gen = CoachingReportGenerator([], chesscom_user="player")
         assert gen._move_to_san(chess.Board().fen(), None) == "N/A"
 
     def test_move_to_san_invalid_move(self):
         """Invalid UCI move falls back to returning raw UCI string."""
-        gen = CoachingReportGenerator("player", [])
+        gen = CoachingReportGenerator([], chesscom_user="player")
         assert gen._move_to_san(chess.Board().fen(), "z9z9") == "z9z9"
 
 
@@ -122,7 +122,7 @@ class TestOpeningGroups:
             _make_eval(eco_code="B90", my_color="white", deviating_side="white", played_move="d2d4"),
             _make_eval(eco_code="C50", my_color="black", deviating_side="black", played_move="e7e6"),
         ]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         groups = gen._get_opening_groups()
 
         assert len(groups) == 2
@@ -135,13 +135,13 @@ class TestOpeningGroups:
 
 class TestSVGRendering:
     def test_render_board_with_arrow(self):
-        gen = CoachingReportGenerator("player", [])
+        gen = CoachingReportGenerator([], chesscom_user="player")
         svg = gen._render_board_svg(chess.Board().fen(), "e2e4", "white", "#22c55e")
         assert "<svg" in svg
         assert "svg" in svg.lower()
 
     def test_render_board_no_move(self):
-        gen = CoachingReportGenerator("player", [])
+        gen = CoachingReportGenerator([], chesscom_user="player")
         svg = gen._render_board_svg(chess.Board().fen(), None, "white", "#22c55e")
         assert "<svg" in svg
 
@@ -152,7 +152,7 @@ class TestFlaskRoutes:
             evals = [_make_eval(), _make_eval(eco_code="C50", eco_name="Italian",
                                               my_color="black", deviating_side="black",
                                               played_move="d7d6")]
-        gen = CoachingReportGenerator("testuser", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="testuser")
         app = gen._build_app()
         app.config["TESTING"] = True
         return app.test_client()
@@ -257,7 +257,7 @@ class TestDeviationGrouping:
             _make_eval(eval_loss_cp=80),
             _make_eval(eval_loss_cp=50),
         ]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         assert len(gen.deviations) == 1
         assert gen.deviations[0].eval_loss_cp == 80  # worst kept
 
@@ -267,7 +267,7 @@ class TestDeviationGrouping:
             _make_eval(eval_loss_cp=30),
             _make_eval(eval_loss_cp=80),
         ]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         key = (evals[0].fen_at_deviation, evals[0].played_move_uci)
         assert gen.deviation_counts[key] == 2
 
@@ -277,7 +277,7 @@ class TestDeviationGrouping:
             _make_eval(played_move="g1f3"),
             _make_eval(played_move="d2d4"),
         ]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         assert len(gen.deviations) == 2
 
 
@@ -285,7 +285,7 @@ class TestInvalidBookMoves:
     def test_invalid_book_move_shows_uci_fallback(self):
         """Invalid book moves fall back to raw UCI in the report."""
         evals = [_make_eval(book_moves=["z9z9"])]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
@@ -297,7 +297,7 @@ class TestRunMethod:
     @patch("report_generator.threading.Timer")
     def test_run_opens_browser_and_starts_server(self, MockTimer, mock_wb_open):
         """run() sets up a timer for browser and starts Flask."""
-        gen = CoachingReportGenerator("player", [])
+        gen = CoachingReportGenerator([], chesscom_user="player")
 
         with patch.object(gen, "_build_app") as mock_build:
             mock_app = MagicMock()
@@ -323,7 +323,7 @@ class TestWinLossBadge:
             _make_eval(my_result="win"),
             _make_eval(my_result="loss"),
         ]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
@@ -339,7 +339,7 @@ class TestWinLossBadge:
             _make_eval(played_move="g1f3", my_result="loss"),
             _make_eval(played_move="g1f3", my_result="draw"),
         ]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         key = (evals[0].fen_at_deviation, "g1f3")
         r = gen.deviation_results[key]
         assert r["win"] == 1
@@ -349,7 +349,7 @@ class TestWinLossBadge:
     def test_all_wins_shows_100_percent(self):
         """All wins shows W 100% / L 0%."""
         evals = [_make_eval(my_result="win")]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
@@ -359,7 +359,7 @@ class TestWinLossBadge:
     def test_empty_result_counted_as_unknown(self):
         """Evals with empty my_result don't crash and count as neither."""
         evals = [_make_eval(my_result="")]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         key = (evals[0].fen_at_deviation, evals[0].played_move_uci)
         r = gen.deviation_results[key]
         assert r["win"] == 0
@@ -373,7 +373,7 @@ class TestSortDropdown:
     def test_sort_dropdown_present(self):
         """Sort dropdown select element appears in the report."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
@@ -384,7 +384,7 @@ class TestSortDropdown:
     def test_data_attributes_on_cards(self):
         """Cards have data-eval-loss and data-loss-pct attributes."""
         evals = [_make_eval(eval_loss_cp=120, my_result="loss")]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
@@ -394,7 +394,7 @@ class TestSortDropdown:
     def test_sort_dropdown_on_filtered_page(self):
         """Sort dropdown also appears on opening-filtered pages."""
         evals = [_make_eval(eco_code="B90")]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/opening/B90/white")
@@ -407,7 +407,7 @@ class TestTimeControlFilter:
     def test_filter_checkboxes_present(self):
         """Time control filter checkboxes appear in the report."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
@@ -422,7 +422,7 @@ class TestTimeControlFilter:
         evals = [_make_eval()]
         # Set time_class on the eval
         evals[0].time_class = "blitz"
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
@@ -432,7 +432,7 @@ class TestTimeControlFilter:
         """Evals with empty time_class get 'unknown' in template."""
         evals = [_make_eval()]
         evals[0].time_class = ""
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
@@ -445,7 +445,7 @@ class TestPlatformFilter:
     def test_platform_filter_checkboxes_present(self):
         """Platform filter checkboxes appear in the report."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
@@ -457,7 +457,7 @@ class TestPlatformFilter:
         """Chess.com game_url produces data-platform='chesscom'."""
         evals = [_make_eval()]
         evals[0].game_url = "https://www.chess.com/game/live/12345"
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
@@ -467,7 +467,7 @@ class TestPlatformFilter:
         """Lichess game_url produces data-platform='lichess'."""
         evals = [_make_eval()]
         evals[0].game_url = "https://lichess.org/abc12345"
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
@@ -477,7 +477,7 @@ class TestPlatformFilter:
         """Empty game_url produces data-platform='unknown'."""
         evals = [_make_eval()]
         evals[0].game_url = ""
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
@@ -486,7 +486,7 @@ class TestPlatformFilter:
     def test_platform_filter_on_filtered_page(self):
         """Platform filter checkboxes also appear on opening-filtered pages."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/opening/B90/white")
@@ -499,7 +499,7 @@ class TestMinGamesFilter:
     def test_min_games_select_present(self):
         """Min games select dropdown appears in the report."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
@@ -509,7 +509,7 @@ class TestMinGamesFilter:
     def test_min_games_options(self):
         """Min games select has expected threshold options."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
@@ -526,7 +526,7 @@ class TestMinGamesFilter:
             _make_eval(played_move="g1f3"),
             _make_eval(played_move="g1f3"),
         ]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
@@ -535,7 +535,7 @@ class TestMinGamesFilter:
     def test_min_games_on_filtered_page(self):
         """Min games filter also appears on opening-filtered pages."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals)
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/opening/B90/white")
@@ -564,7 +564,7 @@ class TestEndgamePage:
 
     def test_endgames_route_returns_200(self):
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._SAMPLE_STATS)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -573,7 +573,7 @@ class TestEndgamePage:
 
     def test_endgames_table_shows_types(self):
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._SAMPLE_STATS)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -583,7 +583,7 @@ class TestEndgamePage:
 
     def test_endgames_table_shows_percentages(self):
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._SAMPLE_STATS)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -593,7 +593,7 @@ class TestEndgamePage:
 
     def test_endgames_shows_balance_badges(self):
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._SAMPLE_STATS)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -603,7 +603,7 @@ class TestEndgamePage:
 
     def test_sidebar_has_endgames_link(self):
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._SAMPLE_STATS)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -613,7 +613,7 @@ class TestEndgamePage:
 
     def test_empty_endgame_stats(self):
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals, endgame_stats=[])
+        gen = CoachingReportGenerator(evals, chesscom_user="player", endgame_stats=[])
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/endgames")
@@ -621,7 +621,7 @@ class TestEndgamePage:
 
     def test_endgame_count_in_sidebar(self):
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._SAMPLE_STATS)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -632,7 +632,7 @@ class TestEndgamePage:
     def test_sort_dropdown_present(self):
         """Sort dropdown appears on endgames page."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._SAMPLE_STATS)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -645,7 +645,7 @@ class TestEndgamePage:
     def test_sort_data_attributes_on_rows(self):
         """Table rows have data attributes for sorting."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._SAMPLE_STATS)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -659,7 +659,7 @@ class TestEndgamePage:
     def test_min_games_filter_present(self):
         """Min games filter dropdown appears on endgames page."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._SAMPLE_STATS)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -670,7 +670,7 @@ class TestEndgamePage:
     def test_min_games_filter_options(self):
         """Min games select has expected threshold options."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._SAMPLE_STATS)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -684,7 +684,7 @@ class TestEndgamePage:
     def test_balance_filter_checkboxes_present(self):
         """Balance filter checkboxes appear on endgames page."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._SAMPLE_STATS)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -698,7 +698,7 @@ class TestEndgamePage:
     def test_data_balance_attribute_on_rows(self):
         """Cards have data-balance attribute."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._SAMPLE_STATS)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -710,7 +710,7 @@ class TestEndgamePage:
     def test_svg_board_placeholder_rendered(self):
         """Board placeholder appears on endgames page for stats with example_fen."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._SAMPLE_STATS)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -722,7 +722,7 @@ class TestEndgamePage:
     def test_game_link_on_endgames(self):
         """Game link appears for stats with example_game_url."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._SAMPLE_STATS)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -734,7 +734,7 @@ class TestEndgamePage:
     def test_eval_badge_displayed(self):
         """Material evaluation badge appears next to the example board."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._SAMPLE_STATS)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -771,7 +771,7 @@ class TestEndgamePage:
     def test_deep_link_chesscom(self):
         """Chess.com game link uses analysis URL with move= query param."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._STATS_WITH_PLY)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -783,7 +783,7 @@ class TestEndgamePage:
     def test_deep_link_lichess(self):
         """Lichess game link includes ply fragment."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._STATS_WITH_PLY)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -795,7 +795,7 @@ class TestEndgamePage:
     def test_clock_display_shown(self):
         """Clock times appear on endgame cards with color-coded labels."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._STATS_WITH_PLY)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -816,7 +816,7 @@ class TestEndgamePage:
              "avg_my_clock": None, "avg_opp_clock": None},
         ]
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals, endgame_stats=stats)
+        gen = CoachingReportGenerator(evals, chesscom_user="player", endgame_stats=stats)
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/endgames")
@@ -846,12 +846,12 @@ class TestEndgamePage:
              "example_fen": "", "example_game_url": "", "example_color": "white"},
         ]
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=stats_no_fen)
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/endgames")
-        assert b"<svg" not in resp.data
+        assert b'class="board-slot eg-board"' not in resp.data
         assert b"view example game" not in resp.data
 
     # ------ Show all games link & page ------
@@ -883,7 +883,7 @@ class TestEndgamePage:
     def test_show_all_games_link(self):
         """Each endgame card has a 'show all games' link."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._STATS_WITH_ALL_GAMES)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -895,7 +895,7 @@ class TestEndgamePage:
     def test_all_games_route_renders(self):
         """The /endgames/all route renders a page with individual games."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._STATS_WITH_ALL_GAMES)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -909,7 +909,7 @@ class TestEndgamePage:
     def test_all_games_shows_results(self):
         """Each game on the all-games page has a result badge."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._STATS_WITH_ALL_GAMES)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -922,7 +922,7 @@ class TestEndgamePage:
     def test_all_games_deep_links(self):
         """Game links on the all-games page use correct deep-link format."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._STATS_WITH_ALL_GAMES)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -937,7 +937,7 @@ class TestEndgamePage:
     def test_all_games_clocks(self):
         """Clock times appear for each game on the all-games page."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._STATS_WITH_ALL_GAMES)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -951,7 +951,7 @@ class TestEndgamePage:
     def test_all_games_material_eval(self):
         """Material diff badges appear on each game row."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._STATS_WITH_ALL_GAMES)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -965,7 +965,7 @@ class TestEndgamePage:
     def test_all_games_has_back_link(self):
         """The all-games page has a back link to the endgames overview."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._STATS_WITH_ALL_GAMES)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -978,7 +978,7 @@ class TestEndgamePage:
     def test_all_games_empty_when_no_match(self):
         """Returns empty state when no matching endgame type found."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._STATS_WITH_ALL_GAMES)
         app = gen._build_app()
         app.config["TESTING"] = True
@@ -991,7 +991,7 @@ class TestEndgamePage:
     def test_all_games_has_board_placeholders(self):
         """Board placeholders render for each game on the all-games page."""
         evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals,
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._STATS_WITH_ALL_GAMES)
         app = gen._build_app()
         app.config["TESTING"] = True

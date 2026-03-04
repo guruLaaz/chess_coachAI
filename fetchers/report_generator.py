@@ -14,8 +14,11 @@ from repertoire_analyzer import OpeningEvaluation
 class CoachingReportGenerator:
     """Flask web app that displays coaching recommendations with static SVG boards."""
 
-    def __init__(self, username, evaluations, endgame_stats=None):
-        self.username = username
+    def __init__(self, evaluations, chesscom_user="", lichess_user="",
+                 endgame_stats=None):
+        self.chesscom_user = chesscom_user
+        self.lichess_user = lichess_user
+        self.username = chesscom_user or lichess_user
         # endgame_stats: dict[definition -> list[dict]] or legacy list[dict]
         if isinstance(endgame_stats, dict):
             self.endgame_stats_by_def = endgame_stats
@@ -199,6 +202,8 @@ class CoachingReportGenerator:
             return render_template_string(
                 _MAIN_TEMPLATE,
                 username=self.username,
+                chesscom_user=self.chesscom_user,
+                lichess_user=self.lichess_user,
                 items=items,
                 groups=groups,
                 total=len(self.deviations),
@@ -218,6 +223,8 @@ class CoachingReportGenerator:
             return render_template_string(
                 _MAIN_TEMPLATE,
                 username=self.username,
+                chesscom_user=self.chesscom_user,
+                lichess_user=self.lichess_user,
                 items=items,
                 groups=groups,
                 total=len(items),
@@ -255,6 +262,8 @@ class CoachingReportGenerator:
             return render_template_string(
                 _ENDGAME_TEMPLATE,
                 username=self.username,
+                chesscom_user=self.chesscom_user,
+                lichess_user=self.lichess_user,
                 stats=enriched,
                 endgame_count=endgame_count,
                 groups=groups,
@@ -282,6 +291,8 @@ class CoachingReportGenerator:
                 return render_template_string(
                     _ENDGAME_ALL_GAMES_TEMPLATE,
                     username=self.username,
+                chesscom_user=self.chesscom_user,
+                lichess_user=self.lichess_user,
                     eg_type=eg_type,
                     balance=balance,
                     definition=defn,
@@ -325,6 +336,8 @@ class CoachingReportGenerator:
             return render_template_string(
                 _ENDGAME_ALL_GAMES_TEMPLATE,
                 username=self.username,
+                chesscom_user=self.chesscom_user,
+                lichess_user=self.lichess_user,
                 eg_type=eg_type,
                 balance=balance,
                 definition=defn,
@@ -365,7 +378,7 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chess Coach - {{ username }}</title>
+    <title>Chess Coach - {% if chesscom_user %}{{ chesscom_user }}{% endif %}{% if chesscom_user and lichess_user %} / {% endif %}{% if lichess_user %}{{ lichess_user }}{% endif %}</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -391,6 +404,26 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             margin-bottom: 16px;
             padding-bottom: 8px;
             border-bottom: 1px solid #334155;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .sidebar h2::after {
+            content: "\25BE";
+            font-size: 0.8rem;
+            transition: transform 0.2s;
+        }
+        .sidebar h2.collapsed::after {
+            transform: rotate(-90deg);
+        }
+        .section-links {
+            overflow: hidden;
+            transition: max-height 0.25s ease;
+        }
+        .section-links.collapsed {
+            max-height: 0 !important;
         }
         .sidebar a {
             display: block;
@@ -411,6 +444,20 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             max-width: 960px;
         }
         h1 { font-size: 1.8rem; color: #f8fafc; margin-bottom: 8px; }
+        .user-badges { display: inline; }
+        .user-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #334155;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 500;
+            vertical-align: middle;
+        }
+        .user-badge + .user-badge { margin-left: 8px; }
+        .user-badge svg { width: 18px; height: 18px; flex-shrink: 0; }
         .subtitle { color: #94a3b8; margin-bottom: 32px; font-size: 0.95rem; }
         .board-spinner { text-align:center; padding:60px 0; color:#64748b; font-size:0.9rem; }
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -568,24 +615,28 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
 <body>
     <div class="layout">
         <nav class="sidebar">
-            <h2>Openings</h2>
-            <a href="/" {% if page == 'openings' and not filter_eco %}class="active"{% endif %}>
-                All deviations <span class="count">{{ total }}</span>
-            </a>
-            {% for g in groups %}
-            <a href="/opening/{{ g.eco_code }}/{{ g.color }}"
-               {% if filter_eco == g.eco_code and filter_color == g.color %}class="active"{% endif %}>
-                {{ g.eco_name }} ({{ g.color }})
-                <span class="count">{{ g.count }}</span>
-            </a>
-            {% endfor %}
-            <h2 style="margin-top: 24px;">Analysis</h2>
-            <a href="/endgames" {% if page == 'endgames' %}class="active"{% endif %}>
-                Endgames <span class="count">{{ endgame_count }}</span>
-            </a>
+            <h2 id="hdr-openings">Openings</h2>
+            <div class="section-links" id="openings-links">
+                <a href="/" {% if page == 'openings' and not filter_eco %}class="active"{% endif %}>
+                    All deviations <span class="count">{{ total }}</span>
+                </a>
+                {% for g in groups %}
+                <a href="/opening/{{ g.eco_code }}/{{ g.color }}"
+                   {% if filter_eco == g.eco_code and filter_color == g.color %}class="active"{% endif %}>
+                    {{ g.eco_name }} ({{ g.color }})
+                    <span class="count">{{ g.count }}</span>
+                </a>
+                {% endfor %}
+            </div>
+            <h2 id="hdr-analysis" style="margin-top: 24px;">Analysis</h2>
+            <div class="section-links" id="analysis-links">
+                <a href="/endgames" {% if page == 'endgames' %}class="active"{% endif %}>
+                    Endgames <span class="count">{{ endgame_count }}</span>
+                </a>
+            </div>
         </nav>
         <main class="main">
-            <h1>Chess Coach: {{ username }}</h1>
+            <h1>Chess Coach: <span class="user-badges">{% if chesscom_user %}<span class="user-badge"><svg viewBox="0 0 96.4 144"><path fill="#81b64c" d="M48.2 0C35.4-.1 25 10.3 24.9 23.1c0 7.5 3.6 14.6 9.7 18.9L17.9 53c0 3.5.9 6.9 2.6 9.9h14.8c-.3 6.6 2.4 22.6-21.8 41.1C5 110.4 0 121.3 0 134.6c0 .6 1.3 9.4 48.2 9.4s48.2-8.8 48.2-9.4c0-13.3-5-24.3-13.4-30.7-24.2-18.5-21.5-34.5-21.8-41.1H76c1.7-3 2.6-6.4 2.6-9.8L61.8 42c10.4-7.5 12.8-21.9 5.3-32.3C62.8 3.6 55.7 0 48.2 0z"/></svg>{{ chesscom_user }}</span>{% endif %}{% if lichess_user %}<span class="user-badge"><svg viewBox="0 0 50 50"><path fill="#fff" stroke="#fff" stroke-linejoin="round" d="M38.956.5c-3.53.418-6.452.902-9.286 2.984C5.534 1.786-.692 18.533.68 29.364 3.493 50.214 31.918 55.785 41.329 41.7c-7.444 7.696-19.276 8.752-28.323 3.084C3.959 39.116-.506 27.392 4.683 17.567 9.873 7.742 18.996 4.535 29.03 6.405c2.43-1.418 5.225-3.22 7.655-3.187l-1.694 4.86 12.752 21.37c-.439 5.654-5.459 6.112-5.459 6.112-.574-1.47-1.634-2.942-4.842-6.036-3.207-3.094-17.465-10.177-15.788-16.207-2.001 6.967 10.311 14.152 14.04 17.663 3.73 3.51 5.426 6.04 5.795 6.756 0 0 9.392-2.504 7.838-8.927L37.4 7.171z"/></svg>{{ lichess_user }}</span>{% endif %}</span></h1>
             {% if filter_eco %}
             <div class="subtitle">Showing {{ items|length }} deviations for {{ filter_eco }} as {{ filter_color }} &mdash; sorted by
                 <select id="sort-select" class="sort-select">
@@ -708,6 +759,42 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
 
     <script>
     (function() {
+        /* Sidebar accordion */
+        (function() {
+            var sections = [
+                { hdr: document.getElementById('hdr-openings'), links: document.getElementById('openings-links') },
+                { hdr: document.getElementById('hdr-analysis'), links: document.getElementById('analysis-links') }
+            ];
+            var activePage = '{{ page }}';
+            var activeIdx = (activePage === 'endgames') ? 1 : 0;
+            sections.forEach(function(s, i) {
+                if (i === activeIdx) {
+                    s.links.style.maxHeight = s.links.scrollHeight + 'px';
+                } else {
+                    s.links.classList.add('collapsed');
+                    s.hdr.classList.add('collapsed');
+                }
+                s.hdr.addEventListener('click', function() {
+                    sections.forEach(function(other) {
+                        if (other === s) {
+                            var isCollapsed = other.links.classList.contains('collapsed');
+                            if (isCollapsed) {
+                                other.links.classList.remove('collapsed');
+                                other.hdr.classList.remove('collapsed');
+                                other.links.style.maxHeight = other.links.scrollHeight + 'px';
+                            } else {
+                                other.links.classList.add('collapsed');
+                                other.hdr.classList.add('collapsed');
+                            }
+                        } else {
+                            other.links.classList.add('collapsed');
+                            other.hdr.classList.add('collapsed');
+                        }
+                    });
+                });
+            });
+        })();
+
         /* Sort dropdown */
         var select = document.getElementById('sort-select');
         if (select) {
@@ -847,7 +934,7 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chess Coach - {{ username }} - Endgames</title>
+    <title>Chess Coach - {% if chesscom_user %}{{ chesscom_user }}{% endif %}{% if chesscom_user and lichess_user %} / {% endif %}{% if lichess_user %}{{ lichess_user }}{% endif %} - Endgames</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -875,6 +962,26 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
             text-transform: uppercase;
             letter-spacing: 0.5px;
             margin-bottom: 8px;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .sidebar h2::after {
+            content: "\25BE";
+            font-size: 0.8rem;
+            transition: transform 0.2s;
+        }
+        .sidebar h2.collapsed::after {
+            transform: rotate(-90deg);
+        }
+        .section-links {
+            overflow: hidden;
+            transition: max-height 0.25s ease;
+        }
+        .section-links.collapsed {
+            max-height: 0 !important;
         }
         .sidebar a {
             display: flex;
@@ -905,6 +1012,20 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
             max-width: 960px;
         }
         h1 { font-size: 1.6rem; margin-bottom: 8px; color: #f8fafc; }
+        .user-badges { display: inline; }
+        .user-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #334155;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 500;
+            vertical-align: middle;
+        }
+        .user-badge + .user-badge { margin-left: 8px; }
+        .user-badge svg { width: 18px; height: 18px; flex-shrink: 0; }
         .subtitle { color: #94a3b8; margin-bottom: 24px; font-size: 0.95rem; }
         .type-label {
             font-weight: 600;
@@ -1065,23 +1186,27 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
 <body>
     <div class="layout">
         <nav class="sidebar">
-            <h2>Openings</h2>
-            <a href="/" {% if page == 'openings' and not filter_eco %}class="active"{% endif %}>
-                All deviations <span class="count">{{ total }}</span>
-            </a>
-            {% for g in groups %}
-            <a href="/opening/{{ g.eco_code }}/{{ g.color }}">
-                {{ g.eco_name }} ({{ g.color }})
-                <span class="count">{{ g.count }}</span>
-            </a>
-            {% endfor %}
-            <h2 style="margin-top: 24px;">Analysis</h2>
-            <a href="/endgames" {% if page == 'endgames' %}class="active"{% endif %}>
-                Endgames <span class="count">{{ endgame_count }}</span>
-            </a>
+            <h2 id="hdr-openings">Openings</h2>
+            <div class="section-links" id="openings-links">
+                <a href="/" {% if page == 'openings' and not filter_eco %}class="active"{% endif %}>
+                    All deviations <span class="count">{{ total }}</span>
+                </a>
+                {% for g in groups %}
+                <a href="/opening/{{ g.eco_code }}/{{ g.color }}">
+                    {{ g.eco_name }} ({{ g.color }})
+                    <span class="count">{{ g.count }}</span>
+                </a>
+                {% endfor %}
+            </div>
+            <h2 id="hdr-analysis" style="margin-top: 24px;">Analysis</h2>
+            <div class="section-links" id="analysis-links">
+                <a href="/endgames" {% if page == 'endgames' %}class="active"{% endif %}>
+                    Endgames <span class="count">{{ endgame_count }}</span>
+                </a>
+            </div>
         </nav>
         <main class="main">
-            <h1>Chess Coach: {{ username }}</h1>
+            <h1>Chess Coach: <span class="user-badges">{% if chesscom_user %}<span class="user-badge"><svg viewBox="0 0 96.4 144"><path fill="#81b64c" d="M48.2 0C35.4-.1 25 10.3 24.9 23.1c0 7.5 3.6 14.6 9.7 18.9L17.9 53c0 3.5.9 6.9 2.6 9.9h14.8c-.3 6.6 2.4 22.6-21.8 41.1C5 110.4 0 121.3 0 134.6c0 .6 1.3 9.4 48.2 9.4s48.2-8.8 48.2-9.4c0-13.3-5-24.3-13.4-30.7-24.2-18.5-21.5-34.5-21.8-41.1H76c1.7-3 2.6-6.4 2.6-9.8L61.8 42c10.4-7.5 12.8-21.9 5.3-32.3C62.8 3.6 55.7 0 48.2 0z"/></svg>{{ chesscom_user }}</span>{% endif %}{% if lichess_user %}<span class="user-badge"><svg viewBox="0 0 50 50"><path fill="#fff" stroke="#fff" stroke-linejoin="round" d="M38.956.5c-3.53.418-6.452.902-9.286 2.984C5.534 1.786-.692 18.533.68 29.364 3.493 50.214 31.918 55.785 41.329 41.7c-7.444 7.696-19.276 8.752-28.323 3.084C3.959 39.116-.506 27.392 4.683 17.567 9.873 7.742 18.996 4.535 29.03 6.405c2.43-1.418 5.225-3.22 7.655-3.187l-1.694 4.86 12.752 21.37c-.439 5.654-5.459 6.112-5.459 6.112-.574-1.47-1.634-2.942-4.842-6.036-3.207-3.094-17.465-10.177-15.788-16.207-2.001 6.967 10.311 14.152 14.04 17.663 3.73 3.51 5.426 6.04 5.795 6.756 0 0 9.392-2.504 7.838-8.927L37.4 7.171z"/></svg>{{ lichess_user }}</span>{% endif %}</span></h1>
             <div class="subtitle">Endgame performance &mdash; sorted by
                 <select id="eg-sort-select" class="sort-select">
                     <option value="data-total" selected>Games</option>
@@ -1163,6 +1288,42 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
 
     <script>
     (function() {
+        /* Sidebar accordion */
+        (function() {
+            var sections = [
+                { hdr: document.getElementById('hdr-openings'), links: document.getElementById('openings-links') },
+                { hdr: document.getElementById('hdr-analysis'), links: document.getElementById('analysis-links') }
+            ];
+            var activePage = '{{ page }}';
+            var activeIdx = (activePage === 'endgames' || activePage === 'endgames_all') ? 1 : 0;
+            sections.forEach(function(s, i) {
+                if (i === activeIdx) {
+                    s.links.style.maxHeight = s.links.scrollHeight + 'px';
+                } else {
+                    s.links.classList.add('collapsed');
+                    s.hdr.classList.add('collapsed');
+                }
+                s.hdr.addEventListener('click', function() {
+                    sections.forEach(function(other) {
+                        if (other === s) {
+                            var isCollapsed = other.links.classList.contains('collapsed');
+                            if (isCollapsed) {
+                                other.links.classList.remove('collapsed');
+                                other.hdr.classList.remove('collapsed');
+                                other.links.style.maxHeight = other.links.scrollHeight + 'px';
+                            } else {
+                                other.links.classList.add('collapsed');
+                                other.hdr.classList.add('collapsed');
+                            }
+                        } else {
+                            other.links.classList.add('collapsed');
+                            other.hdr.classList.add('collapsed');
+                        }
+                    });
+                });
+            });
+        })();
+
         /* Sort dropdown for endgame cards */
         var sortSelect = document.getElementById('eg-sort-select');
         var container = document.querySelector('.main');
@@ -1298,7 +1459,7 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chess Coach - {{ username }} - {{ eg_type }} ({{ balance }})</title>
+    <title>Chess Coach - {% if chesscom_user %}{{ chesscom_user }}{% endif %}{% if chesscom_user and lichess_user %} / {% endif %}{% if lichess_user %}{{ lichess_user }}{% endif %} - {{ eg_type }} ({{ balance }})</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -1326,6 +1487,26 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
             text-transform: uppercase;
             letter-spacing: 0.5px;
             margin-bottom: 8px;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .sidebar h2::after {
+            content: "\25BE";
+            font-size: 0.8rem;
+            transition: transform 0.2s;
+        }
+        .sidebar h2.collapsed::after {
+            transform: rotate(-90deg);
+        }
+        .section-links {
+            overflow: hidden;
+            transition: max-height 0.25s ease;
+        }
+        .section-links.collapsed {
+            max-height: 0 !important;
         }
         .sidebar a {
             display: flex;
@@ -1356,6 +1537,20 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
             max-width: 960px;
         }
         h1 { font-size: 1.6rem; margin-bottom: 8px; color: #f8fafc; }
+        .user-badges { display: inline; }
+        .user-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #334155;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 500;
+            vertical-align: middle;
+        }
+        .user-badge + .user-badge { margin-left: 8px; }
+        .user-badge svg { width: 18px; height: 18px; flex-shrink: 0; }
         .subtitle { color: #94a3b8; margin-bottom: 24px; font-size: 0.95rem; }
         .back-link {
             display: inline-block;
@@ -1455,20 +1650,24 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
 <body>
     <div class="layout">
         <nav class="sidebar">
-            <h2>Openings</h2>
-            <a href="/">
-                All deviations <span class="count">{{ total }}</span>
-            </a>
-            {% for g in groups %}
-            <a href="/opening/{{ g.eco_code }}/{{ g.color }}">
-                {{ g.eco_name }} ({{ g.color }})
-                <span class="count">{{ g.count }}</span>
-            </a>
-            {% endfor %}
-            <h2 style="margin-top: 24px;">Analysis</h2>
-            <a href="/endgames" {% if page == 'endgames_all' %}class="active"{% endif %}>
-                Endgames <span class="count">{{ endgame_count }}</span>
-            </a>
+            <h2 id="hdr-openings">Openings</h2>
+            <div class="section-links" id="openings-links">
+                <a href="/">
+                    All deviations <span class="count">{{ total }}</span>
+                </a>
+                {% for g in groups %}
+                <a href="/opening/{{ g.eco_code }}/{{ g.color }}">
+                    {{ g.eco_name }} ({{ g.color }})
+                    <span class="count">{{ g.count }}</span>
+                </a>
+                {% endfor %}
+            </div>
+            <h2 id="hdr-analysis" style="margin-top: 24px;">Analysis</h2>
+            <div class="section-links" id="analysis-links">
+                <a href="/endgames" {% if page == 'endgames_all' %}class="active"{% endif %}>
+                    Endgames <span class="count">{{ endgame_count }}</span>
+                </a>
+            </div>
         </nav>
         <main class="main">
             <a class="back-link" href="/endgames">&larr; Back to endgames</a>
@@ -1515,6 +1714,41 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
 
     <script>
     (function() {
+        /* Sidebar accordion */
+        (function() {
+            var sections = [
+                { hdr: document.getElementById('hdr-openings'), links: document.getElementById('openings-links') },
+                { hdr: document.getElementById('hdr-analysis'), links: document.getElementById('analysis-links') }
+            ];
+            var activeIdx = 1;
+            sections.forEach(function(s, i) {
+                if (i === activeIdx) {
+                    s.links.style.maxHeight = s.links.scrollHeight + 'px';
+                } else {
+                    s.links.classList.add('collapsed');
+                    s.hdr.classList.add('collapsed');
+                }
+                s.hdr.addEventListener('click', function() {
+                    sections.forEach(function(other) {
+                        if (other === s) {
+                            var isCollapsed = other.links.classList.contains('collapsed');
+                            if (isCollapsed) {
+                                other.links.classList.remove('collapsed');
+                                other.hdr.classList.remove('collapsed');
+                                other.links.style.maxHeight = other.links.scrollHeight + 'px';
+                            } else {
+                                other.links.classList.add('collapsed');
+                                other.hdr.classList.add('collapsed');
+                            }
+                        } else {
+                            other.links.classList.add('collapsed');
+                            other.hdr.classList.add('collapsed');
+                        }
+                    });
+                });
+            });
+        })();
+
         var PAGE_SIZE = 10;
         var shownCount = 0;
         var fetchingBoards = false;

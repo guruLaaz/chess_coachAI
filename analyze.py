@@ -371,8 +371,11 @@ def main():
 
         if args.report and all_evals:
             from report_generator import CoachingReportGenerator
-            generator = CoachingReportGenerator(display_username, all_evals,
-                                                   endgame_stats=all_endgame_stats)
+            generator = CoachingReportGenerator(
+                all_evals,
+                chesscom_user=chesscom_user,
+                lichess_user=lichess_user,
+                endgame_stats=all_endgame_stats)
             generator.run()
     finally:
         cache.close()
