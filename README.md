@@ -36,8 +36,6 @@ python analyze.py YOUR_CHESSCOM_USER YOUR_LICHESS_USER 90 --report
 # Full analysis with 4 Stockfish workers at depth 20
 python analyze.py YOUR_CHESSCOM_USER "" --depth 20 --workers 4 --report
 
-# Only show mistakes you've made 3+ times
-python analyze.py YOUR_CHESSCOM_USER YOUR_LICHESS_USER 60 --report --min-times 3
 ```
 
 Use `""` to skip a platform.
@@ -92,7 +90,6 @@ At least one username is required. Use `""` to skip a platform.
 | `--depth` | `18` | Stockfish analysis depth (higher = slower but more accurate) |
 | `--workers` | `1` | Parallel Stockfish instances (use CPU core count) |
 | `--report` | off | Launch the coaching report web app |
-| `--min-times` | `1` | Only show deviations that occurred N+ times |
 | `--include` | all | Only include specific time controls: `bullet blitz rapid daily` |
 | `--exclude` | none | Exclude specific time controls: `bullet blitz rapid daily` |
 | `--no-cache` | off | Force re-fetch and re-analysis (still saves new results to cache) |
@@ -143,7 +140,7 @@ Lichess API ───┘       │              │                         │
 
 **Endgame detection**: Every game is analyzed with all three endgame definitions in a single replay pass. Results are cached in SQLite and filtered by definition in the report UI. Clock annotations from PGNs are captured to show average time remaining when entering the endgame. No Stockfish needed.
 
-**Grouping**: Identical mistakes (same position + same played move across multiple games) are collapsed into a single entry with an occurrence count. The `--min-times` flag filters out one-off deviations to focus on habitual mistakes.
+**Grouping**: Identical mistakes (same position + same played move across multiple games) are collapsed into a single entry with an occurrence count. The min-games dropdown in the report (default: 3+) filters out one-off deviations to focus on habitual mistakes.
 
 **Caching**: Archives from completed months and evaluation results are cached in SQLite (`data/cache.db`). Re-running analysis skips already-evaluated games. The current month is always re-fetched. Use `--no-cache` to force a full re-analysis.
 

@@ -167,11 +167,12 @@ class TestFlaskRoutes:
         resp = client.get("/")
         assert b"testuser" in resp.data
 
-    def test_index_contains_boards(self):
-        """Route contains SVG boards for best and played moves."""
+    def test_index_contains_board_placeholders(self):
+        """Route contains board placeholders for lazy SVG loading."""
         client = self._get_app()
         resp = client.get("/")
-        assert b"<svg" in resp.data
+        assert b"board-slot" in resp.data
+        assert b"board-spinner" in resp.data
 
     def test_index_contains_move_recommendation(self):
         client = self._get_app()
@@ -208,12 +209,19 @@ class TestFlaskRoutes:
         resp = client.get("/")
         assert b"-1.2 loss" in resp.data
 
-    def test_always_renders_svg_boards(self):
-        """SVG boards are always rendered for every deviation."""
+    def test_lazy_svg_api_returns_boards(self):
+        """The /api/render-boards endpoint returns SVG strings."""
         evals = [_make_eval(game_moves_uci=["e2e4", "c7c5", "g1f3"])]
         client = self._get_app(evals)
-        resp = client.get("/")
-        assert b"<svg" in resp.data
+        import json
+        resp = client.post("/api/render-boards",
+                           data=json.dumps([{"fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                                             "color": "white"}]),
+                           content_type="application/json")
+        assert resp.status_code == 200
+        data = json.loads(resp.data)
+        assert len(data) == 1
+        assert "<svg" in data[0]
 
     def test_times_played_displayed(self):
         """Times played badge is shown in the report."""
@@ -271,48 +279,6 @@ class TestDeviationGrouping:
         ]
         gen = CoachingReportGenerator("player", evals)
         assert len(gen.deviations) == 2
-
-    def test_min_times_filters_infrequent(self):
-        """min_times=3 excludes positions that occurred fewer than 3 times."""
-        evals = [
-            _make_eval(played_move="g1f3"),  # 1 occurrence
-            _make_eval(played_move="d2d4"),
-            _make_eval(played_move="d2d4"),
-            _make_eval(played_move="d2d4"),  # 3 occurrences
-        ]
-        gen = CoachingReportGenerator("player", evals, min_times=3)
-        assert len(gen.deviations) == 1
-        assert gen.deviations[0].played_move_uci == "d2d4"
-
-    def test_min_times_default_keeps_all(self):
-        """Default min_times=1 keeps all groups."""
-        evals = [
-            _make_eval(played_move="g1f3"),
-            _make_eval(played_move="d2d4"),
-        ]
-        gen = CoachingReportGenerator("player", evals, min_times=1)
-        assert len(gen.deviations) == 2
-
-    def test_min_times_filters_all_returns_empty(self):
-        """When no group meets min_times, deviations is empty."""
-        evals = [_make_eval()]
-        gen = CoachingReportGenerator("player", evals, min_times=5)
-        assert gen.deviations == []
-
-    def test_min_times_server_side_still_works(self):
-        """Server-side min_times still filters deviations before rendering."""
-        evals = [
-            _make_eval(played_move="g1f3"),  # 1 occurrence
-            _make_eval(played_move="d2d4"),
-            _make_eval(played_move="d2d4"),
-            _make_eval(played_move="d2d4"),  # 3 occurrences
-        ]
-        gen = CoachingReportGenerator("testuser", evals, min_times=3)
-        app = gen._build_app()
-        app.config["TESTING"] = True
-        resp = app.test_client().get("/")
-        assert resp.status_code == 200
-        assert len(gen.deviations) == 1
 
 
 class TestInvalidBookMoves:
@@ -741,15 +707,16 @@ class TestEndgamePage:
         assert 'data-balance="equal"' in html
         assert 'data-balance="up"' in html
 
-    def test_svg_board_rendered(self):
-        """SVG board appears on endgames page for stats with example_fen."""
+    def test_svg_board_placeholder_rendered(self):
+        """Board placeholder appears on endgames page for stats with example_fen."""
         evals = [_make_eval()]
         gen = CoachingReportGenerator("player", evals,
                                       endgame_stats=self._SAMPLE_STATS)
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/endgames")
-        assert b"<svg" in resp.data
+        assert b"eg-board" in resp.data
+        assert b"board-spinner" in resp.data
         assert b"Example game" in resp.data
 
     def test_game_link_on_endgames(self):
@@ -1021,8 +988,8 @@ class TestEndgamePage:
         assert resp.status_code == 200
         assert "No games found" in html
 
-    def test_all_games_has_boards(self):
-        """SVG boards render for each game on the all-games page."""
+    def test_all_games_has_board_placeholders(self):
+        """Board placeholders render for each game on the all-games page."""
         evals = [_make_eval()]
         gen = CoachingReportGenerator("player", evals,
                                       endgame_stats=self._STATS_WITH_ALL_GAMES)
@@ -1031,5 +998,6 @@ class TestEndgamePage:
         resp = app.test_client().get(
             "/endgames/all?def=minor-or-queen&type=R+vs+R&balance=equal")
         html = resp.data.decode()
-        # Two games, each should have an SVG board
-        assert html.count("<svg") == 2
+        # Two games, each should have a board placeholder
+        assert html.count('class="board-slot allgames-board"') == 2
+        assert "board-spinner" in html

@@ -6,7 +6,7 @@ from typing import List
 
 import chess
 import chess.svg
-from flask import Flask, render_template_string, request
+from flask import Flask, render_template_string, request, jsonify
 
 from repertoire_analyzer import OpeningEvaluation
 
@@ -14,9 +14,8 @@ from repertoire_analyzer import OpeningEvaluation
 class CoachingReportGenerator:
     """Flask web app that displays coaching recommendations with static SVG boards."""
 
-    def __init__(self, username, evaluations, min_times=1, endgame_stats=None):
+    def __init__(self, username, evaluations, endgame_stats=None):
         self.username = username
-        self.min_times = min_times
         # endgame_stats: dict[definition -> list[dict]] or legacy list[dict]
         if isinstance(endgame_stats, dict):
             self.endgame_stats_by_def = endgame_stats
@@ -33,13 +32,15 @@ class CoachingReportGenerator:
         ]
         # Group by position + played move, keep worst instance per group
         self.deviations, self.deviation_counts, self.deviation_results = (
-            self._group_deviations(candidates, min_times))
+            self._group_deviations(candidates))
         # Sort worst first (biggest eval loss = biggest mistake)
         self.deviations.sort(key=lambda ev: ev.eval_loss_cp, reverse=True)
+        # Pre-compute item dicts (no SVGs — those are rendered lazily via API)
+        self._cached_items = [self._prepare_deviation(ev) for ev in self.deviations]
 
     @staticmethod
-    def _group_deviations(candidates, min_times):
-        """Group deviations by (FEN, played_move) and apply min_times filter.
+    def _group_deviations(candidates):
+        """Group deviations by (FEN, played_move).
 
         Returns (deviations, counts, results) where deviations is a list of
         the worst-case representative per group, counts maps
@@ -57,15 +58,14 @@ class CoachingReportGenerator:
         counts = {}
         results = {}
         for key, evs in groups.items():
-            if len(evs) >= min_times:
-                worst = max(evs, key=lambda e: e.eval_loss_cp)
-                deviations.append(worst)
-                counts[key] = len(evs)
-                r = {"win": 0, "loss": 0, "draw": 0}
-                for e in evs:
-                    if e.my_result in r:
-                        r[e.my_result] += 1
-                results[key] = r
+            worst = max(evs, key=lambda e: e.eval_loss_cp)
+            deviations.append(worst)
+            counts[key] = len(evs)
+            r = {"win": 0, "loss": 0, "draw": 0}
+            for e in evs:
+                if e.my_result in r:
+                    r[e.my_result] += 1
+            results[key] = r
 
         return deviations, counts, results
 
@@ -136,11 +136,6 @@ class CoachingReportGenerator:
 
         move_label = self._ply_to_move_label(ev.deviation_ply, ev.my_color)
 
-        svg_best = self._render_board_svg(
-            ev.fen_at_deviation, ev.best_move_uci, ev.my_color, "#22c55e")
-        svg_played = self._render_board_svg(
-            ev.fen_at_deviation, ev.played_move_uci, ev.my_color, "#ef4444")
-
         key = (ev.fen_at_deviation, ev.played_move_uci)
         count = self.deviation_counts.get(key, 1)
 
@@ -162,8 +157,9 @@ class CoachingReportGenerator:
             "played_san": played_san,
             "best_san": best_san,
             "book_moves": ", ".join(book_sans) if book_sans else "None in book",
-            "svg_best": svg_best,
-            "svg_played": svg_played,
+            "fen": ev.fen_at_deviation,
+            "best_move_uci": ev.best_move_uci,
+            "played_move_uci": ev.played_move_uci,
             "times_played": count,
             "game_url": ev.game_url,
             "eval_loss_raw": ev.eval_loss_cp,
@@ -198,7 +194,7 @@ class CoachingReportGenerator:
 
         @app.route("/")
         def index():
-            items = [self._prepare_deviation(ev) for ev in self.deviations]
+            items = self._cached_items
             groups = self._get_opening_groups()
             return render_template_string(
                 _MAIN_TEMPLATE,
@@ -206,7 +202,6 @@ class CoachingReportGenerator:
                 items=items,
                 groups=groups,
                 total=len(self.deviations),
-                min_times=self.min_times,
                 filter_eco=None,
                 filter_color=None,
                 page="openings",
@@ -215,19 +210,17 @@ class CoachingReportGenerator:
 
         @app.route("/opening/<eco_code>/<color>")
         def opening_filter(eco_code, color):
-            filtered = [
-                ev for ev in self.deviations
-                if (ev.eco_code or "Unknown") == eco_code and ev.my_color == color
+            items = [
+                item for item in self._cached_items
+                if item["eco_code"] == eco_code and item["color"] == color
             ]
-            items = [self._prepare_deviation(ev) for ev in filtered]
             groups = self._get_opening_groups()
             return render_template_string(
                 _MAIN_TEMPLATE,
                 username=self.username,
                 items=items,
                 groups=groups,
-                total=len(filtered),
-                min_times=self.min_times,
+                total=len(items),
                 filter_eco=eco_code,
                 filter_color=color,
                 page="openings",
@@ -237,19 +230,12 @@ class CoachingReportGenerator:
         @app.route("/endgames")
         def endgames():
             groups = self._get_opening_groups()
-            # Render SVG boards for each endgame example, across all definitions
+            # Prepare endgame stats (SVGs rendered lazily via API)
             enriched = []
             for defn, stats_list in self.endgame_stats_by_def.items():
                 for s in stats_list:
                     entry = dict(s)
                     entry["definition"] = defn
-                    fen = s.get("example_fen", "")
-                    color = s.get("example_color", "white")
-                    if fen:
-                        entry["svg_board"] = self._render_board_svg(
-                            fen, None, color, "")
-                    else:
-                        entry["svg_board"] = ""
                     # Build deep-link URL that opens at the endgame move
                     game_url = s.get("example_game_url", "")
                     ply = s.get("example_endgame_ply", 0)
@@ -257,8 +243,6 @@ class CoachingReportGenerator:
                         if "lichess.org" in game_url:
                             entry["example_game_url"] = f"{game_url}#{ply + 1}"
                         elif "chess.com" in game_url:
-                            # Chess.com strips URL fragments; use the
-                            # analysis page with a move= query parameter.
                             analysis_url = game_url.replace(
                                 "chess.com/game/",
                                 "chess.com/analysis/game/")
@@ -308,17 +292,10 @@ class CoachingReportGenerator:
                     page="endgames_all",
                 )
 
-            # Enrich each game with SVG, deep-link, formatted clocks
+            # Enrich each game with deep-link, formatted clocks (SVGs lazy)
             enriched_games = []
             for g in match.get("all_games", []):
                 entry = dict(g)
-                fen = g.get("fen", "")
-                color = g.get("my_color", "white")
-                if fen:
-                    entry["svg_board"] = self._render_board_svg(
-                        fen, None, color, "")
-                else:
-                    entry["svg_board"] = ""
                 # Deep-link
                 game_url = g.get("game_url", "")
                 ply = g.get("endgame_ply", 0)
@@ -357,6 +334,16 @@ class CoachingReportGenerator:
                 total=len(self.deviations),
                 page="endgames_all",
             )
+
+        @app.route("/api/render-boards", methods=["POST"])
+        def render_boards():
+            specs = request.get_json()
+            results = []
+            for s in specs:
+                svg = self._render_board_svg(
+                    s["fen"], s.get("move"), s["color"], s.get("arrow_color", ""))
+                results.append(svg)
+            return jsonify(results)
 
         return app
 
@@ -425,6 +412,9 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
         }
         h1 { font-size: 1.8rem; color: #f8fafc; margin-bottom: 8px; }
         .subtitle { color: #94a3b8; margin-bottom: 32px; font-size: 0.95rem; }
+        .board-spinner { text-align:center; padding:60px 0; color:#64748b; font-size:0.9rem; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .board-spinner::before { content:""; display:block; width:32px; height:32px; margin:0 auto 12px; border:3px solid #334155; border-top-color:#3b82f6; border-radius:50%; animation:spin .8s linear infinite; }
         .card {
             background: #1e293b;
             border-radius: 12px;
@@ -622,9 +612,9 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                     <button class="filter-btn" id="min-games-btn">Min games &#9662;</button>
                     <div class="filter-panel" id="min-games-panel">
                         <select id="min-games-select" class="sort-select" style="width:100%">
-                            <option value="1" selected>1+ (all)</option>
+                            <option value="1">1+ (all)</option>
                             <option value="2">2+</option>
-                            <option value="3">3+</option>
+                            <option value="3" selected>3+</option>
                             <option value="5">5+</option>
                             <option value="10">10+</option>
                         </select>
@@ -656,9 +646,9 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                     <button class="filter-btn" id="min-games-btn">Min games &#9662;</button>
                     <div class="filter-panel" id="min-games-panel">
                         <select id="min-games-select" class="sort-select" style="width:100%">
-                            <option value="1" selected>1+ (all)</option>
+                            <option value="1">1+ (all)</option>
                             <option value="2">2+</option>
-                            <option value="3">3+</option>
+                            <option value="3" selected>3+</option>
                             <option value="5">5+</option>
                             <option value="10">10+</option>
                         </select>
@@ -668,7 +658,7 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
 
             {% if items %}
                 {% for item in items %}
-                <div class="card {{ 'positive' if item.eval_loss_class == 'good' else '' }}" data-eval-loss="{{ item.eval_loss_raw }}" data-loss-pct="{{ item.loss_pct }}" data-time-class="{{ item.time_class }}" data-platform="{{ item.platform }}" data-times="{{ item.times_played }}">
+                <div class="card {{ 'positive' if item.eval_loss_class == 'good' else '' }}" style="display:none" data-eval-loss="{{ item.eval_loss_raw }}" data-loss-pct="{{ item.loss_pct }}" data-time-class="{{ item.time_class }}" data-platform="{{ item.platform }}" data-times="{{ item.times_played }}" data-fen="{{ item.fen }}" data-best-move="{{ item.best_move_uci }}" data-played-move="{{ item.played_move_uci }}" data-color="{{ item.color }}">
                     <div class="card-header">
                         <span class="card-title">
                             {{ item.eco_name }}
@@ -685,11 +675,11 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                     <div class="boards">
                         <div class="board-panel">
                             <h4 class="best">Best: {{ item.best_san }}</h4>
-                            {{ item.svg_best | safe }}
+                            <div class="board-slot board-best"><div class="board-spinner">Loading board&hellip;</div></div>
                         </div>
                         <div class="board-panel">
                             <h4 class="played">You played: {{ item.played_san }}</h4>
-                            {{ item.svg_played | safe }}
+                            <div class="board-slot board-played"><div class="board-spinner">Loading board&hellip;</div></div>
                         </div>
                     </div>
 
@@ -738,6 +728,11 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
         var platChecks = document.querySelectorAll('.platform-filter');
         var minGamesSelect = document.getElementById('min-games-select');
 
+        /* Infinite scroll state */
+        var PAGE_SIZE = 10;
+        var shownCount = 0;
+        var fetchingBoards = false;
+
         function applyFilters() {
             var enabledTC = new Set();
             tcChecks.forEach(function(c) { if (c.checked) enabledTC.add(c.value); });
@@ -752,13 +747,73 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                 var tcOk = !tc || enabledTC.has(tc);
                 var plOk = !pl || enabledPlat.has(pl);
                 var minOk = times >= minGames;
-                card.style.display = (tcOk && plOk && minOk) ? '' : 'none';
+                card.setAttribute('data-filtered', (tcOk && plOk && minOk) ? 'yes' : 'no');
+                card.style.display = 'none';
             });
+            shownCount = 0;
+            showNextBatch();
+        }
+
+        function showNextBatch() {
+            if (fetchingBoards) return;
+            var passing = Array.from(document.querySelectorAll('.card[data-filtered="yes"]'));
+            var end = Math.min(shownCount + PAGE_SIZE, passing.length);
+            var newCards = [];
+            for (var i = shownCount; i < end; i++) {
+                passing[i].style.display = '';
+                newCards.push(passing[i]);
+            }
+            shownCount = end;
+            loadBoards(newCards);
+        }
+
+        function loadBoards(cards) {
+            var specs = [];
+            var targets = [];
+            cards.forEach(function(card) {
+                var bestSlot = card.querySelector('.board-best');
+                var playedSlot = card.querySelector('.board-played');
+                if (bestSlot && bestSlot.querySelector('.board-spinner')) {
+                    var fen = card.getAttribute('data-fen');
+                    var color = card.getAttribute('data-color');
+                    specs.push({fen: fen, move: card.getAttribute('data-best-move'), color: color, arrow_color: '#22c55e'});
+                    specs.push({fen: fen, move: card.getAttribute('data-played-move'), color: color, arrow_color: '#ef4444'});
+                    targets.push({best: bestSlot, played: playedSlot});
+                }
+            });
+            if (!specs.length) return;
+            fetchingBoards = true;
+            fetch('/api/render-boards', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(specs)
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(svgs) {
+                for (var i = 0; i < targets.length; i++) {
+                    targets[i].best.innerHTML = svgs[i * 2];
+                    targets[i].played.innerHTML = svgs[i * 2 + 1];
+                }
+                fetchingBoards = false;
+            })
+            .catch(function() { fetchingBoards = false; });
         }
 
         tcChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
         platChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
         if (minGamesSelect) { minGamesSelect.addEventListener('change', applyFilters); }
+        applyFilters();
+
+        window.addEventListener('scroll', function() {
+            if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 200) {
+                showNextBatch();
+            }
+        });
+
+        /* Re-apply scroll after sort */
+        if (select) {
+            select.addEventListener('change', function() { applyFilters(); });
+        }
 
         /* Dropdown panel toggles */
         var panels = [
@@ -868,6 +923,9 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
         .pct-good { color: #4ade80; }
         .pct-bad { color: #f87171; }
         .pct-neutral { color: #94a3b8; }
+        .board-spinner { text-align:center; padding:60px 0; color:#64748b; font-size:0.9rem; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .board-spinner::before { content:""; display:block; width:32px; height:32px; margin:0 auto 12px; border:3px solid #334155; border-top-color:#3b82f6; border-radius:50%; animation:spin .8s linear infinite; }
         .eg-card {
             background: #1e293b;
             border-radius: 12px;
@@ -1053,9 +1111,9 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                     <button class="filter-btn" id="eg-min-games-btn">Min games &#9662;</button>
                     <div class="filter-panel" id="eg-min-games-panel">
                         <select id="eg-min-games-select" class="sort-select" style="width:100%">
-                            <option value="1" selected>1+ (all)</option>
+                            <option value="1">1+ (all)</option>
                             <option value="2">2+</option>
-                            <option value="3">3+</option>
+                            <option value="3" selected>3+</option>
                             <option value="5">5+</option>
                             <option value="10">10+</option>
                         </select>
@@ -1064,7 +1122,7 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
 
             {% if stats %}
                 {% for s in stats %}
-                <div class="eg-card" data-win-pct="{{ s.win_pct }}" data-loss-pct="{{ s.loss_pct }}" data-draw-pct="{{ s.draw_pct }}" data-total="{{ s.total }}" data-balance="{{ s.balance }}" data-definition="{{ s.definition }}">
+                <div class="eg-card" style="display:none" data-win-pct="{{ s.win_pct }}" data-loss-pct="{{ s.loss_pct }}" data-draw-pct="{{ s.draw_pct }}" data-total="{{ s.total }}" data-balance="{{ s.balance }}" data-definition="{{ s.definition }}" data-fen="{{ s.get('example_fen', '') }}" data-color="{{ s.get('example_color', 'white') }}">
                     <div class="eg-card-header">
                         <span class="type-label">{{ s.type }}</span>
                         <span class="balance-badge balance-{{ s.balance }}">{{ s.balance }}</span>
@@ -1076,11 +1134,11 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                         <span class="eg-clock" title="Avg time remaining when entering endgame (you / opponent)"><span class="eg-clock-icon">&#9201;</span> <span class="clock-you">{{ s.avg_my_clock_fmt }}</span><span class="clock-opp">{{ s.avg_opp_clock_fmt }}</span></span>
                         {% endif %}
                     </div>
-                    {% if s.svg_board %}
+                    {% if s.get('example_fen') %}
                     <div class="eg-card-body">
                         <div class="board-panel">
                             <h4>Example game</h4>
-                            {{ s.svg_board | safe }}
+                            <div class="board-slot eg-board"><div class="board-spinner">Loading board&hellip;</div></div>
                             {% set diff = s.get("example_material_diff", 0) %}
                             <div class="eval-badge {{ 'eval-positive' if diff > 0 else 'eval-negative' if diff < 0 else 'eval-zero' }}">
                                 material {{ "+%d"|format(diff) if diff > 0 else diff }}
@@ -1124,27 +1182,89 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
         var minSelect = document.getElementById('eg-min-games-select');
         var defSelect = document.getElementById('eg-def-select');
 
+        /* Infinite scroll state */
+        var PAGE_SIZE = 10;
+        var shownCount = 0;
+        var fetchingBoards = false;
+
         function applyFilters() {
             var selectedDef = defSelect ? defSelect.value : '';
+            var enabledBalance = new Set();
+            balanceChecks.forEach(function(c) { if (c.checked) enabledBalance.add(c.value); });
+            var min = minSelect ? parseInt(minSelect.value, 10) : 1;
+
             document.querySelectorAll('.eg-card').forEach(function(card) {
                 var balance = card.getAttribute('data-balance');
                 var total = parseInt(card.getAttribute('data-total'), 10) || 0;
                 var defn = card.getAttribute('data-definition');
-                var enabledBalance = new Set();
-                balanceChecks.forEach(function(c) { if (c.checked) enabledBalance.add(c.value); });
-                var min = minSelect ? parseInt(minSelect.value, 10) : 1;
                 var defOk = !selectedDef || defn === selectedDef;
                 var balOk = !balance || enabledBalance.has(balance);
                 var minOk = total >= min;
-                card.style.display = (defOk && balOk && minOk) ? '' : 'none';
+                card.setAttribute('data-filtered', (defOk && balOk && minOk) ? 'yes' : 'no');
+                card.style.display = 'none';
             });
+            shownCount = 0;
+            showNextBatch();
+        }
+
+        function showNextBatch() {
+            if (fetchingBoards) return;
+            var passing = Array.from(document.querySelectorAll('.eg-card[data-filtered="yes"]'));
+            var end = Math.min(shownCount + PAGE_SIZE, passing.length);
+            var newCards = [];
+            for (var i = shownCount; i < end; i++) {
+                passing[i].style.display = '';
+                newCards.push(passing[i]);
+            }
+            shownCount = end;
+            loadBoards(newCards);
+        }
+
+        function loadBoards(cards) {
+            var specs = [];
+            var targets = [];
+            cards.forEach(function(card) {
+                var slot = card.querySelector('.eg-board');
+                if (slot && slot.querySelector('.board-spinner')) {
+                    var fen = card.getAttribute('data-fen');
+                    if (fen) {
+                        specs.push({fen: fen, color: card.getAttribute('data-color')});
+                        targets.push(slot);
+                    }
+                }
+            });
+            if (!specs.length) return;
+            fetchingBoards = true;
+            fetch('/api/render-boards', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(specs)
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(svgs) {
+                for (var i = 0; i < targets.length; i++) {
+                    targets[i].innerHTML = svgs[i];
+                }
+                fetchingBoards = false;
+            })
+            .catch(function() { fetchingBoards = false; });
         }
 
         balanceChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
         if (minSelect) { minSelect.addEventListener('change', applyFilters); }
         if (defSelect) { defSelect.addEventListener('change', applyFilters); }
-        /* Apply initial filter to show only default definition */
         applyFilters();
+
+        window.addEventListener('scroll', function() {
+            if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 200) {
+                showNextBatch();
+            }
+        });
+
+        /* Re-apply scroll after sort */
+        if (sortSelect) {
+            sortSelect.addEventListener('change', function() { applyFilters(); });
+        }
 
         /* Dropdown panel toggles */
         var panels = [
@@ -1264,6 +1384,9 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
             align-items: flex-start;
             gap: 20px;
         }
+        .board-spinner { text-align:center; padding:60px 0; color:#64748b; font-size:0.9rem; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .board-spinner::before { content:""; display:block; width:32px; height:32px; margin:0 auto 12px; border:3px solid #334155; border-top-color:#3b82f6; border-radius:50%; animation:spin .8s linear infinite; }
         .game-board { flex-shrink: 0; text-align: center; }
         .game-board svg { border-radius: 4px; }
         .game-info { flex: 1; display: flex; flex-direction: column; gap: 8px; }
@@ -1354,10 +1477,10 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
 
             {% if games %}
                 {% for g in games %}
-                <div class="game-row">
-                    {% if g.svg_board %}
+                <div class="game-row" style="display:none" data-fen="{{ g.get('fen', '') }}" data-color="{{ g.get('my_color', 'white') }}">
+                    {% if g.get('fen') %}
                     <div class="game-board">
-                        {{ g.svg_board | safe }}
+                        <div class="board-slot allgames-board"><div class="board-spinner">Loading board&hellip;</div></div>
                     </div>
                     {% endif %}
                     <div class="game-info">
@@ -1389,5 +1512,64 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
             {% endif %}
         </main>
     </div>
+
+    <script>
+    (function() {
+        var PAGE_SIZE = 10;
+        var shownCount = 0;
+        var fetchingBoards = false;
+        var rows = Array.from(document.querySelectorAll('.game-row'));
+
+        function showNextBatch() {
+            if (fetchingBoards) return;
+            var end = Math.min(shownCount + PAGE_SIZE, rows.length);
+            var newRows = [];
+            for (var i = shownCount; i < end; i++) {
+                rows[i].style.display = '';
+                newRows.push(rows[i]);
+            }
+            shownCount = end;
+            loadBoards(newRows);
+        }
+
+        function loadBoards(items) {
+            var specs = [];
+            var targets = [];
+            items.forEach(function(row) {
+                var slot = row.querySelector('.allgames-board');
+                if (slot && slot.querySelector('.board-spinner')) {
+                    var fen = row.getAttribute('data-fen');
+                    if (fen) {
+                        specs.push({fen: fen, color: row.getAttribute('data-color')});
+                        targets.push(slot);
+                    }
+                }
+            });
+            if (!specs.length) return;
+            fetchingBoards = true;
+            fetch('/api/render-boards', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(specs)
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(svgs) {
+                for (var i = 0; i < targets.length; i++) {
+                    targets[i].innerHTML = svgs[i];
+                }
+                fetchingBoards = false;
+            })
+            .catch(function() { fetchingBoards = false; });
+        }
+
+        showNextBatch();
+
+        window.addEventListener('scroll', function() {
+            if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 200) {
+                showNextBatch();
+            }
+        });
+    })();
+    </script>
 </body>
 </html>"""

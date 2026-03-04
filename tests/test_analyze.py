@@ -451,7 +451,6 @@ class TestMain:
         args.workers = 1
         args.no_cache = False
         args.report = False
-        args.min_times = 1
         args.include = None
         args.exclude = None
         for k, v in overrides.items():
