@@ -457,9 +457,10 @@ class TestMain:
             setattr(args, k, v)
         return args
 
+    # --- days validation ---
     @patch("analyze.argparse.ArgumentParser")
-    def test_negative_days_rejected(self, MockParser):
-        """Negative days value causes parser.error()."""
+    def test_days_negative_rejected(self, MockParser):
+        """days=-1 causes parser.error()."""
         MockParser.return_value.parse_args.return_value = self._make_args(days=-1)
         MockParser.return_value.error.side_effect = SystemExit(2)
         with pytest.raises(SystemExit):
@@ -467,17 +468,23 @@ class TestMain:
         MockParser.return_value.error.assert_called_once()
 
     @patch("analyze.argparse.ArgumentParser")
-    def test_depth_too_high_rejected(self, MockParser):
-        """Depth > 30 causes parser.error()."""
-        MockParser.return_value.parse_args.return_value = self._make_args(depth=100)
+    @patch("analyze.os.path.isfile", return_value=True)
+    def test_days_zero_accepted(self, mock_isfile, MockParser):
+        """days=0 passes validation (hits later code)."""
+        MockParser.return_value.parse_args.return_value = self._make_args(days=0)
         MockParser.return_value.error.side_effect = SystemExit(2)
-        with pytest.raises(SystemExit):
+        # Should NOT call parser.error for days
+        try:
             main()
-        MockParser.return_value.error.assert_called_once()
+        except (SystemExit, Exception):
+            pass
+        for call in MockParser.return_value.error.call_args_list:
+            assert "days" not in str(call).lower()
 
+    # --- depth validation ---
     @patch("analyze.argparse.ArgumentParser")
-    def test_depth_zero_rejected(self, MockParser):
-        """Depth 0 causes parser.error()."""
+    def test_depth_0_rejected(self, MockParser):
+        """depth=0 causes parser.error()."""
         MockParser.return_value.parse_args.return_value = self._make_args(depth=0)
         MockParser.return_value.error.side_effect = SystemExit(2)
         with pytest.raises(SystemExit):
@@ -485,18 +492,80 @@ class TestMain:
         MockParser.return_value.error.assert_called_once()
 
     @patch("analyze.argparse.ArgumentParser")
-    def test_workers_too_high_rejected(self, MockParser):
-        """Workers > 32 causes parser.error()."""
-        MockParser.return_value.parse_args.return_value = self._make_args(workers=100)
+    @patch("analyze.os.path.isfile", return_value=True)
+    def test_depth_1_accepted(self, mock_isfile, MockParser):
+        """depth=1 passes validation."""
+        MockParser.return_value.parse_args.return_value = self._make_args(depth=1)
+        MockParser.return_value.error.side_effect = SystemExit(2)
+        try:
+            main()
+        except (SystemExit, Exception):
+            pass
+        for call in MockParser.return_value.error.call_args_list:
+            assert "depth" not in str(call).lower()
+
+    @patch("analyze.argparse.ArgumentParser")
+    @patch("analyze.os.path.isfile", return_value=True)
+    def test_depth_30_accepted(self, mock_isfile, MockParser):
+        """depth=30 passes validation."""
+        MockParser.return_value.parse_args.return_value = self._make_args(depth=30)
+        MockParser.return_value.error.side_effect = SystemExit(2)
+        try:
+            main()
+        except (SystemExit, Exception):
+            pass
+        for call in MockParser.return_value.error.call_args_list:
+            assert "depth" not in str(call).lower()
+
+    @patch("analyze.argparse.ArgumentParser")
+    def test_depth_31_rejected(self, MockParser):
+        """depth=31 causes parser.error()."""
+        MockParser.return_value.parse_args.return_value = self._make_args(depth=31)
+        MockParser.return_value.error.side_effect = SystemExit(2)
+        with pytest.raises(SystemExit):
+            main()
+        MockParser.return_value.error.assert_called_once()
+
+    # --- workers validation ---
+    @patch("analyze.argparse.ArgumentParser")
+    def test_workers_0_rejected(self, MockParser):
+        """workers=0 causes parser.error()."""
+        MockParser.return_value.parse_args.return_value = self._make_args(workers=0)
         MockParser.return_value.error.side_effect = SystemExit(2)
         with pytest.raises(SystemExit):
             main()
         MockParser.return_value.error.assert_called_once()
 
     @patch("analyze.argparse.ArgumentParser")
-    def test_workers_zero_rejected(self, MockParser):
-        """Workers 0 causes parser.error()."""
-        MockParser.return_value.parse_args.return_value = self._make_args(workers=0)
+    @patch("analyze.os.path.isfile", return_value=True)
+    def test_workers_1_accepted(self, mock_isfile, MockParser):
+        """workers=1 passes validation."""
+        MockParser.return_value.parse_args.return_value = self._make_args(workers=1)
+        MockParser.return_value.error.side_effect = SystemExit(2)
+        try:
+            main()
+        except (SystemExit, Exception):
+            pass
+        for call in MockParser.return_value.error.call_args_list:
+            assert "workers" not in str(call).lower()
+
+    @patch("analyze.argparse.ArgumentParser")
+    @patch("analyze.os.path.isfile", return_value=True)
+    def test_workers_32_accepted(self, mock_isfile, MockParser):
+        """workers=32 passes validation."""
+        MockParser.return_value.parse_args.return_value = self._make_args(workers=32)
+        MockParser.return_value.error.side_effect = SystemExit(2)
+        try:
+            main()
+        except (SystemExit, Exception):
+            pass
+        for call in MockParser.return_value.error.call_args_list:
+            assert "workers" not in str(call).lower()
+
+    @patch("analyze.argparse.ArgumentParser")
+    def test_workers_33_rejected(self, MockParser):
+        """workers=33 causes parser.error()."""
+        MockParser.return_value.parse_args.return_value = self._make_args(workers=33)
         MockParser.return_value.error.side_effect = SystemExit(2)
         with pytest.raises(SystemExit):
             main()
