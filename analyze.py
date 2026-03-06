@@ -260,8 +260,8 @@ def main():
                         help="Lichess username (use empty string to skip)")
     parser.add_argument("days", nargs="?", type=int, default=0,
                         help="Only analyze games from the last N days (0 = all)")
-    parser.add_argument("--depth", type=int, default=18,
-                        help="Stockfish analysis depth (default: 18)")
+    parser.add_argument("--depth", type=int, default=14,
+                        help="Stockfish analysis depth (default: 14)")
     parser.add_argument("--stockfish", default=DEFAULT_STOCKFISH,
                         help="Path to Stockfish executable")
     parser.add_argument("--book", default=DEFAULT_BOOK,
