@@ -285,6 +285,13 @@ def main():
     args = parser.parse_args()
 
     # Validate paths
+    if args.days < 0:
+        parser.error("days must be >= 0")
+    if not 1 <= args.depth <= 30:
+        parser.error("--depth must be between 1 and 30")
+    if not 1 <= args.workers <= 32:
+        parser.error("--workers must be between 1 and 32")
+
     if not os.path.isfile(args.stockfish):
         print(f"Error: Stockfish not found at {args.stockfish}")
         sys.exit(1)

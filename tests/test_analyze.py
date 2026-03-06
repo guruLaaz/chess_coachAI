@@ -458,6 +458,51 @@ class TestMain:
         return args
 
     @patch("analyze.argparse.ArgumentParser")
+    def test_negative_days_rejected(self, MockParser):
+        """Negative days value causes parser.error()."""
+        MockParser.return_value.parse_args.return_value = self._make_args(days=-1)
+        MockParser.return_value.error.side_effect = SystemExit(2)
+        with pytest.raises(SystemExit):
+            main()
+        MockParser.return_value.error.assert_called_once()
+
+    @patch("analyze.argparse.ArgumentParser")
+    def test_depth_too_high_rejected(self, MockParser):
+        """Depth > 30 causes parser.error()."""
+        MockParser.return_value.parse_args.return_value = self._make_args(depth=100)
+        MockParser.return_value.error.side_effect = SystemExit(2)
+        with pytest.raises(SystemExit):
+            main()
+        MockParser.return_value.error.assert_called_once()
+
+    @patch("analyze.argparse.ArgumentParser")
+    def test_depth_zero_rejected(self, MockParser):
+        """Depth 0 causes parser.error()."""
+        MockParser.return_value.parse_args.return_value = self._make_args(depth=0)
+        MockParser.return_value.error.side_effect = SystemExit(2)
+        with pytest.raises(SystemExit):
+            main()
+        MockParser.return_value.error.assert_called_once()
+
+    @patch("analyze.argparse.ArgumentParser")
+    def test_workers_too_high_rejected(self, MockParser):
+        """Workers > 32 causes parser.error()."""
+        MockParser.return_value.parse_args.return_value = self._make_args(workers=100)
+        MockParser.return_value.error.side_effect = SystemExit(2)
+        with pytest.raises(SystemExit):
+            main()
+        MockParser.return_value.error.assert_called_once()
+
+    @patch("analyze.argparse.ArgumentParser")
+    def test_workers_zero_rejected(self, MockParser):
+        """Workers 0 causes parser.error()."""
+        MockParser.return_value.parse_args.return_value = self._make_args(workers=0)
+        MockParser.return_value.error.side_effect = SystemExit(2)
+        with pytest.raises(SystemExit):
+            main()
+        MockParser.return_value.error.assert_called_once()
+
+    @patch("analyze.argparse.ArgumentParser")
     @patch("analyze.os.path.isfile")
     def test_missing_stockfish_exits(self, mock_isfile, MockParser):
         """Missing stockfish binary causes sys.exit(1)."""
