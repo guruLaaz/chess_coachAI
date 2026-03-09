@@ -33,6 +33,8 @@ class OpeningEvaluation:
     game_url: str = ""          # Chess.com game URL
     my_result: str = ""         # "win", "loss", or "draw"
     time_class: str = ""        # "bullet", "blitz", "rapid", "daily"
+    opponent_name: str = ""     # opponent username
+    end_time: object = None     # datetime of game end
 
 
 @dataclass
@@ -113,6 +115,8 @@ class RepertoireAnalyzer:
             deviation, eval_cp, self.stockfish_evaluator, game.my_color)
 
         eco_name = game.eco_name or "Unknown Opening"
+        if eco_name.lower().startswith("undefined"):
+            eco_name = "Uncommon Opening"
         deviating_side = deviation.deviating_side
 
         return OpeningEvaluation(
@@ -131,6 +135,8 @@ class RepertoireAnalyzer:
             game_moves_uci=[m.uci() for m in moves],
             my_result=self._game_result(game),
             time_class=game.time_class or "",
+            opponent_name=(game.black if game.my_color == "white" else game.white),
+            end_time=game.end_time,
         )
 
     def _preprocess_game(self, game):
@@ -317,7 +323,7 @@ class RepertoireAnalyzer:
         eval_cp = eval_result.score_for_color(game.my_color)
         return OpeningEvaluation(
             eco_code=game.eco_code,
-            eco_name=game.eco_name or "Unknown Opening",
+            eco_name="Uncommon Opening" if (game.eco_name or "").lower().startswith("undefined") else (game.eco_name or "Unknown Opening"),
             my_color=game.my_color,
             deviation_ply=deviation.deviation_ply,
             deviating_side=deviation.deviating_side,
@@ -332,6 +338,8 @@ class RepertoireAnalyzer:
             game_url=game.game_url if game.game_url else "",
             my_result=self._game_result(game),
             time_class=game.time_class or "",
+            opponent_name=(game.black if game.my_color == "white" else game.white),
+            end_time=game.end_time,
         )
 
     @staticmethod

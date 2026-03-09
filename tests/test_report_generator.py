@@ -727,7 +727,7 @@ class TestEndgamePage:
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/endgames")
-        assert b"view example game" in resp.data
+        assert b"Example game" in resp.data
         assert b"chess.com/game/live/99999" in resp.data
         assert b"lichess.org/abc12345" in resp.data
 

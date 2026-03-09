@@ -115,6 +115,13 @@ class CoachingReportGenerator:
             return f"{move_num}."
         return f"{move_num}..."
 
+    @staticmethod
+    def _format_date(dt):
+        """Format a datetime as 'Month D, YYYY' (e.g. 'September 5, 2025')."""
+        if dt is None:
+            return ""
+        return f"{dt.strftime('%B')} {dt.day}, {dt.year}"
+
     def _prepare_deviation(self, ev):
         """Prepare template data for a single deviation."""
         played_san = self._move_to_san(ev.fen_at_deviation, ev.played_move_uci)
@@ -170,6 +177,8 @@ class CoachingReportGenerator:
             "loss_pct": loss_pct,
             "time_class": ev.time_class or "unknown",
             "platform": "lichess" if "lichess.org" in ev.game_url else "chesscom" if ev.game_url else "unknown",
+            "opponent_name": ev.opponent_name or "",
+            "game_date": self._format_date(ev.end_time),
         }
 
     def _get_opening_groups(self):
@@ -255,6 +264,8 @@ class CoachingReportGenerator:
                                 "chess.com/analysis/game/")
                             entry["example_game_url"] = (
                                 f"{analysis_url}?tab=analysis&move={ply}")
+                    # Format example game date
+                    entry["example_date"] = self._format_date(s.get("example_end_time"))
                     # Format average clock times for display
                     entry["avg_my_clock_fmt"] = self._format_clock(s.get("avg_my_clock"))
                     entry["avg_opp_clock_fmt"] = self._format_clock(s.get("avg_opp_clock"))
@@ -742,7 +753,7 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                     <div class="recommendation">
                         Play <strong>{{ item.best_san }}</strong> instead of {{ item.played_san }}
                         {% if item.game_url %}
-                        &mdash; <a class="game-link" href="{{ item.game_url }}" target="_blank" rel="noopener">view example game &rarr;</a>
+                        &mdash; <a class="game-link" href="{{ item.game_url }}" target="_blank" rel="noopener">view example game{% if item.opponent_name or item.time_class or item.game_date %} ({% if item.opponent_name %}vs {{ item.opponent_name }}{% endif %}{% if item.time_class and item.time_class != 'unknown' %}{% if item.opponent_name %}, {% endif %}{{ item.time_class }}{% endif %}{% if item.game_date %}{% if item.opponent_name or (item.time_class and item.time_class != 'unknown') %}, {% endif %}{{ item.game_date }}{% endif %}){% endif %} &rarr;</a>
                         {% endif %}
                     </div>
                 </div>
@@ -1262,16 +1273,13 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                     {% if s.get('example_fen') %}
                     <div class="eg-card-body">
                         <div class="board-panel">
-                            <h4>Example game</h4>
+                            <h4>{% if s.example_game_url %}<a class="game-link" href="{{ s.example_game_url }}" target="_blank" rel="noopener">Example game{% if s.example_opponent_name or s.example_time_class or s.example_date %} ({% if s.example_opponent_name %}vs {{ s.example_opponent_name }}{% endif %}{% if s.example_time_class %}{% if s.example_opponent_name %}, {% endif %}{{ s.example_time_class }}{% endif %}{% if s.example_date %}{% if s.example_opponent_name or s.example_time_class %}, {% endif %}{{ s.example_date }}{% endif %}){% endif %} &rarr;</a>{% else %}Example game{% endif %}</h4>
                             <div class="board-slot eg-board"><div class="board-spinner">Loading board&hellip;</div></div>
                             {% set diff = s.get("example_material_diff", 0) %}
                             <div class="eval-badge {{ 'eval-positive' if diff > 0 else 'eval-negative' if diff < 0 else 'eval-zero' }}">
                                 material {{ "+%d"|format(diff) if diff > 0 else diff }}
                             </div>
                         </div>
-                        {% if s.example_game_url %}
-                        <a class="game-link" href="{{ s.example_game_url }}" target="_blank" rel="noopener">view example game &rarr;</a>
-                        {% endif %}
                         <a class="game-link" href="/endgames/all?def={{ s.definition|urlencode }}&type={{ s.type|urlencode }}&balance={{ s.balance|urlencode }}" style="margin-left: 16px;">show all games &rarr;</a>
                     </div>
                     {% endif %}

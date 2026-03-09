@@ -329,6 +329,8 @@ class EndgameClassifier:
                     "end_time": end_time,
                     "material_diff": info.material_diff,
                     "endgame_ply": info.endgame_ply,
+                    "opponent_name": game.black if game.my_color == "white" else game.white,
+                    "time_class": getattr(game, "time_class", "") or "",
                 }
 
         results = []
@@ -363,6 +365,9 @@ class EndgameClassifier:
                 "example_color": rep.get("color", "white"),
                 "example_material_diff": rep.get("material_diff", 0),
                 "example_endgame_ply": rep.get("endgame_ply", 0),
+                "example_opponent_name": rep.get("opponent_name", ""),
+                "example_time_class": rep.get("time_class", ""),
+                "example_end_time": rep.get("end_time"),
                 "avg_my_clock": avg_my_clock,
                 "avg_opp_clock": avg_opp_clock,
                 "all_games": games_list,
