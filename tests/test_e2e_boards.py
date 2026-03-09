@@ -255,6 +255,37 @@ class TestEndgameBoardLoading:
         assert visible_restored == 2
         page.close()
 
+    def test_empty_state_shown_when_no_matches(self, playwright_ctx,
+                                                server_url):
+        """A message appears when all cards are filtered out."""
+        page = playwright_ctx.new_page()
+        page.goto(f"{server_url}/endgames")
+        page.wait_for_selector(".eg-board svg", timeout=10000)
+
+        # Uncheck ALL time classes — no cards should match
+        page.evaluate("""() => {
+            document.querySelectorAll('.eg-tc-filter').forEach(function(cb) {
+                cb.checked = false;
+            });
+            document.querySelector('.eg-tc-filter').dispatchEvent(new Event('change'));
+        }""")
+        page.wait_for_timeout(300)
+
+        # Empty-state message should be visible
+        msg = page.query_selector("#eg-no-results")
+        assert msg is not None
+        assert msg.is_visible()
+
+        # Re-check blitz — message hides, cards return
+        page.evaluate("""() => {
+            var cb = document.querySelector('.eg-tc-filter[value="blitz"]');
+            cb.checked = true;
+            cb.dispatchEvent(new Event('change'));
+        }""")
+        page.wait_for_timeout(300)
+        assert not msg.is_visible()
+        page.close()
+
     def test_no_js_errors_on_definition_switch(self, playwright_ctx,
                                                 server_url):
         """No JS console errors when switching definitions."""

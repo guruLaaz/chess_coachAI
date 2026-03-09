@@ -763,6 +763,9 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                     </div>
                 </div>
                 {% endfor %}
+            <div id="no-results" class="empty-state" style="display:none">
+                <p>No openings match the selected filters.</p>
+            </div>
             {% else %}
                 <div class="empty-state">
                     <h2>No deviations found</h2>
@@ -855,6 +858,11 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             });
             shownCount = 0;
             showNextBatch();
+            var noResults = document.getElementById('no-results');
+            if (noResults) {
+                var anyVisible = document.querySelector('.card[data-filtered="yes"]');
+                noResults.style.display = anyVisible ? 'none' : '';
+            }
         }
 
         function showNextBatch() {
@@ -1292,7 +1300,7 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                         {% endif %}
                     </div>
                     {% if s.get('example_fen') %}
-                    <div class="eg-card-body">
+                    <div class="eg-card-body" data-example-tc="{{ s.get('example_time_class', '') }}">
                         <div class="board-panel">
                             <h4>{% if s.example_game_url %}<a class="game-link" href="{{ s.example_game_url }}" target="_blank" rel="noopener">Example game{% if s.example_opponent_name or s.example_time_class or s.example_date %} ({% if s.example_opponent_name %}vs {{ s.example_opponent_name }}{% endif %}{% if s.example_time_class %}{% if s.example_opponent_name %}, {% endif %}{{ s.example_time_class }}{% endif %}{% if s.example_date %}{% if s.example_opponent_name or s.example_time_class %}, {% endif %}{{ s.example_date }}{% endif %}){% endif %} &rarr;</a>{% else %}Example game{% endif %}</h4>
                             <div class="board-slot eg-board"><div class="board-spinner">Loading board&hellip;</div></div>
@@ -1306,6 +1314,9 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                     {% endif %}
                 </div>
                 {% endfor %}
+            <div id="eg-no-results" class="empty-state" style="display:none">
+                <p>No endgames match the selected filters.</p>
+            </div>
             {% else %}
             <div class="empty-state">
                 <h2>No endgames detected</h2>
@@ -1410,6 +1421,13 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                 card.setAttribute('data-filtered', (defOk && balOk && tcOk && minOk) ? 'yes' : 'no');
                 card.style.display = 'none';
 
+                /* Hide example game if its time class is filtered out */
+                var exBody = card.querySelector('.eg-card-body');
+                if (exBody) {
+                    var exTc = exBody.getAttribute('data-example-tc');
+                    exBody.style.display = (exTc && !enabledTC.has(exTc)) ? 'none' : '';
+                }
+
                 /* Update displayed stats to reflect filtered counts */
                 if (defOk && balOk && tcOk && minOk) {
                     var winPct = fTotal ? Math.round(100 * fWins / fTotal) : 0;
@@ -1434,6 +1452,11 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
             });
             shownCount = 0;
             showNextBatch();
+            var noResults = document.getElementById('eg-no-results');
+            if (noResults) {
+                var anyVisible = document.querySelector('.eg-card[data-filtered="yes"]');
+                noResults.style.display = anyVisible ? 'none' : '';
+            }
         }
 
         function showNextBatch() {
@@ -1807,6 +1830,9 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
                     </div>
                 </div>
                 {% endfor %}
+            <div id="ag-no-results" class="empty-state" style="display:none">
+                <p>No games match the selected filters.</p>
+            </div>
             {% else %}
                 <div class="empty-state">
                     <h2>No games found</h2>
@@ -1874,6 +1900,8 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
             if (gameCountEl) gameCountEl.textContent = visibleCount;
             shownCount = 0;
             showNextBatch();
+            var noResults = document.getElementById('ag-no-results');
+            if (noResults) noResults.style.display = visibleCount > 0 ? 'none' : '';
         }
 
         agTcChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
