@@ -895,8 +895,13 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                     targets[i].played.innerHTML = svgs[i * 2 + 1];
                 }
                 fetchingBoards = false;
+                showNextBatch();
             })
-            .catch(function() { fetchingBoards = false; });
+            .catch(function() {
+                targets.forEach(function(t) { t.best.innerHTML = ''; t.played.innerHTML = ''; });
+                fetchingBoards = false;
+                showNextBatch();
+            });
         }
 
         tcChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
@@ -1403,6 +1408,8 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                     if (fen) {
                         specs.push({fen: fen, color: card.getAttribute('data-color')});
                         targets.push(slot);
+                    } else {
+                        slot.innerHTML = '';
                     }
                 }
             });
@@ -1419,8 +1426,13 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                     targets[i].innerHTML = svgs[i];
                 }
                 fetchingBoards = false;
+                showNextBatch();
             })
-            .catch(function() { fetchingBoards = false; });
+            .catch(function() {
+                targets.forEach(function(t) { t.innerHTML = ''; });
+                fetchingBoards = false;
+                showNextBatch();
+            });
         }
 
         balanceChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
@@ -1806,8 +1818,13 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
                     targets[i].innerHTML = svgs[i];
                 }
                 fetchingBoards = false;
+                showNextBatch();
             })
-            .catch(function() { fetchingBoards = false; });
+            .catch(function() {
+                targets.forEach(function(t) { t.innerHTML = ''; });
+                fetchingBoards = false;
+                showNextBatch();
+            });
         }
 
         showNextBatch();
