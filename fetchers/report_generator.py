@@ -3,13 +3,9 @@
 import json
 import threading
 import webbrowser
-from typing import List
-
 import chess
 import chess.svg
 from flask import Flask, render_template_string, request, jsonify
-
-from repertoire_analyzer import OpeningEvaluation
 
 
 class CoachingReportGenerator:

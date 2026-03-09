@@ -11,41 +11,8 @@ import chess
 import pytest
 from playwright.sync_api import sync_playwright
 
-from repertoire_analyzer import OpeningEvaluation
 from report_generator import CoachingReportGenerator
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _make_eval(eco_code="B90", eco_name="Sicilian", my_color="white",
-               deviating_side="white", fen=None, best_move="d2d4",
-               played_move="g1f3", eval_loss_cp=50, my_result="win",
-               time_class="blitz", game_url="https://www.chess.com/game/live/12345",
-               book_moves=None):
-    if fen is None:
-        fen = chess.Board().fen()
-    if book_moves is None:
-        book_moves = [best_move, played_move]
-    return OpeningEvaluation(
-        eco_code=eco_code,
-        eco_name=eco_name,
-        my_color=my_color,
-        deviation_ply=6,
-        deviating_side=deviating_side,
-        eval_cp=-50,
-        is_fully_booked=False,
-        fen_at_deviation=fen,
-        best_move_uci=best_move,
-        played_move_uci=played_move,
-        book_moves_uci=book_moves,
-        eval_loss_cp=eval_loss_cp,
-        game_moves_uci=[],
-        my_result=my_result,
-        time_class=time_class,
-        game_url=game_url,
-    )
+from helpers import make_eval as _make_eval
 
 
 def _make_endgame_entry(eg_type, balance="equal", total=5, fen=None,

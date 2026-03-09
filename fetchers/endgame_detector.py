@@ -1,10 +1,11 @@
 """Endgame detection and classification from chess game PGNs."""
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Optional
 
 import chess
 
+from game_utils import game_result, COLOR_MAP
 from pgn_parser import PGNParser
 
 
@@ -30,9 +31,6 @@ ENDGAME_DEFINITIONS = ("queens-off", "minor-or-queen", "material")
 
 # Default material threshold for the "material" definition
 DEFAULT_MATERIAL_THRESHOLD = 9
-
-# Result strings that count as a loss (same as RepertoireAnalyzer)
-_LOSS_RESULTS = {"checkmated", "timeout", "resigned", "abandoned", "lose"}
 
 
 @dataclass
@@ -123,8 +121,7 @@ class EndgameClassifier:
 
         Returns (endgame_type, material_balance, material_diff).
         """
-        color_map = {"white": chess.WHITE, "black": chess.BLACK}
-        my_c = color_map[my_color]
+        my_c = COLOR_MAP[my_color]
         opp_c = not my_c
 
         my_label = EndgameClassifier._pieces_label(board, my_c)
@@ -156,15 +153,54 @@ class EndgameClassifier:
         return endgame_type, material_balance, material_diff
 
     @staticmethod
-    def _game_result(game):
-        """Map a ChessGame to 'win', 'loss', or 'draw'."""
-        result = (game.white_result.lower() if game.my_color == "white"
-                  else game.black_result.lower())
-        if result == "win":
-            return "win"
-        if result in _LOSS_RESULTS:
-            return "loss"
-        return "draw"
+    def _replay_moves(game):
+        """Parse PGN and replay moves, yielding state after each push.
+
+        Yields (ply, board, last_clock) tuples. The board is mutated in
+        place — callers must not store references across iterations.
+
+        Returns None (via StopIteration) if the PGN is missing, empty,
+        or contains an illegal move.
+        """
+        if not game.pgn:
+            return
+
+        moves_with_clocks = PGNParser.parse_moves_with_clocks(game.pgn)
+        if not moves_with_clocks:
+            return
+
+        board = chess.Board()
+        last_clock = {chess.WHITE: None, chess.BLACK: None}
+
+        for ply, (move, clock) in enumerate(moves_with_clocks):
+            if move not in board.legal_moves:
+                print(f"  Warning: Skipping game with illegal move "
+                      f"{move.uci()} at ply {ply}: {game.game_url or 'no URL'}")
+                return
+
+            side_that_moved = chess.WHITE if ply % 2 == 0 else chess.BLACK
+            if clock is not None:
+                last_clock[side_that_moved] = clock
+
+            board.push(move)
+            yield ply, board, last_clock
+
+    @classmethod
+    def _build_endgame_info(cls, game, board, ply, last_clock, my_c):
+        """Create an EndgameInfo from the current board state."""
+        endgame_type, material_balance, material_diff = (
+            cls.classify_position(board, game.my_color))
+        return EndgameInfo(
+            endgame_type=endgame_type,
+            endgame_ply=ply,
+            material_balance=material_balance,
+            my_result=game_result(game),
+            fen_at_endgame=board.fen(),
+            game_url=game.game_url or "",
+            material_diff=material_diff,
+            my_clock=last_clock[my_c],
+            opp_clock=last_clock[not my_c],
+        )
 
     @classmethod
     def analyze_game(cls, game, definition="minor-or-queen",
@@ -173,43 +209,11 @@ class EndgameClassifier:
 
         Returns EndgameInfo if the game reached an endgame, None otherwise.
         """
-        if not game.pgn:
-            return None
+        my_c = COLOR_MAP.get(game.my_color, chess.WHITE)
 
-        moves_with_clocks = PGNParser.parse_moves_with_clocks(game.pgn)
-        if not moves_with_clocks:
-            return None
-
-        color_map = {"white": chess.WHITE, "black": chess.BLACK}
-        my_c = color_map.get(game.my_color, chess.WHITE)
-
-        board = chess.Board()
-        last_clock = {chess.WHITE: None, chess.BLACK: None}
-
-        for ply, (move, clock) in enumerate(moves_with_clocks):
-            if move not in board.legal_moves:
-                print(f"  Warning: Skipping game with illegal move {move.uci()} at ply {ply}: {game.game_url or 'no URL'}")
-                return None
-
-            side_that_moved = chess.WHITE if ply % 2 == 0 else chess.BLACK
-            if clock is not None:
-                last_clock[side_that_moved] = clock
-
-            board.push(move)
+        for ply, board, last_clock in cls._replay_moves(game):
             if cls.is_endgame(board, definition, material_threshold):
-                endgame_type, material_balance, material_diff = (
-                    cls.classify_position(board, game.my_color))
-                return EndgameInfo(
-                    endgame_type=endgame_type,
-                    endgame_ply=ply,
-                    material_balance=material_balance,
-                    my_result=cls._game_result(game),
-                    fen_at_endgame=board.fen(),
-                    game_url=game.game_url or "",
-                    material_diff=material_diff,
-                    my_clock=last_clock[my_c],
-                    opp_clock=last_clock[not my_c],
-                )
+                return cls._build_endgame_info(game, board, ply, last_clock, my_c)
 
         return None
 
@@ -222,49 +226,15 @@ class EndgameClassifier:
         Replays the PGN once; checks all definitions at each ply.
         Also captures clock times at the moment each endgame is detected.
         """
-        if not game.pgn:
-            return {d: None for d in ENDGAME_DEFINITIONS}
-
-        moves_with_clocks = PGNParser.parse_moves_with_clocks(game.pgn)
-        if not moves_with_clocks:
-            return {d: None for d in ENDGAME_DEFINITIONS}
-
-        color_map = {"white": chess.WHITE, "black": chess.BLACK}
-        my_c = color_map.get(game.my_color, chess.WHITE)
-
+        my_c = COLOR_MAP.get(game.my_color, chess.WHITE)
         results = {}
         remaining = set(ENDGAME_DEFINITIONS)
-        board = chess.Board()
-        # Track last clock seen per color (white ply=0,2,4..; black ply=1,3,5..)
-        last_clock = {chess.WHITE: None, chess.BLACK: None}
 
-        for ply, (move, clock) in enumerate(moves_with_clocks):
-            if move not in board.legal_moves:
-                print(f"  Warning: Skipping game with illegal move {move.uci()} at ply {ply}: {game.game_url or 'no URL'}")
-                return {d: None for d in ENDGAME_DEFINITIONS}
-
-            # Clock annotation belongs to the side that just moved
-            side_that_moved = chess.WHITE if ply % 2 == 0 else chess.BLACK
-            if clock is not None:
-                last_clock[side_that_moved] = clock
-
-            board.push(move)
-
+        for ply, board, last_clock in cls._replay_moves(game):
             for defn in list(remaining):
                 if cls.is_endgame(board, defn, material_threshold):
-                    endgame_type, material_balance, material_diff = (
-                        cls.classify_position(board, game.my_color))
-                    results[defn] = EndgameInfo(
-                        endgame_type=endgame_type,
-                        endgame_ply=ply,
-                        material_balance=material_balance,
-                        my_result=cls._game_result(game),
-                        fen_at_endgame=board.fen(),
-                        game_url=game.game_url or "",
-                        material_diff=material_diff,
-                        my_clock=last_clock[my_c],
-                        opp_clock=last_clock[not my_c],
-                    )
+                    results[defn] = cls._build_endgame_info(
+                        game, board, ply, last_clock, my_c)
                     remaining.discard(defn)
 
             if not remaining:

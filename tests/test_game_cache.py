@@ -1,9 +1,9 @@
 import os
-import tempfile
 import pytest
 
 from game_cache import GameCache
 from repertoire_analyzer import OpeningEvaluation
+from helpers import make_eval
 
 
 @pytest.fixture
@@ -51,17 +51,8 @@ class TestArchiveCache:
 
 
 class TestEvaluationCache:
-    def _make_eval(self, eco_code="B90", eco_name="Sicilian", my_color="white",
-                   deviation_ply=6, deviating_side="black", eval_cp=30,
-                   is_fully_booked=False):
-        return OpeningEvaluation(
-            eco_code=eco_code, eco_name=eco_name, my_color=my_color,
-            deviation_ply=deviation_ply, deviating_side=deviating_side,
-            eval_cp=eval_cp, is_fully_booked=is_fully_booked,
-        )
-
     def test_save_and_get_evaluation(self, cache):
-        ev = self._make_eval(eval_cp=45)
+        ev = make_eval(deviating_side="black", eval_cp=45)
         cache.save_evaluation("https://game/1", "bob", 18, ev)
 
         result = cache.get_evaluation("https://game/1", 18)
@@ -75,8 +66,8 @@ class TestEvaluationCache:
         assert cache.get_evaluation("https://game/999", 18) is None
 
     def test_different_depth_is_separate(self, cache):
-        ev18 = self._make_eval(eval_cp=30)
-        ev22 = self._make_eval(eval_cp=35)
+        ev18 = make_eval(deviating_side="black", eval_cp=30)
+        ev22 = make_eval(deviating_side="black", eval_cp=35)
 
         cache.save_evaluation("https://game/1", "bob", 18, ev18)
         cache.save_evaluation("https://game/1", "bob", 22, ev22)
@@ -85,8 +76,8 @@ class TestEvaluationCache:
         assert cache.get_evaluation("https://game/1", 22).eval_cp == 35
 
     def test_upsert_evaluation(self, cache):
-        ev1 = self._make_eval(eval_cp=30)
-        ev2 = self._make_eval(eval_cp=50)
+        ev1 = make_eval(deviating_side="black", eval_cp=30)
+        ev2 = make_eval(deviating_side="black", eval_cp=50)
 
         cache.save_evaluation("https://game/1", "bob", 18, ev1)
         cache.save_evaluation("https://game/1", "bob", 18, ev2)
@@ -95,9 +86,9 @@ class TestEvaluationCache:
         assert result.eval_cp == 50
 
     def test_batch_get_evaluations(self, cache):
-        cache.save_evaluation("https://game/1", "bob", 18, self._make_eval(eval_cp=10))
-        cache.save_evaluation("https://game/2", "bob", 18, self._make_eval(eval_cp=20))
-        cache.save_evaluation("https://game/3", "bob", 18, self._make_eval(eval_cp=30))
+        cache.save_evaluation("https://game/1", "bob", 18, make_eval(deviating_side="black", eval_cp=10))
+        cache.save_evaluation("https://game/2", "bob", 18, make_eval(deviating_side="black", eval_cp=20))
+        cache.save_evaluation("https://game/3", "bob", 18, make_eval(deviating_side="black", eval_cp=30))
 
         urls = ["https://game/1", "https://game/2", "https://game/4"]
         result = cache.get_cached_evaluations(urls, 18)
@@ -112,9 +103,9 @@ class TestEvaluationCache:
 
     def test_batch_save_evaluations(self, cache):
         evals = [
-            ("https://game/1", self._make_eval(eval_cp=10)),
-            ("https://game/2", self._make_eval(eval_cp=20)),
-            ("https://game/3", self._make_eval(eval_cp=30)),
+            ("https://game/1", make_eval(deviating_side="black", eval_cp=10)),
+            ("https://game/2", make_eval(deviating_side="black", eval_cp=20)),
+            ("https://game/3", make_eval(deviating_side="black", eval_cp=30)),
         ]
 
         cache.save_evaluations_batch("bob", 18, evals)
@@ -128,14 +119,14 @@ class TestEvaluationCache:
         # Should not raise
 
     def test_is_fully_booked_stored_as_bool(self, cache):
-        ev = self._make_eval(is_fully_booked=True)
+        ev = make_eval(deviating_side="black", eval_cp=30, is_fully_booked=True)
         cache.save_evaluation("https://game/1", "bob", 18, ev)
 
         result = cache.get_evaluation("https://game/1", 18)
         assert result.is_fully_booked is True
 
     def test_null_eco_code(self, cache):
-        ev = self._make_eval(eco_code=None)
+        ev = make_eval(deviating_side="black", eval_cp=30, eco_code=None)
         cache.save_evaluation("https://game/1", "bob", 18, ev)
 
         result = cache.get_evaluation("https://game/1", 18)

@@ -1,5 +1,10 @@
 import datetime
+
+import chess
+
 from chessgame import ChessGame
+from chesscom_fetcher import ChessCom_Fetcher
+from repertoire_analyzer import OpeningEvaluation
 
 
 def make_game_json(white_user="PlayerA", black_user="PlayerB",
@@ -62,6 +67,16 @@ def make_lichess_game_json(white_user="PlayerA", black_user="PlayerB",
     return data
 
 
+async def fetch_all_archives(fetcher: ChessCom_Fetcher, username: str):
+    """Fetch all monthly archive JSONs for a Chess.com user (test helper)."""
+    archives = await fetcher.get_archives(username)
+    results = []
+    for url in archives:
+        month_data = await fetcher.fetch_games_by_month(url)
+        results.append(month_data)
+    return results
+
+
 def make_chess_game(my_color="white", white_result="win", black_result="lose",
                     end_time=None, pgn=None, eco_code=None, eco_name=None,
                     time_class="blitz", game_url=""):
@@ -81,3 +96,45 @@ def make_chess_game(my_color="white", white_result="win", black_result="lose",
         time_class=time_class,
         game_url=game_url,
     )
+
+
+def make_eval(eco_code="B90", eco_name="Sicilian", my_color="white",
+              deviation_ply=6, deviating_side="white", eval_cp=-50,
+              is_fully_booked=False, fen=None, best_move="d2d4",
+              played_move="g1f3", book_moves=None, eval_loss_cp=50,
+              game_moves_uci=None, my_result="win", time_class="blitz",
+              game_url="https://www.chess.com/game/live/12345"):
+    """Build an OpeningEvaluation with coaching data for testing."""
+    if fen is None:
+        fen = chess.Board().fen()
+    return OpeningEvaluation(
+        eco_code=eco_code,
+        eco_name=eco_name,
+        my_color=my_color,
+        deviation_ply=deviation_ply,
+        deviating_side=deviating_side,
+        eval_cp=eval_cp,
+        is_fully_booked=is_fully_booked,
+        fen_at_deviation=fen,
+        best_move_uci=best_move,
+        played_move_uci=played_move,
+        book_moves_uci=book_moves if book_moves is not None else [best_move, played_move],
+        eval_loss_cp=eval_loss_cp,
+        game_moves_uci=game_moves_uci or [],
+        my_result=my_result,
+        time_class=time_class,
+        game_url=game_url,
+    )
+
+
+def starting_fen():
+    """Return the standard starting position FEN."""
+    return chess.Board().fen()
+
+
+def fen_after_moves(*uci_moves):
+    """Return the FEN after playing the given UCI moves from the start."""
+    board = chess.Board()
+    for m in uci_moves:
+        board.push(chess.Move.from_uci(m))
+    return board.fen()

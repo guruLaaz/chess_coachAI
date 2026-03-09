@@ -1,5 +1,4 @@
 import chess
-import pytest
 from unittest.mock import patch
 
 from pgn_parser import PGNParser

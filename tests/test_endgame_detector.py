@@ -4,7 +4,6 @@ import datetime
 from unittest.mock import patch
 
 import chess
-import pytest
 
 from endgame_detector import EndgameClassifier, EndgameInfo, ENDGAME_DEFINITIONS
 from helpers import make_chess_game

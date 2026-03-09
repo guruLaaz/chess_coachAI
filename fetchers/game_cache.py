@@ -3,8 +3,6 @@
 import json
 import sqlite3
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
-
 from repertoire_analyzer import OpeningEvaluation
 from endgame_detector import EndgameInfo
 
@@ -157,30 +155,39 @@ class GameCache:
             return self._row_to_evaluation(row)
         return None
 
+    def _chunked_query(self, sql_template, keys, extra_params=()):
+        """Execute sql_template in 500-key batches. Use {placeholders} in template."""
+        rows = []
+        for i in range(0, len(keys), 500):
+            chunk = keys[i:i + 500]
+            placeholders = ",".join("?" for _ in chunk)
+            rows.extend(
+                self._conn.execute(
+                    sql_template.format(placeholders=placeholders),
+                    (*chunk, *extra_params)
+                ).fetchall()
+            )
+        return rows
+
     def get_cached_evaluations(self, game_urls, depth):
         """Batch lookup: return dict of game_url -> OpeningEvaluation for all hits."""
         if not game_urls:
             return {}
 
+        rows = self._chunked_query(
+            """SELECT game_url, eco_code, eco_name, my_color, deviation_ply,
+                      deviating_side, eval_cp, is_fully_booked,
+                      fen_at_deviation, best_move_uci, played_move_uci,
+                      book_moves_uci, eval_loss_cp, game_moves_uci,
+                      my_result, time_class
+               FROM opening_evaluations
+               WHERE game_url IN ({placeholders}) AND depth = ?""",
+            game_urls, extra_params=(depth,)
+        )
+
         results = {}
-        # SQLite has a variable limit; process in chunks of 500
-        for i in range(0, len(game_urls), 500):
-            chunk = game_urls[i:i + 500]
-            placeholders = ",".join("?" for _ in chunk)
-            rows = self._conn.execute(
-                f"""SELECT game_url, eco_code, eco_name, my_color, deviation_ply,
-                           deviating_side, eval_cp, is_fully_booked,
-                           fen_at_deviation, best_move_uci, played_move_uci,
-                           book_moves_uci, eval_loss_cp, game_moves_uci,
-                           my_result, time_class
-                    FROM opening_evaluations
-                    WHERE game_url IN ({placeholders}) AND depth = ?""",
-                (*chunk, depth)
-            ).fetchall()
-
-            for row in rows:
-                results[row["game_url"]] = self._row_to_evaluation(row)
-
+        for row in rows:
+            results[row["game_url"]] = self._row_to_evaluation(row)
         return results
 
     @staticmethod
@@ -264,38 +271,35 @@ class GameCache:
         if not game_urls:
             return {}
 
-        results = {}
-        for i in range(0, len(game_urls), 500):
-            chunk = game_urls[i:i + 500]
-            placeholders = ",".join("?" for _ in chunk)
-            rows = self._conn.execute(
-                f"""SELECT game_url, definition, endgame_type, endgame_ply,
-                           material_balance, my_result, fen_at_endgame,
-                           material_diff, game_url_link, my_clock, opp_clock
-                    FROM endgame_analyses
-                    WHERE game_url IN ({placeholders})""",
-                chunk
-            ).fetchall()
+        rows = self._chunked_query(
+            """SELECT game_url, definition, endgame_type, endgame_ply,
+                      material_balance, my_result, fen_at_endgame,
+                      material_diff, game_url_link, my_clock, opp_clock
+               FROM endgame_analyses
+               WHERE game_url IN ({placeholders})""",
+            game_urls
+        )
 
-            for row in rows:
-                url = row["game_url"]
-                defn = row["definition"]
-                if url not in results:
-                    results[url] = {}
-                if row["endgame_type"] is None:
-                    results[url][defn] = None
-                else:
-                    results[url][defn] = EndgameInfo(
-                        endgame_type=row["endgame_type"],
-                        endgame_ply=row["endgame_ply"],
-                        material_balance=row["material_balance"],
-                        my_result=row["my_result"],
-                        fen_at_endgame=row["fen_at_endgame"] or "",
-                        game_url=row["game_url_link"] or "",
-                        material_diff=row["material_diff"] or 0,
-                        my_clock=row["my_clock"],
-                        opp_clock=row["opp_clock"],
-                    )
+        results = {}
+        for row in rows:
+            url = row["game_url"]
+            defn = row["definition"]
+            if url not in results:
+                results[url] = {}
+            if row["endgame_type"] is None:
+                results[url][defn] = None
+            else:
+                results[url][defn] = EndgameInfo(
+                    endgame_type=row["endgame_type"],
+                    endgame_ply=row["endgame_ply"],
+                    material_balance=row["material_balance"],
+                    my_result=row["my_result"],
+                    fen_at_endgame=row["fen_at_endgame"] or "",
+                    game_url=row["game_url_link"] or "",
+                    material_diff=row["material_diff"] or 0,
+                    my_clock=row["my_clock"],
+                    opp_clock=row["opp_clock"],
+                )
 
         return results
 

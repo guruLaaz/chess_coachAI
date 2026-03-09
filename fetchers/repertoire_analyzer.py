@@ -1,16 +1,13 @@
 # repertoire_analyzer.py
 
-import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from threading import Lock
-from typing import Dict, List, Optional, Callable
+from typing import List, Optional
 
-import chess.engine
-
+from game_utils import game_result
 from pgn_parser import PGNParser
-from opening_detector import OpeningDetector, DeviationResult
-from stockfish_evaluator import StockfishEvaluator, EvalResult
+from stockfish_evaluator import StockfishEvaluator
 
 
 @dataclass
@@ -133,7 +130,7 @@ class RepertoireAnalyzer:
             book_moves_uci=[m.uci() for m in deviation.book_moves],
             eval_loss_cp=eval_loss_cp,
             game_moves_uci=[m.uci() for m in moves],
-            my_result=self._game_result(game),
+            my_result=game_result(game),
             time_class=game.time_class or "",
             opponent_name=(game.black if game.my_color == "white" else game.white),
             end_time=game.end_time,
@@ -304,19 +301,6 @@ class RepertoireAnalyzer:
 
         return new_evals
 
-    _LOSS_RESULTS = frozenset({"checkmated", "timeout", "resigned", "abandoned", "lose"})
-
-    @staticmethod
-    def _game_result(game):
-        """Map Chess.com result string to normalized 'win'/'loss'/'draw'."""
-        raw = (game.white_result if game.my_color == "white"
-               else game.black_result).lower()
-        if raw == "win":
-            return "win"
-        if raw in RepertoireAnalyzer._LOSS_RESULTS:
-            return "loss"
-        return "draw"
-
     def _make_evaluation(self, game, deviation, eval_result,
                          eval_loss_cp=0, moves=None):
         """Build an OpeningEvaluation from pre-processed data + engine result."""
@@ -336,7 +320,7 @@ class RepertoireAnalyzer:
             eval_loss_cp=eval_loss_cp,
             game_moves_uci=[m.uci() for m in moves] if moves else [],
             game_url=game.game_url if game.game_url else "",
-            my_result=self._game_result(game),
+            my_result=game_result(game),
             time_class=game.time_class or "",
             opponent_name=(game.black if game.my_color == "white" else game.white),
             end_time=game.end_time,

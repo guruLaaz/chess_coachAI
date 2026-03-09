@@ -2,7 +2,8 @@ import chess
 import chess.polyglot
 from unittest.mock import patch, MagicMock
 
-from opening_detector import OpeningDetector, DeviationResult
+from opening_detector import OpeningDetector
+from helpers import starting_fen as _starting_fen, fen_after_moves as _fen_after_moves
 
 
 def _make_entry(move):
@@ -33,16 +34,6 @@ class FakeReader:
     def __exit__(self, *args):
         pass
 
-
-def _starting_fen():
-    return chess.Board().fen()
-
-
-def _fen_after_moves(*uci_moves):
-    board = chess.Board()
-    for m in uci_moves:
-        board.push(chess.Move.from_uci(m))
-    return board.fen()
 
 
 class TestFindDeviation:

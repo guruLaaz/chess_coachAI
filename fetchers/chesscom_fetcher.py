@@ -32,15 +32,3 @@ class ChessCom_Fetcher:
             async with session.get(archive_url) as resp:
                 resp.raise_for_status()
                 return await resp.json()
-
-    async def fetch_all_archives(self, username: str) -> List[dict]:
-        """
-        Fetch all monthly archive JSONs for the user.
-        (Just returns raw JSON for now)
-        """
-        archives = await self.get_archives(username)
-        results = []
-        for url in archives:
-            month_data = await self.fetch_games_by_month(url)
-            results.append(month_data)
-        return results

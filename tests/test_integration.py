@@ -15,7 +15,7 @@ from lichess_fetcher import LichessFetcher, LICHESS_API_BASE
 from chessgame import ChessGame
 from game_filter import filter_games_by_days
 from chessgameanalyzer import ChessGameAnalyzer
-from helpers import make_game_json, make_archive_response, make_lichess_game_json
+from helpers import make_game_json, make_archive_response, make_lichess_game_json, fetch_all_archives
 
 
 USERNAME = "TestPlayer"
@@ -75,7 +75,7 @@ def _mock_two_months(mock):
 async def _run_pipeline(username, days, fixed_now=None):
     """Execute the full fetch → parse → filter → analyze pipeline."""
     fetcher = ChessCom_Fetcher(user_agent="TestAgent/1.0")
-    all_archives = await fetcher.fetch_all_archives(username)
+    all_archives = await fetch_all_archives(fetcher, username)
 
     raw_games = []
     for month in all_archives:
@@ -199,7 +199,7 @@ class TestEdgeCases:
             fetcher = ChessCom_Fetcher(user_agent="TestAgent/1.0")
 
             with pytest.raises(Exception):
-                await fetcher.fetch_all_archives(USERNAME)
+                await fetch_all_archives(fetcher, USERNAME)
 
     @pytest.mark.asyncio
     async def test_no_archives(self):
@@ -402,7 +402,7 @@ class TestCombinedPipeline:
 
             # Chess.com path
             cc_fetcher = ChessCom_Fetcher(user_agent="TestAgent/1.0")
-            cc_archives = await cc_fetcher.fetch_all_archives(USERNAME)
+            cc_archives = await fetch_all_archives(cc_fetcher, USERNAME)
             cc_raw = []
             for month in cc_archives:
                 cc_raw.extend(month.get("games", []))

@@ -1,6 +1,7 @@
 import pytest
 from aioresponses import aioresponses
 from chesscom_fetcher import ChessCom_Fetcher, BASE_URL
+from helpers import fetch_all_archives
 
 
 @pytest.fixture
@@ -70,7 +71,7 @@ class TestFetchAllArchives:
         mock_aiohttp.get(month_urls[0], payload=month1)
         mock_aiohttp.get(month_urls[1], payload=month2)
 
-        result = await fetcher.fetch_all_archives("testuser")
+        result = await fetch_all_archives(fetcher, "testuser")
         assert len(result) == 2
         assert result[0] == month1
         assert result[1] == month2

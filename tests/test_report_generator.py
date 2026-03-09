@@ -1,34 +1,8 @@
 """Tests for the coaching report Flask web app."""
 import chess
 from unittest.mock import patch, MagicMock
-from repertoire_analyzer import OpeningEvaluation
 from report_generator import CoachingReportGenerator
-
-
-def _make_eval(eco_code="B90", eco_name="Sicilian", my_color="white",
-               deviation_ply=6, deviating_side="white", eval_cp=-50,
-               is_fully_booked=False, fen=None, best_move="d2d4",
-               played_move="g1f3", book_moves=None, eval_loss_cp=50,
-               game_moves_uci=None, my_result="win"):
-    """Helper to create an OpeningEvaluation with coaching data."""
-    if fen is None:
-        fen = chess.Board().fen()
-    return OpeningEvaluation(
-        eco_code=eco_code,
-        eco_name=eco_name,
-        my_color=my_color,
-        deviation_ply=deviation_ply,
-        deviating_side=deviating_side,
-        eval_cp=eval_cp,
-        is_fully_booked=is_fully_booked,
-        fen_at_deviation=fen,
-        best_move_uci=best_move,
-        played_move_uci=played_move,
-        book_moves_uci=book_moves or ["e2e4", "d2d4"],
-        eval_loss_cp=eval_loss_cp,
-        game_moves_uci=game_moves_uci or [],
-        my_result=my_result,
-    )
+from helpers import make_eval as _make_eval
 
 
 class TestDeviationFiltering:
@@ -241,7 +215,7 @@ class TestFlaskRoutes:
 
     def test_no_game_link_when_empty(self):
         """No game link shown when game_url is empty."""
-        evals = [_make_eval()]
+        evals = [_make_eval(game_url="")]
         client = self._get_app(evals)
         resp = client.get("/")
         assert b"view example game" not in resp.data
