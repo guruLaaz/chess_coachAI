@@ -46,10 +46,16 @@ def _make_eval(eco_code="B90", eco_name="Sicilian", my_color="white",
 
 
 def _make_endgame_entry(eg_type, balance="equal", total=5, fen=None,
-                        color="white"):
+                        color="white", tc_breakdown=None):
     """Build one endgame stats dict matching what EndgameDetector produces."""
     if fen is None:
         fen = "4k3/8/8/8/8/8/4K3/4R3 w - - 0 1"  # K+R vs K
+    if tc_breakdown is None:
+        tc_breakdown = {"blitz": {
+            "wins": total // 2 + 1,
+            "losses": total // 4,
+            "draws": total - (total // 2 + 1) - total // 4,
+        }}
     return {
         "type": eg_type,
         "balance": balance,
@@ -71,6 +77,7 @@ def _make_endgame_entry(eg_type, balance="equal", total=5, fen=None,
         "avg_my_clock": 120.0,
         "avg_opp_clock": 95.0,
         "all_games": [],
+        "tc_breakdown": tc_breakdown,
     }
 
 
@@ -120,8 +127,10 @@ def server_url():
 
     endgame_stats = {
         "minor-or-queen": [
-            _make_endgame_entry("R vs R"),
-            _make_endgame_entry("Q vs Q"),
+            _make_endgame_entry("R vs R"),  # blitz only
+            _make_endgame_entry("Q vs Q", tc_breakdown={
+                "rapid": {"wins": 3, "losses": 1, "draws": 1},
+            }),  # rapid only
         ],
         "material": [
             _make_endgame_entry("RB vs RN"),
@@ -207,6 +216,43 @@ class TestEndgameBoardLoading:
         )
 
         assert _visible_spinners(page) == 0
+        page.close()
+
+    def test_tc_filter_hides_cards(self, playwright_ctx, server_url):
+        """Unchecking a time class hides endgame cards that only have that TC."""
+        page = playwright_ctx.new_page()
+        page.goto(f"{server_url}/endgames")
+        page.wait_for_selector(".eg-board svg", timeout=10000)
+
+        # Count visible cards (default: both blitz R vs R + rapid Q vs Q)
+        visible = page.evaluate("""() =>
+            document.querySelectorAll('.eg-card[data-filtered="yes"]').length
+        """)
+        assert visible == 2
+
+        # Uncheck blitz via JS — only the rapid card should remain
+        page.evaluate("""() => {
+            var cb = document.querySelector('.eg-tc-filter[value="blitz"]');
+            cb.checked = false;
+            cb.dispatchEvent(new Event('change'));
+        }""")
+        page.wait_for_timeout(300)
+        visible_after = page.evaluate("""() =>
+            document.querySelectorAll('.eg-card[data-filtered="yes"]').length
+        """)
+        assert visible_after == 1
+
+        # Re-check blitz — both return
+        page.evaluate("""() => {
+            var cb = document.querySelector('.eg-tc-filter[value="blitz"]');
+            cb.checked = true;
+            cb.dispatchEvent(new Event('change'));
+        }""")
+        page.wait_for_timeout(300)
+        visible_restored = page.evaluate("""() =>
+            document.querySelectorAll('.eg-card[data-filtered="yes"]').length
+        """)
+        assert visible_restored == 2
         page.close()
 
     def test_no_js_errors_on_definition_switch(self, playwright_ctx,

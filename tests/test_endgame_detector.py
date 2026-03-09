@@ -529,6 +529,50 @@ class TestAggregate:
         assert "example_material_diff" in s
         assert isinstance(s["example_material_diff"], int)
 
+    def test_tc_breakdown(self):
+        """Aggregate results include per-time-class win/loss/draw breakdown."""
+        games = [
+            make_chess_game(
+                pgn=ROOK_ENDGAME_PGN, my_color="white",
+                white_result="win", black_result="resigned",
+                time_class="blitz",
+            ),
+            make_chess_game(
+                pgn=ROOK_ENDGAME_PGN, my_color="white",
+                white_result="stalemate", black_result="stalemate",
+                time_class="rapid", game_url="g2",
+            ),
+            make_chess_game(
+                pgn=ROOK_ENDGAME_PGN, my_color="white",
+                white_result="resigned", black_result="win",
+                time_class="blitz", game_url="g3",
+            ),
+        ]
+        stats = EndgameClassifier.aggregate(games)
+        assert len(stats) >= 1
+        s = stats[0]
+        assert "tc_breakdown" in s
+        assert "blitz" in s["tc_breakdown"]
+        assert "rapid" in s["tc_breakdown"]
+        assert s["tc_breakdown"]["blitz"]["wins"] == 1
+        assert s["tc_breakdown"]["blitz"]["losses"] == 1
+        assert s["tc_breakdown"]["rapid"]["draws"] == 1
+
+    def test_all_games_has_time_class(self):
+        """Each entry in all_games includes the time_class field."""
+        games = [
+            make_chess_game(
+                pgn=ROOK_ENDGAME_PGN, my_color="white",
+                white_result="win", black_result="resigned",
+                time_class="bullet",
+            ),
+        ]
+        stats = EndgameClassifier.aggregate(games)
+        assert len(stats) >= 1
+        for g in stats[0]["all_games"]:
+            assert "time_class" in g
+            assert g["time_class"] == "bullet"
+
     def test_aggregate_picks_most_recent_game(self):
         """Representative example is the most recent game by end_time."""
         old_time = datetime.datetime(2025, 1, 1, 12, 0, 0)

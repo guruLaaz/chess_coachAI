@@ -1,5 +1,6 @@
 # report_generator.py
 
+import json
 import threading
 import webbrowser
 from typing import List
@@ -269,6 +270,8 @@ class CoachingReportGenerator:
                     # Format average clock times for display
                     entry["avg_my_clock_fmt"] = self._format_clock(s.get("avg_my_clock"))
                     entry["avg_opp_clock_fmt"] = self._format_clock(s.get("avg_opp_clock"))
+                    entry["tc_breakdown_json"] = json.dumps(
+                        s.get("tc_breakdown", {}))
                     enriched.append(entry)
             return render_template_string(
                 _ENDGAME_TEMPLATE,
@@ -1253,6 +1256,15 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                     </div>
                 </span>
                 <span class="filter-wrapper">
+                    <button class="filter-btn" id="eg-tc-btn">Time class &#9662;</button>
+                    <div class="filter-panel" id="eg-tc-panel">
+                        <label><input type="checkbox" class="eg-tc-filter" value="bullet" checked> Bullet</label>
+                        <label><input type="checkbox" class="eg-tc-filter" value="blitz" checked> Blitz</label>
+                        <label><input type="checkbox" class="eg-tc-filter" value="rapid" checked> Rapid</label>
+                        <label><input type="checkbox" class="eg-tc-filter" value="daily" checked> Daily</label>
+                    </div>
+                </span>
+                <span class="filter-wrapper">
                     <button class="filter-btn" id="eg-min-games-btn">Min games &#9662;</button>
                     <div class="filter-panel" id="eg-min-games-panel">
                         <select id="eg-min-games-select" class="sort-select" style="width:100%">
@@ -1267,7 +1279,7 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
 
             {% if stats %}
                 {% for s in stats %}
-                <div class="eg-card" style="display:none" data-win-pct="{{ s.win_pct }}" data-loss-pct="{{ s.loss_pct }}" data-draw-pct="{{ s.draw_pct }}" data-total="{{ s.total }}" data-balance="{{ s.balance }}" data-definition="{{ s.definition }}" data-fen="{{ s.get('example_fen', '') }}" data-color="{{ s.get('example_color', 'white') }}">
+                <div class="eg-card" style="display:none" data-win-pct="{{ s.win_pct }}" data-loss-pct="{{ s.loss_pct }}" data-draw-pct="{{ s.draw_pct }}" data-total="{{ s.total }}" data-balance="{{ s.balance }}" data-definition="{{ s.definition }}" data-fen="{{ s.get('example_fen', '') }}" data-color="{{ s.get('example_color', 'white') }}" data-tc-breakdown='{{ s.tc_breakdown_json|safe }}'>
                     <div class="eg-card-header">
                         <span class="type-label">{{ s.type }}</span>
                         <span class="balance-badge balance-{{ s.balance }}">{{ s.balance }}</span>
@@ -1357,6 +1369,7 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
 
         /* Combined filter: definition + balance checkboxes + min games */
         var balanceChecks = document.querySelectorAll('.balance-filter');
+        var tcChecks = document.querySelectorAll('.eg-tc-filter');
         var minSelect = document.getElementById('eg-min-games-select');
         var defSelect = document.getElementById('eg-def-select');
 
@@ -1369,17 +1382,55 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
             var selectedDef = defSelect ? defSelect.value : '';
             var enabledBalance = new Set();
             balanceChecks.forEach(function(c) { if (c.checked) enabledBalance.add(c.value); });
+            var enabledTC = new Set();
+            tcChecks.forEach(function(c) { if (c.checked) enabledTC.add(c.value); });
             var min = minSelect ? parseInt(minSelect.value, 10) : 1;
 
             document.querySelectorAll('.eg-card').forEach(function(card) {
                 var balance = card.getAttribute('data-balance');
-                var total = parseInt(card.getAttribute('data-total'), 10) || 0;
                 var defn = card.getAttribute('data-definition');
                 var defOk = !selectedDef || defn === selectedDef;
                 var balOk = !balance || enabledBalance.has(balance);
-                var minOk = total >= min;
-                card.setAttribute('data-filtered', (defOk && balOk && minOk) ? 'yes' : 'no');
+
+                /* Recalculate stats from time-class breakdown */
+                var breakdown = {};
+                try { breakdown = JSON.parse(card.getAttribute('data-tc-breakdown') || '{}'); } catch(e) {}
+                var fWins = 0, fLosses = 0, fDraws = 0;
+                for (var tc in breakdown) {
+                    if (!tc || enabledTC.has(tc)) {
+                        fWins += breakdown[tc].wins;
+                        fLosses += breakdown[tc].losses;
+                        fDraws += breakdown[tc].draws;
+                    }
+                }
+                var fTotal = fWins + fLosses + fDraws;
+                var tcOk = fTotal > 0;
+                var minOk = fTotal >= min;
+
+                card.setAttribute('data-filtered', (defOk && balOk && tcOk && minOk) ? 'yes' : 'no');
                 card.style.display = 'none';
+
+                /* Update displayed stats to reflect filtered counts */
+                if (defOk && balOk && tcOk && minOk) {
+                    var winPct = fTotal ? Math.round(100 * fWins / fTotal) : 0;
+                    var lossPct = fTotal ? Math.round(100 * fLosses / fTotal) : 0;
+                    var drawPct = 100 - winPct - lossPct;
+                    card.setAttribute('data-total', fTotal);
+                    card.setAttribute('data-win-pct', winPct);
+                    card.setAttribute('data-loss-pct', lossPct);
+                    card.setAttribute('data-draw-pct', drawPct);
+                    var gamesEl = card.querySelector('.eg-games');
+                    if (gamesEl) gamesEl.textContent = fTotal + ' games';
+                    var stats = card.querySelectorAll('.eg-stat');
+                    if (stats.length >= 3) {
+                        stats[0].textContent = 'W ' + winPct + '%';
+                        stats[0].className = 'eg-stat ' + (winPct >= 50 ? 'pct-good' : winPct < 30 ? 'pct-bad' : 'pct-neutral');
+                        stats[1].textContent = 'L ' + lossPct + '%';
+                        stats[1].className = 'eg-stat ' + (lossPct >= 50 ? 'pct-bad' : lossPct < 20 ? 'pct-good' : 'pct-neutral');
+                        stats[2].textContent = 'D ' + drawPct + '%';
+                        stats[2].className = 'eg-stat pct-neutral';
+                    }
+                }
             });
             shownCount = 0;
             showNextBatch();
@@ -1436,6 +1487,7 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
         }
 
         balanceChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
+        tcChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
         if (minSelect) { minSelect.addEventListener('change', applyFilters); }
         if (defSelect) { defSelect.addEventListener('change', applyFilters); }
         applyFilters();
@@ -1455,6 +1507,7 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
         var panels = [
             {btn: document.getElementById('eg-def-btn'), panel: document.getElementById('eg-def-panel')},
             {btn: document.getElementById('eg-balance-btn'), panel: document.getElementById('eg-balance-panel')},
+            {btn: document.getElementById('eg-tc-btn'), panel: document.getElementById('eg-tc-panel')},
             {btn: document.getElementById('eg-min-games-btn'), panel: document.getElementById('eg-min-games-panel')}
         ];
         panels.forEach(function(p) {
@@ -1586,6 +1639,20 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
             font-size: 0.9rem;
         }
         .back-link:hover { text-decoration: underline; }
+        .filter-wrapper { display: inline-block; position: relative; }
+        .filter-btn {
+            background: #1e293b; color: #94a3b8; border: 1px solid #475569;
+            border-radius: 8px; padding: 6px 14px; font-size: 0.85rem; cursor: pointer;
+        }
+        .filter-btn:hover { border-color: #60a5fa; }
+        .filter-panel {
+            display: none; position: absolute; top: 100%; left: 0; margin-top: 4px;
+            background: #1e293b; border: 1px solid #475569; border-radius: 8px;
+            padding: 8px 12px; z-index: 100; min-width: 140px;
+        }
+        .filter-panel.open { display: block; }
+        .filter-panel label { display: block; padding: 4px 0; font-size: 0.85rem; cursor: pointer; white-space: nowrap; }
+        .filter-panel input[type="checkbox"] { margin-right: 6px; }
         .balance-badge {
             display: inline-block;
             padding: 2px 8px;
@@ -1698,11 +1765,22 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
         <main class="main">
             <a class="back-link" href="/endgames">&larr; Back to endgames</a>
             <h1>{{ eg_type }} <span class="balance-badge balance-{{ balance }}">{{ balance }}</span></h1>
-            <div class="subtitle">{{ games|length }} games &mdash; definition: {{ definition }} &mdash; sorted by most recent</div>
+            <div class="subtitle"><span id="ag-game-count">{{ games|length }}</span> games &mdash; definition: {{ definition }} &mdash; sorted by most recent</div>
+            <div style="margin-bottom:16px">
+                <span class="filter-wrapper">
+                    <button class="filter-btn" id="ag-tc-btn">Time class &#9662;</button>
+                    <div class="filter-panel" id="ag-tc-panel">
+                        <label><input type="checkbox" class="ag-tc-filter" value="bullet" checked> Bullet</label>
+                        <label><input type="checkbox" class="ag-tc-filter" value="blitz" checked> Blitz</label>
+                        <label><input type="checkbox" class="ag-tc-filter" value="rapid" checked> Rapid</label>
+                        <label><input type="checkbox" class="ag-tc-filter" value="daily" checked> Daily</label>
+                    </div>
+                </span>
+            </div>
 
             {% if games %}
                 {% for g in games %}
-                <div class="game-row" style="display:none" data-fen="{{ g.get('fen', '') }}" data-color="{{ g.get('my_color', 'white') }}">
+                <div class="game-row" style="display:none" data-fen="{{ g.get('fen', '') }}" data-color="{{ g.get('my_color', 'white') }}" data-time-class="{{ g.get('time_class', '') }}">
                     {% if g.get('fen') %}
                     <div class="game-board">
                         <div class="board-slot allgames-board"><div class="board-spinner">Loading board&hellip;</div></div>
@@ -1778,15 +1856,36 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
         var PAGE_SIZE = 10;
         var shownCount = 0;
         var fetchingBoards = false;
-        var rows = Array.from(document.querySelectorAll('.game-row'));
+        var allRows = Array.from(document.querySelectorAll('.game-row'));
+        var agTcChecks = document.querySelectorAll('.ag-tc-filter');
+        var gameCountEl = document.getElementById('ag-game-count');
+
+        function applyFilters() {
+            var enabledTC = new Set();
+            agTcChecks.forEach(function(c) { if (c.checked) enabledTC.add(c.value); });
+            var visibleCount = 0;
+            allRows.forEach(function(row) {
+                var tc = row.getAttribute('data-time-class');
+                var ok = !tc || enabledTC.has(tc);
+                row.setAttribute('data-filtered', ok ? 'yes' : 'no');
+                row.style.display = 'none';
+                if (ok) visibleCount++;
+            });
+            if (gameCountEl) gameCountEl.textContent = visibleCount;
+            shownCount = 0;
+            showNextBatch();
+        }
+
+        agTcChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
 
         function showNextBatch() {
             if (fetchingBoards) return;
-            var end = Math.min(shownCount + PAGE_SIZE, rows.length);
+            var passing = allRows.filter(function(r) { return r.getAttribute('data-filtered') === 'yes'; });
+            var end = Math.min(shownCount + PAGE_SIZE, passing.length);
             var newRows = [];
             for (var i = shownCount; i < end; i++) {
-                rows[i].style.display = '';
-                newRows.push(rows[i]);
+                passing[i].style.display = '';
+                newRows.push(passing[i]);
             }
             shownCount = end;
             loadBoards(newRows);
@@ -1827,13 +1926,24 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
             });
         }
 
-        showNextBatch();
+        applyFilters();
 
         window.addEventListener('scroll', function() {
             if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 200) {
                 showNextBatch();
             }
         });
+
+        /* Dropdown panel toggle */
+        var agTcBtn = document.getElementById('ag-tc-btn');
+        var agTcPanel = document.getElementById('ag-tc-panel');
+        if (agTcBtn && agTcPanel) {
+            agTcBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                agTcPanel.classList.toggle('open');
+            });
+            document.addEventListener('click', function() { agTcPanel.classList.remove('open'); });
+        }
     })();
     </script>
 </body>

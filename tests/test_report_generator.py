@@ -904,7 +904,7 @@ class TestEndgamePage:
         html = resp.data.decode()
         assert resp.status_code == 200
         assert "R vs R" in html
-        assert "2 games" in html
+        assert ">2</span> games" in html
 
     def test_all_games_shows_results(self):
         """Each game on the all-games page has a result badge."""

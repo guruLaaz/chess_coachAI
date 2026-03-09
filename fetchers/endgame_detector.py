@@ -318,6 +318,7 @@ class EndgameClassifier:
                 "opp_clock": info.opp_clock,
                 "end_time": end_time,
                 "my_color": game.my_color,
+                "time_class": getattr(game, "time_class", "") or "",
             })
 
             prev = representatives.get(key)
@@ -350,6 +351,20 @@ class EndgameClassifier:
             games_list.sort(
                 key=lambda g: g["end_time"] or 0, reverse=True)
 
+            # Per-time-class breakdown for UI filtering
+            tc_breakdown = {}
+            for g in games_list:
+                tc = g.get("time_class", "")
+                if tc not in tc_breakdown:
+                    tc_breakdown[tc] = {"wins": 0, "losses": 0, "draws": 0}
+                r = g.get("my_result", "draw")
+                if r == "win":
+                    tc_breakdown[tc]["wins"] += 1
+                elif r == "loss":
+                    tc_breakdown[tc]["losses"] += 1
+                else:
+                    tc_breakdown[tc]["draws"] += 1
+
             results.append({
                 "type": eg_type,
                 "balance": balance,
@@ -371,6 +386,7 @@ class EndgameClassifier:
                 "avg_my_clock": avg_my_clock,
                 "avg_opp_clock": avg_opp_clock,
                 "all_games": games_list,
+                "tc_breakdown": tc_breakdown,
             })
 
         results.sort(key=lambda x: x["total"], reverse=True)
