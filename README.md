@@ -1,6 +1,6 @@
 # Chess CoachAI
 
-A CLI tool that analyzes your Chess.com and Lichess opening repertoire using Stockfish, identifies where you deviate from book theory, and generates an interactive coaching report showing your biggest mistakes with move-by-move recommendations.
+A CLI tool that analyzes your Chess.com and Lichess games using Stockfish — identifies where you deviate from opening book theory, classifies endgame positions by piece type and material balance, and generates an interactive coaching report with move-by-move recommendations and win/loss/draw statistics.
 
 ![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue)
 
@@ -47,7 +47,7 @@ Use `""` to skip a platform.
 Download Stockfish from [stockfishchess.org](https://stockfishchess.org/download/) and place the binary at:
 
 ```
-engines/stockfish-windows-x86-64-sse41-popcnt.exe
+engines/stockfish-windows-x86-64-avx2.exe
 ```
 
 Or specify a custom path with `--stockfish /path/to/stockfish`.
@@ -87,7 +87,7 @@ At least one username is required. Use `""` to skip a platform.
 | `CHESSCOM_USER` | `""` (skip) | Chess.com username |
 | `LICHESS_USER` | `""` (skip) | Lichess username |
 | `DAYS` | `0` (all) | Only analyze games from the last N days |
-| `--depth` | `18` | Stockfish analysis depth (higher = slower but more accurate) |
+| `--depth` | `14` | Stockfish analysis depth (higher = slower but more accurate) |
 | `--workers` | `1` | Parallel Stockfish instances (use CPU core count) |
 | `--report` | off | Launch the coaching report web app |
 | `--include` | all | Only include specific time controls: `bullet blitz rapid daily` |
@@ -163,19 +163,22 @@ chess_coachAI/
 │   ├── stockfish_evaluator.py  # Stockfish engine wrapper
 │   ├── repertoire_analyzer.py  # Core analysis pipeline (sequential + parallel)
 │   ├── endgame_detector.py     # Endgame detection & classification
+│   ├── game_utils.py           # Shared utilities (color mapping, result normalization)
 │   ├── game_cache.py           # SQLite caching layer
 │   └── report_generator.py     # Flask coaching report web app
 │
 ├── engines/                    # Stockfish binary (gitignored)
 ├── data/                       # Opening book + cache DB (gitignored)
 │
-└── tests/                      # 436 tests across 14 test files
+└── tests/                      # 527 tests across 15 test files
+    ├── conftest.py             # Playwright fixtures
     ├── helpers.py              # Test data factories
     ├── test_analyze.py
     ├── test_chesscom_fetcher.py
     ├── test_lichess_fetcher.py
     ├── test_chessgame.py
     ├── test_chessgameanalyzer.py
+    ├── test_e2e_boards.py      # Playwright e2e tests (openings + endgames)
     ├── test_game_filter.py
     ├── test_game_cache.py
     ├── test_opening_detector.py
@@ -190,17 +193,20 @@ chess_coachAI/
 ## Testing
 
 ```bash
-# Run all tests (excluding live API calls)
+# Run all tests (excluding live API calls and e2e)
 pytest tests/ -v -m "not network"
 
 # Run all tests including live API smoke tests
 pytest tests/ -v
 
+# Run Playwright e2e tests only
+pytest tests/test_e2e_boards.py -v
+
 # Run with coverage report
 pytest tests/ -v --cov=fetchers --cov=analyze --cov-report=term-missing
 ```
 
-**436 tests** across 14 test files. Tests marked with `@pytest.mark.network` hit live APIs and can be skipped with `-m "not network"`.
+**527 tests** across 15 test files. Tests marked with `@pytest.mark.network` hit live APIs and can be skipped with `-m "not network"`. Playwright e2e tests in `test_e2e_boards.py` exercise the full coaching report UI (board rendering, filters, navigation).
 
 ## Dependencies
 
@@ -212,4 +218,5 @@ pytest tests/ -v --cov=fetchers --cov=analyze --cov-report=term-missing
 | `pytest` | Test framework |
 | `pytest-asyncio` | Async test support |
 | `pytest-cov` | Coverage reporting |
+| `playwright` | Browser automation for e2e tests |
 | `aioresponses` | Mock HTTP responses in tests |
