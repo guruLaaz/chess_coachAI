@@ -41,8 +41,12 @@ class CoachingReportGenerator:
             sum(ev.eval_loss_cp for ev in self.deviations) / len(self.deviations)
             if self.deviations else 0
         )
+        # Theory Knowledge = % of games where the player never deviated
+        # (either fully booked, or the opponent went out of book first)
         self.theory_knowledge_pct = (
-            round(100 * sum(1 for ev in evaluations if ev.is_fully_booked)
+            round(100 * sum(1 for ev in evaluations
+                            if ev.is_fully_booked
+                            or ev.deviating_side != ev.my_color)
                   / len(evaluations))
             if evaluations else 0
         )
