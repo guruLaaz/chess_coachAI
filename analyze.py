@@ -259,11 +259,11 @@ def run_analysis(games, username, stockfish_path, book_path, depth,
 def main():
     parser = argparse.ArgumentParser(
         description="Analyze Chess.com and/or Lichess opening repertoire with Stockfish")
-    parser.add_argument("chesscom_user", nargs="?", default="",
-                        help="Chess.com username (use empty string to skip)")
-    parser.add_argument("lichess_user", nargs="?", default="",
-                        help="Lichess username (use empty string to skip)")
-    parser.add_argument("days", nargs="?", type=int, default=0,
+    parser.add_argument("--chesscom", default="", dest="chesscom_user",
+                        help="Chess.com username")
+    parser.add_argument("--lichess", default="", dest="lichess_user",
+                        help="Lichess username")
+    parser.add_argument("--days", type=int, default=0,
                         help="Only analyze games from the last N days (0 = all)")
     parser.add_argument("--depth", type=int, default=14,
                         help="Stockfish analysis depth (default: 14)")

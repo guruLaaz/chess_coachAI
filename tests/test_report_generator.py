@@ -738,11 +738,11 @@ class TestEndgamePage:
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/endgames")
-        assert b'id="eg-min-games-select"' in resp.data
-        assert b"Min games" in resp.data
+        assert b'id="min-games-range"' in resp.data
+        assert b"Min. Games" in resp.data
 
-    def test_min_games_filter_options(self):
-        """Min games select has expected threshold options."""
+    def test_min_games_range_attributes(self):
+        """Min games range slider has expected min/max attributes."""
         evals = [_make_eval()]
         gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._SAMPLE_STATS)
@@ -750,10 +750,9 @@ class TestEndgamePage:
         app.config["TESTING"] = True
         resp = app.test_client().get("/endgames")
         html = resp.data.decode()
-        assert 'value="1"' in html
-        assert 'value="2"' in html
-        assert 'value="5"' in html
-        assert 'value="10"' in html
+        assert 'id="min-games-range"' in html
+        assert 'min="1"' in html
+        assert 'max="20"' in html
 
     def test_balance_filter_checkboxes_present(self):
         """Balance filter checkboxes appear on endgames page."""

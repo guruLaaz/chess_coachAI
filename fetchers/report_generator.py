@@ -298,7 +298,35 @@ class CoachingReportGenerator:
                     entry["avg_opp_clock_fmt"] = self._format_clock(s.get("avg_opp_clock"))
                     entry["tc_breakdown_json"] = json.dumps(
                         s.get("tc_breakdown", {}))
+                    # Compact per-game details for cross-filtering in JS
+                    game_details = []
+                    for g in s.get("all_games", []):
+                        url = g.get("game_url", "")
+                        plat = ("chesscom" if "chess.com" in url
+                                else "lichess" if "lichess.org" in url
+                                else "unknown")
+                        et = g.get("end_time")
+                        dt = (et.strftime("%Y-%m-%d")
+                              if et and hasattr(et, "strftime") else "")
+                        game_details.append({
+                            "r": g.get("my_result", "draw"),
+                            "tc": g.get("time_class", ""),
+                            "p": plat,
+                            "c": g.get("my_color", "white"),
+                            "d": dt,
+                        })
+                    entry["game_details_json"] = json.dumps(game_details)
                     enriched.append(entry)
+            # Summary stats for the default definition
+            def_entries = [e for e in enriched
+                           if e["definition"] == default_def]
+            eg_total_games = sum(e["total"] for e in def_entries)
+            eg_total_wins = sum(e["wins"] for e in def_entries)
+            eg_total_losses = sum(e["losses"] for e in def_entries)
+            eg_total_draws = sum(e["draws"] for e in def_entries)
+            eg_win_pct = (round(100 * eg_total_wins / eg_total_games)
+                          if eg_total_games else 0)
+            eg_types_count = len(def_entries)
             return render_template_string(
                 _ENDGAME_TEMPLATE,
                 username=self.username,
@@ -311,6 +339,9 @@ class CoachingReportGenerator:
                 page="endgames",
                 definitions=list(self.endgame_stats_by_def.keys()),
                 default_definition=default_def,
+                eg_total_games=eg_total_games,
+                eg_types_count=eg_types_count,
+                eg_win_pct=eg_win_pct,
             )
 
         @app.route("/endgames/all")
@@ -341,6 +372,7 @@ class CoachingReportGenerator:
                     endgame_count=endgame_count,
                     total=len(self.deviations),
                     page="endgames_all",
+                    sidebar_filters=False,
                 )
 
             # Enrich each game with deep-link, formatted clocks (SVGs lazy)
@@ -386,6 +418,7 @@ class CoachingReportGenerator:
                 endgame_count=endgame_count,
                 total=len(self.deviations),
                 page="endgames_all",
+                sidebar_filters=False,
             )
 
         @app.route("/api/render-boards", methods=["POST"])
@@ -413,13 +446,7 @@ class CoachingReportGenerator:
         app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
 
 
-_MAIN_TEMPLATE = r"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chess Coach - {% if chesscom_user %}{{ chesscom_user }}{% endif %}{% if chesscom_user and lichess_user %} / {% endif %}{% if lichess_user %}{{ lichess_user }}{% endif %}</title>
-    <style>
+_SIDEBAR_CSS = r"""
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: system-ui, -apple-system, sans-serif;
@@ -533,7 +560,7 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
         }
         .color-btn:last-child { border-right: none; }
         .color-btn:hover { background: #f8fafc; color: #1e293b; }
-        .color-btn.active { background: #f1f5f9; color: #1e293b; }
+        .color-btn.active { background: #e2e8f0; color: #1e293b; }
         .sidebar-date {
             width: 100%;
             padding: 8px 10px;
@@ -624,6 +651,76 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
         }
         .sync-btn:hover { background: #0f766e; }
         .sync-btn svg { width: 16px; height: 16px; }
+"""
+
+_SIDEBAR_HTML = r"""
+        <nav class="sidebar">
+            <div class="sidebar-brand">
+                <svg viewBox="0 0 96.4 144"><path fill="#f97316" d="M48.2 0C35.4-.1 25 10.3 24.9 23.1c0 7.5 3.6 14.6 9.7 18.9L17.9 53c0 3.5.9 6.9 2.6 9.9h14.8c-.3 6.6 2.4 22.6-21.8 41.1C5 110.4 0 121.3 0 134.6c0 .6 1.3 9.4 48.2 9.4s48.2-8.8 48.2-9.4c0-13.3-5-24.3-13.4-30.7-24.2-18.5-21.5-34.5-21.8-41.1H76c1.7-3 2.6-6.4 2.6-9.8L61.8 42c10.4-7.5 12.8-21.9 5.3-32.3C62.8 3.6 55.7 0 48.2 0z"/></svg>
+                <span>Chessalyzer</span>
+            </div>
+            <div class="sidebar-nav">
+                <a href="/" {% if page == 'openings' %}class="active"{% endif %}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                    Openings
+                </a>
+                <a href="/endgames" {% if page in ('endgames', 'endgames_all') %}class="active"{% endif %}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                    Endgames
+                </a>
+            </div>
+            <div class="sidebar-divider"></div>
+            {% if sidebar_filters != false %}
+            <div class="sidebar-section-label">Filters</div>
+            <div class="sidebar-filter-group">
+                <label class="sidebar-filter-label">Platform</label>
+                <select id="platform-select" class="sidebar-select">
+                    <option value="all">All Platforms</option>
+                    <option value="chesscom">Chess.com</option>
+                    <option value="lichess">Lichess</option>
+                </select>
+            </div>
+            <div class="sidebar-filter-group">
+                <label class="sidebar-filter-label">Playing As</label>
+                <div class="color-toggle">
+                    <button class="color-btn active" data-color-filter="white">White</button>
+                    <button class="color-btn" data-color-filter="black">Black</button>
+                </div>
+            </div>
+            <div class="sidebar-filter-group">
+                <label class="sidebar-filter-label">Min. Games: <span id="min-games-value">3</span></label>
+                <div class="sidebar-range-wrap">
+                    <input type="range" id="min-games-range" class="sidebar-range" min="1" max="20" value="3">
+                </div>
+            </div>
+            <div class="sidebar-filter-group">
+                <label class="sidebar-filter-label">From</label>
+                <input type="date" id="date-from" class="sidebar-date">
+                <div class="date-presets">
+                    <button class="date-preset active" data-days="">All-time</button>
+                    <button class="date-preset" data-days="7">Last week</button>
+                    <button class="date-preset" data-days="180">6 months</button>
+                    <button class="date-preset" data-days="365">Last year</button>
+                </div>
+            </div>
+            {% endif %}
+            <div class="sidebar-bottom">
+                <button class="sync-btn" onclick="window.location.reload()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    Sync Games
+                </button>
+            </div>
+        </nav>
+"""
+
+_MAIN_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Coach - {% if chesscom_user %}{{ chesscom_user }}{% endif %}{% if chesscom_user and lichess_user %} / {% endif %}{% if lichess_user %}{{ lichess_user }}{% endif %}</title>
+    <style>
+""" + _SIDEBAR_CSS + r"""
         .main {
             flex: 1;
             padding: 32px;
@@ -818,61 +915,7 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
 </head>
 <body>
     <div class="layout">
-        <nav class="sidebar">
-            <div class="sidebar-brand">
-                <svg viewBox="0 0 96.4 144"><path fill="#f97316" d="M48.2 0C35.4-.1 25 10.3 24.9 23.1c0 7.5 3.6 14.6 9.7 18.9L17.9 53c0 3.5.9 6.9 2.6 9.9h14.8c-.3 6.6 2.4 22.6-21.8 41.1C5 110.4 0 121.3 0 134.6c0 .6 1.3 9.4 48.2 9.4s48.2-8.8 48.2-9.4c0-13.3-5-24.3-13.4-30.7-24.2-18.5-21.5-34.5-21.8-41.1H76c1.7-3 2.6-6.4 2.6-9.8L61.8 42c10.4-7.5 12.8-21.9 5.3-32.3C62.8 3.6 55.7 0 48.2 0z"/></svg>
-                <span>Chessalyzer</span>
-            </div>
-            <div class="sidebar-nav">
-                <a href="/" {% if page == 'openings' %}class="active"{% endif %}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-                    Openings
-                </a>
-                <a href="/endgames" {% if page == 'endgames' %}class="active"{% endif %}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                    Endgames
-                </a>
-            </div>
-            <div class="sidebar-divider"></div>
-            <div class="sidebar-section-label">Filters</div>
-            <div class="sidebar-filter-group">
-                <label class="sidebar-filter-label">Platform</label>
-                <select id="platform-select" class="sidebar-select">
-                    <option value="all">All Platforms</option>
-                    <option value="chesscom">Chess.com</option>
-                    <option value="lichess">Lichess</option>
-                </select>
-            </div>
-            <div class="sidebar-filter-group">
-                <label class="sidebar-filter-label">Playing As</label>
-                <div class="color-toggle">
-                    <button class="color-btn active" data-color-filter="white">White</button>
-                    <button class="color-btn" data-color-filter="black">Black</button>
-                </div>
-            </div>
-            <div class="sidebar-filter-group">
-                <label class="sidebar-filter-label">Min. Games: <span id="min-games-value">3</span></label>
-                <div class="sidebar-range-wrap">
-                    <input type="range" id="min-games-range" class="sidebar-range" min="1" max="20" value="3">
-                </div>
-            </div>
-            <div class="sidebar-filter-group">
-                <label class="sidebar-filter-label">From</label>
-                <input type="date" id="date-from" class="sidebar-date">
-                <div class="date-presets">
-                    <button class="date-preset active" data-days="">All-time</button>
-                    <button class="date-preset" data-days="7">Last week</button>
-                    <button class="date-preset" data-days="180">6 months</button>
-                    <button class="date-preset" data-days="365">Last year</button>
-                </div>
-            </div>
-            <div class="sidebar-bottom">
-                <button class="sync-btn" onclick="window.location.reload()">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                    Sync Games
-                </button>
-            </div>
-        </nav>
+""" + _SIDEBAR_HTML + r"""
         <main class="main">
             <h1>Chess Coach: <span class="user-badges">{% if chesscom_user %}<a class="user-badge" href="https://www.chess.com/member/{{ chesscom_user }}" target="_blank" rel="noopener"><svg viewBox="0 0 96.4 144"><path fill="#81b64c" d="M48.2 0C35.4-.1 25 10.3 24.9 23.1c0 7.5 3.6 14.6 9.7 18.9L17.9 53c0 3.5.9 6.9 2.6 9.9h14.8c-.3 6.6 2.4 22.6-21.8 41.1C5 110.4 0 121.3 0 134.6c0 .6 1.3 9.4 48.2 9.4s48.2-8.8 48.2-9.4c0-13.3-5-24.3-13.4-30.7-24.2-18.5-21.5-34.5-21.8-41.1H76c1.7-3 2.6-6.4 2.6-9.8L61.8 42c10.4-7.5 12.8-21.9 5.3-32.3C62.8 3.6 55.7 0 48.2 0z"/></svg>{{ chesscom_user }}</a>{% endif %}{% if lichess_user %}<a class="user-badge" href="https://lichess.org/@/{{ lichess_user }}" target="_blank" rel="noopener"><svg viewBox="0 0 50 50"><path fill="#000" stroke="#000" stroke-linejoin="round" d="M38.956.5c-3.53.418-6.452.902-9.286 2.984C5.534 1.786-.692 18.533.68 29.364 3.493 50.214 31.918 55.785 41.329 41.7c-7.444 7.696-19.276 8.752-28.323 3.084C3.959 39.116-.506 27.392 4.683 17.567 9.873 7.742 18.996 4.535 29.03 6.405c2.43-1.418 5.225-3.22 7.655-3.187l-1.694 4.86 12.752 21.37c-.439 5.654-5.459 6.112-5.459 6.112-.574-1.47-1.634-2.942-4.842-6.036-3.207-3.094-17.465-10.177-15.788-16.207-2.001 6.967 10.311 14.152 14.04 17.663 3.73 3.51 5.426 6.04 5.795 6.756 0 0 9.392-2.504 7.838-8.927L37.4 7.171z"/></svg>{{ lichess_user }}</a>{% endif %}</span></h1>
             {% if filter_eco %}
@@ -1151,88 +1194,20 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chess Coach - {% if chesscom_user %}{{ chesscom_user }}{% endif %}{% if chesscom_user and lichess_user %} / {% endif %}{% if lichess_user %}{{ lichess_user }}{% endif %} - Endgames</title>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: system-ui, -apple-system, sans-serif;
-            background: #f8fafc;
-            color: #1e293b;
-            min-height: 100vh;
-        }
-        .layout { display: flex; min-height: 100vh; }
-        .sidebar {
-            width: 260px;
+""" + _SIDEBAR_CSS + r"""
+        .stats-bar { display: flex; gap: 16px; margin-bottom: 28px; }
+        .stat-card {
+            flex: 1;
             background: #ffffff;
-            border-right: 1px solid #e2e8f0;
-            position: sticky;
-            top: 0;
-            height: 100vh;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            flex-shrink: 0;
-        }
-        .sidebar-brand {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 20px 20px 16px;
-            border-bottom: 1px solid #e2e8f0;
-            margin-bottom: 8px;
-        }
-        .sidebar-brand svg { width: 28px; height: 28px; flex-shrink: 0; }
-        .sidebar-brand span {
-            font-size: 1.2rem;
-            font-weight: 700;
-            color: #1e293b;
-            letter-spacing: -0.3px;
-        }
-        .sidebar-nav {
-            padding: 8px 0;
-        }
-        .sidebar-nav a {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 10px 20px;
-            color: #64748b;
-            text-decoration: none;
-            font-size: 0.9rem;
-            font-weight: 500;
-            border-left: 3px solid transparent;
-            transition: all 0.15s;
-        }
-        .sidebar-nav a:hover { background: #f8fafc; color: #1e293b; }
-        .sidebar-nav a.active {
-            color: #f97316;
-            border-left-color: #f97316;
-            background: #fff7ed;
-        }
-        .sidebar-nav a svg { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.7; }
-        .sidebar-nav a.active svg { opacity: 1; }
-        .sidebar-divider { height: 1px; background: #e2e8f0; margin: 8px 0; }
-        .sidebar-bottom {
-            margin-top: auto;
-            padding: 16px 20px;
-            border-top: 1px solid #e2e8f0;
-        }
-        .sync-btn {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            width: 100%;
-            padding: 10px;
-            border-radius: 8px;
             border: 1px solid #e2e8f0;
-            background: #f8fafc;
-            color: #64748b;
-            font-size: 0.85rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.15s;
+            border-radius: 12px;
+            padding: 18px 20px;
+            text-align: center;
         }
-        .sync-btn:hover { background: #f1f5f9; color: #1e293b; border-color: #d1d5db; }
-        .sync-btn svg { width: 16px; height: 16px; }
+        .stat-value { font-size: 1.8rem; font-weight: 700; color: #1e293b; }
+        .stat-label { font-size: 0.8rem; color: #64748b; margin-top: 4px; }
+        .donut-card { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .donut-chart { display: block; }
         .count {
             background: #f1f5f9;
             color: #64748b;
@@ -1369,44 +1344,45 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
             cursor: pointer;
         }
         .sort-select:hover { border-color: #3b82f6; }
-        .filter-wrapper {
-            display: inline-block;
-            position: relative;
-            margin-left: 12px;
+        .inline-filters {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin: 12px 0 4px;
         }
-        .filter-btn {
+        .inline-filter-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85rem;
+            color: #475569;
+        }
+        .inline-filter-group label {
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .inline-filter-group select {
             background: #ffffff;
             color: #334155;
             border: 1px solid #d1d5db;
             border-radius: 6px;
-            padding: 4px 10px;
-            font-size: 0.9rem;
-            cursor: pointer;
-        }
-        .filter-btn:hover { border-color: #3b82f6; }
-        .filter-panel {
-            display: none;
-            position: absolute;
-            top: 100%;
-            left: 0;
-            margin-top: 4px;
-            background: #ffffff;
-            border: 1px solid #d1d5db;
-            border-radius: 8px;
-            padding: 8px 12px;
-            z-index: 100;
-            min-width: 140px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-        .filter-panel.open { display: block; }
-        .filter-panel label {
-            display: block;
-            padding: 4px 0;
+            padding: 4px 8px;
             font-size: 0.85rem;
-            color: #334155;
             cursor: pointer;
         }
-        .filter-panel input[type="checkbox"] { margin-right: 6px; }
+        .inline-filter-group select:hover { border-color: #3b82f6; }
+        .inline-check-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .inline-check-group label {
+            font-weight: 400;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+        }
         .empty-state { text-align: center; padding: 80px 20px; color: #94a3b8; }
         .empty-state h2 { color: #64748b; margin-bottom: 12px; }
         @media (max-width: 768px) {
@@ -1418,34 +1394,13 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                 border-right: none;
                 border-bottom: 1px solid #e2e8f0;
             }
+            .stats-bar { flex-direction: column; }
         }
     </style>
 </head>
 <body>
     <div class="layout">
-        <nav class="sidebar">
-            <div class="sidebar-brand">
-                <svg viewBox="0 0 96.4 144"><path fill="#f97316" d="M48.2 0C35.4-.1 25 10.3 24.9 23.1c0 7.5 3.6 14.6 9.7 18.9L17.9 53c0 3.5.9 6.9 2.6 9.9h14.8c-.3 6.6 2.4 22.6-21.8 41.1C5 110.4 0 121.3 0 134.6c0 .6 1.3 9.4 48.2 9.4s48.2-8.8 48.2-9.4c0-13.3-5-24.3-13.4-30.7-24.2-18.5-21.5-34.5-21.8-41.1H76c1.7-3 2.6-6.4 2.6-9.8L61.8 42c10.4-7.5 12.8-21.9 5.3-32.3C62.8 3.6 55.7 0 48.2 0z"/></svg>
-                <span>Chessalyzer</span>
-            </div>
-            <div class="sidebar-nav">
-                <a href="/">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-                    Openings
-                </a>
-                <a href="/endgames" {% if page == 'endgames' %}class="active"{% endif %}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                    Endgames
-                </a>
-            </div>
-            <div class="sidebar-divider"></div>
-            <div class="sidebar-bottom">
-                <button class="sync-btn" onclick="window.location.reload()">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                    Sync Games
-                </button>
-            </div>
-        </nav>
+""" + _SIDEBAR_HTML + r"""
         <main class="main">
             <h1>Chess Coach: <span class="user-badges">{% if chesscom_user %}<a class="user-badge" href="https://www.chess.com/member/{{ chesscom_user }}" target="_blank" rel="noopener"><svg viewBox="0 0 96.4 144"><path fill="#81b64c" d="M48.2 0C35.4-.1 25 10.3 24.9 23.1c0 7.5 3.6 14.6 9.7 18.9L17.9 53c0 3.5.9 6.9 2.6 9.9h14.8c-.3 6.6 2.4 22.6-21.8 41.1C5 110.4 0 121.3 0 134.6c0 .6 1.3 9.4 48.2 9.4s48.2-8.8 48.2-9.4c0-13.3-5-24.3-13.4-30.7-24.2-18.5-21.5-34.5-21.8-41.1H76c1.7-3 2.6-6.4 2.6-9.8L61.8 42c10.4-7.5 12.8-21.9 5.3-32.3C62.8 3.6 55.7 0 48.2 0z"/></svg>{{ chesscom_user }}</a>{% endif %}{% if lichess_user %}<a class="user-badge" href="https://lichess.org/@/{{ lichess_user }}" target="_blank" rel="noopener"><svg viewBox="0 0 50 50"><path fill="#000" stroke="#000" stroke-linejoin="round" d="M38.956.5c-3.53.418-6.452.902-9.286 2.984C5.534 1.786-.692 18.533.68 29.364 3.493 50.214 31.918 55.785 41.329 41.7c-7.444 7.696-19.276 8.752-28.323 3.084C3.959 39.116-.506 27.392 4.683 17.567 9.873 7.742 18.996 4.535 29.03 6.405c2.43-1.418 5.225-3.22 7.655-3.187l-1.694 4.86 12.752 21.37c-.439 5.654-5.459 6.112-5.459 6.112-.574-1.47-1.634-2.942-4.842-6.036-3.207-3.094-17.465-10.177-15.788-16.207-2.001 6.967 10.311 14.152 14.04 17.663 3.73 3.51 5.426 6.04 5.795 6.756 0 0 9.392-2.504 7.838-8.927L37.4 7.171z"/></svg>{{ lichess_user }}</a>{% endif %}</span></h1>
             <div class="subtitle">Endgame performance &mdash; sorted by
@@ -1454,50 +1409,61 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                     <option value="data-win-pct">Win %</option>
                     <option value="data-loss-pct">Loss %</option>
                     <option value="data-draw-pct">Draw %</option>
-                </select>
-                <span class="filter-wrapper">
-                    <button class="filter-btn" id="eg-def-btn">Definition &#9662;</button>
-                    <div class="filter-panel" id="eg-def-panel">
-                        <select id="eg-def-select" class="sort-select" style="width:100%">
-                            {% for d in definitions %}
-                            <option value="{{ d }}" {{ 'selected' if d == default_definition else '' }}>{{ d }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </span>
-                <span class="filter-wrapper">
-                    <button class="filter-btn" id="eg-balance-btn">Balance &#9662;</button>
-                    <div class="filter-panel" id="eg-balance-panel">
+                </select></div>
+
+            <div class="inline-filters">
+                <div class="inline-filter-group">
+                    <label>Definition</label>
+                    <select id="eg-def-select">
+                        {% for d in definitions %}
+                        <option value="{{ d }}" {{ 'selected' if d == default_definition else '' }}>{{ d }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="inline-filter-group">
+                    <label>Balance</label>
+                    <div class="inline-check-group">
                         <label><input type="checkbox" class="balance-filter" value="up" checked> Up</label>
                         <label><input type="checkbox" class="balance-filter" value="equal" checked> Equal</label>
                         <label><input type="checkbox" class="balance-filter" value="down" checked> Down</label>
                     </div>
-                </span>
-                <span class="filter-wrapper">
-                    <button class="filter-btn" id="eg-tc-btn">Time class &#9662;</button>
-                    <div class="filter-panel" id="eg-tc-panel">
+                </div>
+                <div class="inline-filter-group">
+                    <label>Time Class</label>
+                    <div class="inline-check-group">
                         <label><input type="checkbox" class="eg-tc-filter" value="bullet" checked> Bullet</label>
                         <label><input type="checkbox" class="eg-tc-filter" value="blitz" checked> Blitz</label>
                         <label><input type="checkbox" class="eg-tc-filter" value="rapid" checked> Rapid</label>
                         <label><input type="checkbox" class="eg-tc-filter" value="daily" checked> Daily</label>
                     </div>
-                </span>
-                <span class="filter-wrapper">
-                    <button class="filter-btn" id="eg-min-games-btn">Min games &#9662;</button>
-                    <div class="filter-panel" id="eg-min-games-panel">
-                        <select id="eg-min-games-select" class="sort-select" style="width:100%">
-                            <option value="1">1+ (all)</option>
-                            <option value="2">2+</option>
-                            <option value="3" selected>3+</option>
-                            <option value="5">5+</option>
-                            <option value="10">10+</option>
-                        </select>
-                    </div>
-                </span></div>
+                </div>
+            </div>
+
+            <div class="stats-bar">
+                <div class="stat-card" title="Total endgame games across all types in the default definition.">
+                    <div class="stat-value">{{ "{:,}".format(eg_total_games) }}</div>
+                    <div class="stat-label">Endgame Games</div>
+                </div>
+                <div class="stat-card" title="Number of distinct endgame types detected (e.g. R vs R, Q vs Q).">
+                    <div class="stat-value">{{ eg_types_count }}</div>
+                    <div class="stat-label">Endgame Types</div>
+                </div>
+                <div class="stat-card donut-card" title="Overall win percentage across all endgame types.">
+                    <svg viewBox="0 0 120 120" class="donut-chart" width="100" height="100">
+                        <circle cx="60" cy="60" r="50" fill="none" stroke="#e2e8f0" stroke-width="12"/>
+                        <circle cx="60" cy="60" r="50" fill="none" stroke="#22c55e" stroke-width="12"
+                                stroke-dasharray="{{ (eg_win_pct / 100 * 314.16)|round(1) }} 314.16"
+                                transform="rotate(-90 60 60)" stroke-linecap="round"/>
+                        <text x="60" y="60" text-anchor="middle" dominant-baseline="central" font-size="20" font-weight="700"
+                              fill="#1e293b">{{ eg_win_pct }}%</text>
+                    </svg>
+                    <div class="stat-label">Win Rate</div>
+                </div>
+            </div>
 
             {% if stats %}
                 {% for s in stats %}
-                <div class="eg-card" style="display:none" data-win-pct="{{ s.win_pct }}" data-loss-pct="{{ s.loss_pct }}" data-draw-pct="{{ s.draw_pct }}" data-total="{{ s.total }}" data-balance="{{ s.balance }}" data-definition="{{ s.definition }}" data-fen="{{ s.get('example_fen', '') }}" data-color="{{ s.get('example_color', 'white') }}" data-tc-breakdown='{{ s.tc_breakdown_json|safe }}'>
+                <div class="eg-card" style="display:none" data-win-pct="{{ s.win_pct }}" data-loss-pct="{{ s.loss_pct }}" data-draw-pct="{{ s.draw_pct }}" data-total="{{ s.total }}" data-balance="{{ s.balance }}" data-definition="{{ s.definition }}" data-fen="{{ s.get('example_fen', '') }}" data-color="{{ s.get('example_color', 'white') }}" data-tc-breakdown='{{ s.tc_breakdown_json|safe }}' data-game-details='{{ s.game_details_json|safe }}'>
                     <div class="eg-card-header">
                         <span class="type-label">{{ s.type }}</span>
                         <span class="balance-badge balance-{{ s.balance }}">{{ s.balance }}</span>
@@ -1552,10 +1518,64 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
             });
         }
 
-        /* Combined filter: definition + balance checkboxes + min games */
+        /* Platform dropdown */
+        var platformSelect = document.getElementById('platform-select');
+        if (platformSelect) { platformSelect.addEventListener('change', applyFilters); }
+
+        /* Playing As color filter */
+        var colorBtns = document.querySelectorAll('.color-btn');
+        colorBtns.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var otherActive = Array.from(colorBtns).some(function(b) {
+                    return b !== btn && b.classList.contains('active');
+                });
+                if (btn.classList.contains('active') && !otherActive) return;
+                btn.classList.toggle('active');
+                applyFilters();
+            });
+        });
+
+        /* Date filter */
+        var dateFrom = document.getElementById('date-from');
+        var datePresets = document.querySelectorAll('.date-preset');
+        datePresets.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                datePresets.forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                var days = btn.getAttribute('data-days');
+                if (days) {
+                    var d = new Date();
+                    d.setDate(d.getDate() - parseInt(days, 10));
+                    var mm = String(d.getMonth() + 1).padStart(2, '0');
+                    var dd = String(d.getDate()).padStart(2, '0');
+                    dateFrom.value = d.getFullYear() + '-' + mm + '-' + dd;
+                } else {
+                    dateFrom.value = '';
+                }
+                applyFilters();
+            });
+        });
+        if (dateFrom) {
+            dateFrom.addEventListener('change', function() {
+                datePresets.forEach(function(b) { b.classList.remove('active'); });
+                if (!dateFrom.value) {
+                    datePresets[0].classList.add('active');
+                }
+                applyFilters();
+            });
+        }
+
+        /* Combined filter: definition + balance + tc + min games + platform + color + date */
         var balanceChecks = document.querySelectorAll('.balance-filter');
         var tcChecks = document.querySelectorAll('.eg-tc-filter');
-        var minSelect = document.getElementById('eg-min-games-select');
+        var minGamesRange = document.getElementById('min-games-range');
+        var minGamesValue = document.getElementById('min-games-value');
+        if (minGamesRange && minGamesValue) {
+            minGamesRange.addEventListener('input', function() {
+                minGamesValue.textContent = minGamesRange.value;
+                applyFilters();
+            });
+        }
         var defSelect = document.getElementById('eg-def-select');
 
         /* Infinite scroll state */
@@ -1569,7 +1589,11 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
             balanceChecks.forEach(function(c) { if (c.checked) enabledBalance.add(c.value); });
             var enabledTC = new Set();
             tcChecks.forEach(function(c) { if (c.checked) enabledTC.add(c.value); });
-            var min = minSelect ? parseInt(minSelect.value, 10) : 1;
+            var min = minGamesRange ? parseInt(minGamesRange.value, 10) : 1;
+            var selectedPlat = platformSelect ? platformSelect.value : 'all';
+            var activeColors = new Set();
+            colorBtns.forEach(function(b) { if (b.classList.contains('active')) activeColors.add(b.getAttribute('data-color-filter')); });
+            var fromDate = dateFrom ? dateFrom.value : '';
 
             document.querySelectorAll('.eg-card').forEach(function(card) {
                 var balance = card.getAttribute('data-balance');
@@ -1577,22 +1601,30 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                 var defOk = !selectedDef || defn === selectedDef;
                 var balOk = !balance || enabledBalance.has(balance);
 
-                /* Recalculate stats from time-class breakdown */
-                var breakdown = {};
-                try { breakdown = JSON.parse(card.getAttribute('data-tc-breakdown') || '{}'); } catch(e) {}
+                /* Cross-filter from per-game details */
+                var details = [];
+                try { details = JSON.parse(card.getAttribute('data-game-details') || '[]'); } catch(e) {}
                 var fWins = 0, fLosses = 0, fDraws = 0;
-                for (var tc in breakdown) {
-                    if (!tc || enabledTC.has(tc)) {
-                        fWins += breakdown[tc].wins;
-                        fLosses += breakdown[tc].losses;
-                        fDraws += breakdown[tc].draws;
-                    }
+                for (var i = 0; i < details.length; i++) {
+                    var g = details[i];
+                    if (g.tc && !enabledTC.has(g.tc)) continue;
+                    if (selectedPlat !== 'all' && g.p !== selectedPlat) continue;
+                    if (activeColors.size > 0 && !activeColors.has(g.c)) continue;
+                    if (fromDate && g.d && g.d < fromDate) continue;
+                    if (g.r === 'win') fWins++;
+                    else if (g.r === 'loss') fLosses++;
+                    else fDraws++;
                 }
                 var fTotal = fWins + fLosses + fDraws;
-                var tcOk = fTotal > 0;
+                /* If no per-game details exist, fall back to card totals
+                   (unless an explicit filter would exclude everything) */
+                if (details.length === 0 && enabledTC.size > 0) {
+                    fTotal = parseInt(card.getAttribute('data-total'), 10) || 0;
+                }
+                var gamesOk = fTotal > 0;
                 var minOk = fTotal >= min;
 
-                card.setAttribute('data-filtered', (defOk && balOk && tcOk && minOk) ? 'yes' : 'no');
+                card.setAttribute('data-filtered', (defOk && balOk && gamesOk && minOk) ? 'yes' : 'no');
                 card.style.display = 'none';
 
                 /* Hide example game if its time class is filtered out */
@@ -1603,7 +1635,7 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                 }
 
                 /* Update displayed stats to reflect filtered counts */
-                if (defOk && balOk && tcOk && minOk) {
+                if (defOk && balOk && gamesOk && minOk) {
                     var winPct = fTotal ? Math.round(100 * fWins / fTotal) : 0;
                     var lossPct = fTotal ? Math.round(100 * fLosses / fTotal) : 0;
                     var drawPct = 100 - winPct - lossPct;
@@ -1685,7 +1717,6 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
 
         balanceChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
         tcChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
-        if (minSelect) { minSelect.addEventListener('change', applyFilters); }
         if (defSelect) { defSelect.addEventListener('change', applyFilters); }
         applyFilters();
 
@@ -1695,33 +1726,10 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
             }
         });
 
-        /* Re-apply scroll after sort */
+        /* Re-apply after sort */
         if (sortSelect) {
             sortSelect.addEventListener('change', function() { applyFilters(); });
         }
-
-        /* Dropdown panel toggles */
-        var panels = [
-            {btn: document.getElementById('eg-def-btn'), panel: document.getElementById('eg-def-panel')},
-            {btn: document.getElementById('eg-balance-btn'), panel: document.getElementById('eg-balance-panel')},
-            {btn: document.getElementById('eg-tc-btn'), panel: document.getElementById('eg-tc-panel')},
-            {btn: document.getElementById('eg-min-games-btn'), panel: document.getElementById('eg-min-games-panel')}
-        ];
-        panels.forEach(function(p) {
-            if (p.btn && p.panel) {
-                p.btn.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    p.panel.classList.toggle('open');
-                });
-            }
-        });
-        document.addEventListener('click', function(e) {
-            panels.forEach(function(p) {
-                if (p.panel && !p.panel.contains(e.target) && e.target !== p.btn) {
-                    p.panel.classList.remove('open');
-                }
-            });
-        });
     })();
     </script>
 </body>
@@ -1735,88 +1743,7 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chess Coach - {% if chesscom_user %}{{ chesscom_user }}{% endif %}{% if chesscom_user and lichess_user %} / {% endif %}{% if lichess_user %}{{ lichess_user }}{% endif %} - {{ eg_type }} ({{ balance }})</title>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: system-ui, -apple-system, sans-serif;
-            background: #f8fafc;
-            color: #1e293b;
-            min-height: 100vh;
-        }
-        .layout { display: flex; min-height: 100vh; }
-        .sidebar {
-            width: 260px;
-            background: #ffffff;
-            border-right: 1px solid #e2e8f0;
-            position: sticky;
-            top: 0;
-            height: 100vh;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            flex-shrink: 0;
-        }
-        .sidebar-brand {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 20px 20px 16px;
-            border-bottom: 1px solid #e2e8f0;
-            margin-bottom: 8px;
-        }
-        .sidebar-brand svg { width: 28px; height: 28px; flex-shrink: 0; }
-        .sidebar-brand span {
-            font-size: 1.2rem;
-            font-weight: 700;
-            color: #1e293b;
-            letter-spacing: -0.3px;
-        }
-        .sidebar-nav {
-            padding: 8px 0;
-        }
-        .sidebar-nav a {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 10px 20px;
-            color: #64748b;
-            text-decoration: none;
-            font-size: 0.9rem;
-            font-weight: 500;
-            border-left: 3px solid transparent;
-            transition: all 0.15s;
-        }
-        .sidebar-nav a:hover { background: #f8fafc; color: #1e293b; }
-        .sidebar-nav a.active {
-            color: #f97316;
-            border-left-color: #f97316;
-            background: #fff7ed;
-        }
-        .sidebar-nav a svg { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.7; }
-        .sidebar-nav a.active svg { opacity: 1; }
-        .sidebar-divider { height: 1px; background: #e2e8f0; margin: 8px 0; }
-        .sidebar-bottom {
-            margin-top: auto;
-            padding: 16px 20px;
-            border-top: 1px solid #e2e8f0;
-        }
-        .sync-btn {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            width: 100%;
-            padding: 10px;
-            border-radius: 8px;
-            border: 1px solid #e2e8f0;
-            background: #f8fafc;
-            color: #64748b;
-            font-size: 0.85rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.15s;
-        }
-        .sync-btn:hover { background: #f1f5f9; color: #1e293b; border-color: #d1d5db; }
-        .sync-btn svg { width: 16px; height: 16px; }
+""" + _SIDEBAR_CSS + r"""
         .main {
             flex: 1;
             padding: 30px 40px;
@@ -1953,29 +1880,7 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
 </head>
 <body>
     <div class="layout">
-        <nav class="sidebar">
-            <div class="sidebar-brand">
-                <svg viewBox="0 0 96.4 144"><path fill="#f97316" d="M48.2 0C35.4-.1 25 10.3 24.9 23.1c0 7.5 3.6 14.6 9.7 18.9L17.9 53c0 3.5.9 6.9 2.6 9.9h14.8c-.3 6.6 2.4 22.6-21.8 41.1C5 110.4 0 121.3 0 134.6c0 .6 1.3 9.4 48.2 9.4s48.2-8.8 48.2-9.4c0-13.3-5-24.3-13.4-30.7-24.2-18.5-21.5-34.5-21.8-41.1H76c1.7-3 2.6-6.4 2.6-9.8L61.8 42c10.4-7.5 12.8-21.9 5.3-32.3C62.8 3.6 55.7 0 48.2 0z"/></svg>
-                <span>Chessalyzer</span>
-            </div>
-            <div class="sidebar-nav">
-                <a href="/">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-                    Openings
-                </a>
-                <a href="/endgames" class="active">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                    Endgames
-                </a>
-            </div>
-            <div class="sidebar-divider"></div>
-            <div class="sidebar-bottom">
-                <button class="sync-btn" onclick="window.location.reload()">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                    Sync Games
-                </button>
-            </div>
-        </nav>
+""" + _SIDEBAR_HTML + r"""
         <main class="main">
             <a class="back-link" href="/endgames">&larr; Back to endgames</a>
             <h1>{{ eg_type }} <span class="balance-badge balance-{{ balance }}">{{ balance }}</span></h1>

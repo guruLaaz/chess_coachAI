@@ -323,17 +323,42 @@ class EndgameClassifier:
 
             # Per-time-class breakdown for UI filtering
             tc_breakdown = {}
+            platform_breakdown = {}
+            color_breakdown = {}
+            game_dates = []
             for g in games_list:
+                r = g.get("my_result", "draw")
+                # Time class breakdown
                 tc = g.get("time_class", "")
                 if tc not in tc_breakdown:
                     tc_breakdown[tc] = {"wins": 0, "losses": 0, "draws": 0}
-                r = g.get("my_result", "draw")
                 if r == "win":
                     tc_breakdown[tc]["wins"] += 1
                 elif r == "loss":
                     tc_breakdown[tc]["losses"] += 1
                 else:
                     tc_breakdown[tc]["draws"] += 1
+                # Platform breakdown
+                url = g.get("game_url", "")
+                plat = ("chesscom" if "chess.com" in url
+                        else "lichess" if "lichess.org" in url
+                        else "unknown")
+                if plat not in platform_breakdown:
+                    platform_breakdown[plat] = {"wins": 0, "losses": 0, "draws": 0}
+                platform_breakdown[plat][
+                    "wins" if r == "win" else "losses" if r == "loss" else "draws"
+                ] += 1
+                # Color breakdown
+                col = g.get("my_color", "white")
+                if col not in color_breakdown:
+                    color_breakdown[col] = {"wins": 0, "losses": 0, "draws": 0}
+                color_breakdown[col][
+                    "wins" if r == "win" else "losses" if r == "loss" else "draws"
+                ] += 1
+                # Game dates
+                et = g.get("end_time")
+                if et and hasattr(et, "strftime"):
+                    game_dates.append(et.strftime("%Y-%m-%d"))
 
             results.append({
                 "type": eg_type,
@@ -357,6 +382,9 @@ class EndgameClassifier:
                 "avg_opp_clock": avg_opp_clock,
                 "all_games": games_list,
                 "tc_breakdown": tc_breakdown,
+                "platform_breakdown": platform_breakdown,
+                "color_breakdown": color_breakdown,
+                "game_dates": game_dates,
             })
 
         results.sort(key=lambda x: x["total"], reverse=True)

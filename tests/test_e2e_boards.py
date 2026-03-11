@@ -27,6 +27,24 @@ def _make_endgame_entry(eg_type, balance="equal", total=5, fen=None,
             "losses": total // 4,
             "draws": total - (total // 2 + 1) - total // 4,
         }}
+    # Build all_games from tc_breakdown so cross-filtering works
+    all_games = []
+    for tc, counts in tc_breakdown.items():
+        for _ in range(counts.get("wins", 0)):
+            all_games.append({"my_result": "win", "time_class": tc,
+                              "my_color": color,
+                              "game_url": "https://www.chess.com/game/12345",
+                              "end_time": datetime.datetime(2025, 6, 15, 12, 0, 0)})
+        for _ in range(counts.get("losses", 0)):
+            all_games.append({"my_result": "loss", "time_class": tc,
+                              "my_color": color,
+                              "game_url": "https://www.chess.com/game/12345",
+                              "end_time": datetime.datetime(2025, 6, 15, 12, 0, 0)})
+        for _ in range(counts.get("draws", 0)):
+            all_games.append({"my_result": "draw", "time_class": tc,
+                              "my_color": color,
+                              "game_url": "https://www.chess.com/game/12345",
+                              "end_time": datetime.datetime(2025, 6, 15, 12, 0, 0)})
     return {
         "type": eg_type,
         "balance": balance,
@@ -47,7 +65,7 @@ def _make_endgame_entry(eg_type, balance="equal", total=5, fen=None,
         "example_end_time": None,
         "avg_my_clock": 120.0,
         "avg_opp_clock": 95.0,
-        "all_games": [],
+        "all_games": all_games,
         "tc_breakdown": tc_breakdown,
     }
 
@@ -697,21 +715,21 @@ class TestEndgamesFilters:
     def test_min_games_1(self, playwright_ctx, server_url):
         """All 4 minor-or-queen entries have >=1 game."""
         page = self._goto_endgames(playwright_ctx, server_url)
-        _select_option(page, "eg-min-games-select", "1")
+        _set_range(page, "min-games-range", 1)
         assert _filtered_count(page, ".eg-card") == 4
         page.close()
 
     def test_min_games_5(self, playwright_ctx, server_url):
         """min 5: R vs R (5), Q vs Q (5), R vs B (10) = 3. N vs N (3) excluded."""
         page = self._goto_endgames(playwright_ctx, server_url)
-        _select_option(page, "eg-min-games-select", "5")
+        _set_range(page, "min-games-range", 5)
         assert _filtered_count(page, ".eg-card") == 3
         page.close()
 
     def test_min_games_10(self, playwright_ctx, server_url):
         """min 10: only R vs B (10) passes."""
         page = self._goto_endgames(playwright_ctx, server_url)
-        _select_option(page, "eg-min-games-select", "10")
+        _set_range(page, "min-games-range", 10)
         assert _filtered_count(page, ".eg-card") == 1
         page.close()
 
@@ -835,7 +853,7 @@ class TestEndgamesFilters:
         """minor-or-queen, blitz + min 5: R vs R (5 blitz), R vs B (5 blitz) = 2."""
         page = self._goto_endgames(playwright_ctx, server_url)
         _set_checkboxes(page, ".eg-tc-filter", ["blitz"])
-        _select_option(page, "eg-min-games-select", "5")
+        _set_range(page, "min-games-range", 5)
         assert _filtered_count(page, ".eg-card") == 2
         page.close()
 
@@ -843,7 +861,7 @@ class TestEndgamesFilters:
         """minor-or-queen, blitz + min 10: no entry has 10 blitz games = 0."""
         page = self._goto_endgames(playwright_ctx, server_url)
         _set_checkboxes(page, ".eg-tc-filter", ["blitz"])
-        _select_option(page, "eg-min-games-select", "10")
+        _set_range(page, "min-games-range", 10)
         assert _filtered_count(page, ".eg-card") == 0
         assert _no_results_visible(page, "eg-no-results")
         page.close()
@@ -899,7 +917,7 @@ class TestEndgamesFilters:
         _select_option(page, "eg-def-select", "material")
         _set_checkboxes(page, ".balance-filter", ["up"])
         _set_checkboxes(page, ".eg-tc-filter", ["blitz"])
-        _select_option(page, "eg-min-games-select", "3")
+        _set_range(page, "min-games-range", 3)
         page.wait_for_timeout(200)
         assert _filtered_count(page, ".eg-card") == 1
         page.close()
@@ -910,7 +928,7 @@ class TestEndgamesFilters:
         _select_option(page, "eg-def-select", "material")
         _set_checkboxes(page, ".balance-filter", ["up"])
         _set_checkboxes(page, ".eg-tc-filter", ["blitz"])
-        _select_option(page, "eg-min-games-select", "5")
+        _set_range(page, "min-games-range", 5)
         page.wait_for_timeout(200)
         assert _filtered_count(page, ".eg-card") == 0
         assert _no_results_visible(page, "eg-no-results")
