@@ -4,6 +4,7 @@ These tests spin up the real Flask app and verify that SVG boards
 actually render in the browser — catching race conditions, JS errors,
 and fetch failures that unit tests cannot.
 """
+import datetime
 import threading
 import time
 
@@ -119,6 +120,26 @@ def _set_range(page, range_id, value):
     page.wait_for_timeout(200)
 
 
+def _set_date(page, date_id, value):
+    """Set a date input value and dispatch change event. Use '' to clear."""
+    page.evaluate("""(args) => {
+        var el = document.getElementById(args[0]);
+        if (el) { el.value = args[1]; el.dispatchEvent(new Event('change')); }
+    }""", [date_id, value])
+    page.wait_for_timeout(200)
+
+
+def _click_date_preset(page, label):
+    """Click a date preset button by its visible text."""
+    page.evaluate("""(label) => {
+        var btns = document.querySelectorAll('.date-preset');
+        for (var i = 0; i < btns.length; i++) {
+            if (btns[i].textContent.trim() === label) { btns[i].click(); break; }
+        }
+    }""", label)
+    page.wait_for_timeout(200)
+
+
 def _no_results_visible(page, elem_id):
     """Check if the no-results empty-state element is visible."""
     return page.evaluate(f"""() => {{
@@ -179,34 +200,41 @@ def server_url():
     board4.push_san("d4")
     fen4 = board4.fen()  # black to move (after 1.d4)
 
+    # Dates: Sicilian=3 days ago, French=30 days, Italian=200 days, Caro-Kann=400 days
+    now = datetime.datetime.now()
+    date_recent = now - datetime.timedelta(days=3)
+    date_month = now - datetime.timedelta(days=30)
+    date_half_year = now - datetime.timedelta(days=200)
+    date_old = now - datetime.timedelta(days=400)
+
     evals = [
         # Sicilian, white, blitz, chess.com — 3 copies = times_played 3
         _make_eval(eco_code="B90", eco_name="Sicilian", my_color="white",
                    time_class="blitz", fen=fen_start, played_move="g1f3",
-                   best_move="d2d4",
+                   best_move="d2d4", end_time=date_recent,
                    game_url="https://www.chess.com/game/live/1"),
         _make_eval(eco_code="B90", eco_name="Sicilian", my_color="white",
                    time_class="blitz", fen=fen_start, played_move="g1f3",
-                   best_move="d2d4",
+                   best_move="d2d4", end_time=date_recent,
                    game_url="https://www.chess.com/game/live/2"),
         _make_eval(eco_code="B90", eco_name="Sicilian", my_color="white",
                    time_class="blitz", fen=fen_start, played_move="g1f3",
-                   best_move="d2d4",
+                   best_move="d2d4", end_time=date_recent,
                    game_url="https://www.chess.com/game/live/3"),
         # French, black, rapid, lichess — 1 copy (black to move after 1.e4)
         _make_eval(eco_code="C00", eco_name="French", my_color="black",
                    deviating_side="black", time_class="rapid", fen=fen2,
-                   played_move="d7d6", best_move="d7d5",
+                   played_move="d7d6", best_move="d7d5", end_time=date_month,
                    game_url="https://lichess.org/abc123"),
         # Italian, white, bullet, chess.com — 1 copy (white to move after 1.e4 e5)
         _make_eval(eco_code="C50", eco_name="Italian", my_color="white",
                    time_class="bullet", fen=fen3, played_move="b1c3",
-                   best_move="g1f3",
+                   best_move="g1f3", end_time=date_half_year,
                    game_url="https://www.chess.com/game/live/4"),
         # Caro-Kann, black, daily, lichess — 1 copy (black to move after 1.d4)
         _make_eval(eco_code="B10", eco_name="Caro-Kann", my_color="black",
                    deviating_side="black", time_class="daily", fen=fen4,
-                   played_move="d7d6", best_move="d7d5",
+                   played_move="d7d6", best_move="d7d5", end_time=date_old,
                    game_url="https://lichess.org/xyz789"),
     ]
 
@@ -431,6 +459,115 @@ class TestOpeningsFilters:
         assert _filtered_count(page, ".card") == 2
         _select_option(page, "platform-select", "all")
         assert _filtered_count(page, ".card") == 4
+        page.close()
+
+
+# ---------------------------------------------------------------------------
+# Date filter tests (openings page)
+# ---------------------------------------------------------------------------
+
+class TestDateFilter:
+    """Test date filter and preset buttons on the openings page.
+
+    Fixture dates (relative to now):
+      Sicilian  | 3 days ago   (within last week)
+      French    | 30 days ago  (within 6 months)
+      Italian   | 200 days ago (within last year, not 6 months)
+      Caro-Kann | 400 days ago (older than 1 year)
+    """
+
+    def _goto_openings(self, playwright_ctx, server_url):
+        page = playwright_ctx.new_page()
+        page.goto(server_url)
+        page.wait_for_selector(".board-best svg", timeout=10000)
+        _set_range(page, "min-games-range", 1)
+        page.evaluate("""() => {
+            var btn = document.querySelector('.color-btn[data-color-filter="black"]');
+            if (btn && !btn.classList.contains('active')) btn.click();
+        }""")
+        page.wait_for_timeout(200)
+        return page
+
+    # -- Preset buttons --
+
+    def test_alltime_shows_all(self, playwright_ctx, server_url):
+        """All-time preset (default) shows all 4 cards."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        _click_date_preset(page, "All-time")
+        assert _filtered_count(page, ".card") == 4
+        page.close()
+
+    def test_last_week_preset(self, playwright_ctx, server_url):
+        """Last week shows only Sicilian (3 days ago)."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        _click_date_preset(page, "Last week")
+        assert _filtered_count(page, ".card") == 1
+        page.close()
+
+    def test_6_months_preset(self, playwright_ctx, server_url):
+        """6 months shows Sicilian + French (3 and 30 days ago)."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        _click_date_preset(page, "6 months")
+        assert _filtered_count(page, ".card") == 2
+        page.close()
+
+    def test_last_year_preset(self, playwright_ctx, server_url):
+        """Last year shows Sicilian + French + Italian (3, 30, 200 days)."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        _click_date_preset(page, "Last year")
+        assert _filtered_count(page, ".card") == 3
+        page.close()
+
+    # -- Manual date input --
+
+    def test_manual_date_filters(self, playwright_ctx, server_url):
+        """Setting a manual date filters correctly."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        # Set date to 100 days ago — should show Sicilian + French (3, 30 days)
+        cutoff = (datetime.datetime.now() - datetime.timedelta(days=100))
+        _set_date(page, "date-from", cutoff.strftime("%Y-%m-%d"))
+        assert _filtered_count(page, ".card") == 2
+        page.close()
+
+    def test_manual_date_then_alltime_resets(self, playwright_ctx, server_url):
+        """Setting a date then clicking All-time clears the filter."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        cutoff = (datetime.datetime.now() - datetime.timedelta(days=10))
+        _set_date(page, "date-from", cutoff.strftime("%Y-%m-%d"))
+        assert _filtered_count(page, ".card") == 1
+        _click_date_preset(page, "All-time")
+        assert _filtered_count(page, ".card") == 4
+        page.close()
+
+    # -- Combined with other filters --
+
+    def test_date_plus_platform(self, playwright_ctx, server_url):
+        """6 months + lichess = French only (30 days, lichess)."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        _click_date_preset(page, "6 months")
+        _select_option(page, "platform-select", "lichess")
+        assert _filtered_count(page, ".card") == 1
+        page.close()
+
+    def test_date_plus_color(self, playwright_ctx, server_url):
+        """Last year + white only = Sicilian + Italian (3, 200 days, white)."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        _click_date_preset(page, "Last year")
+        # Deactivate black
+        page.evaluate("""() => {
+            var btn = document.querySelector('.color-btn[data-color-filter="black"]');
+            if (btn && btn.classList.contains('active')) btn.click();
+        }""")
+        page.wait_for_timeout(200)
+        assert _filtered_count(page, ".card") == 2
+        page.close()
+
+    def test_future_date_shows_none(self, playwright_ctx, server_url):
+        """A future date shows nothing."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        _set_date(page, "date-from", "2099-01-01")
+        assert _filtered_count(page, ".card") == 0
+        assert _no_results_visible(page, "no-results")
         page.close()
 
 
@@ -807,4 +944,232 @@ class TestEndgamesFilters:
         _set_checkboxes(page, ".eg-tc-filter", ["blitz"])
         assert not _no_results_visible(page, "eg-no-results")
         assert _filtered_count(page, ".eg-card") > 0
+        page.close()
+
+
+# ---------------------------------------------------------------------------
+# Color filter tests (openings page)
+# ---------------------------------------------------------------------------
+
+class TestColorFilter:
+    """Test Playing As color toggle on the openings page.
+
+    Fixture data:
+      Sicilian  | white | 3x played
+      French    | black | 1x played
+      Italian   | white | 1x played
+      Caro-Kann | black | 1x played
+    """
+
+    def _goto_openings(self, playwright_ctx, server_url):
+        page = playwright_ctx.new_page()
+        page.goto(server_url)
+        page.wait_for_selector(".board-best svg", timeout=10000)
+        _set_range(page, "min-games-range", 1)
+        # Enable both colors
+        page.evaluate("""() => {
+            var btn = document.querySelector('.color-btn[data-color-filter="black"]');
+            if (btn && !btn.classList.contains('active')) btn.click();
+        }""")
+        page.wait_for_timeout(200)
+        return page
+
+    def test_both_colors_shows_all(self, playwright_ctx, server_url):
+        """Both colors active shows all 4 cards."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        assert _filtered_count(page, ".card") == 4
+        page.close()
+
+    def test_white_only(self, playwright_ctx, server_url):
+        """White only shows Sicilian + Italian (2 cards)."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        # Deactivate black
+        page.evaluate("""() => {
+            var btn = document.querySelector('.color-btn[data-color-filter="black"]');
+            if (btn && btn.classList.contains('active')) btn.click();
+        }""")
+        page.wait_for_timeout(200)
+        assert _filtered_count(page, ".card") == 2
+        page.close()
+
+    def test_black_only(self, playwright_ctx, server_url):
+        """Black only shows French + Caro-Kann (2 cards)."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        # Deactivate white
+        page.evaluate("""() => {
+            var btn = document.querySelector('.color-btn[data-color-filter="white"]');
+            if (btn && btn.classList.contains('active')) btn.click();
+        }""")
+        page.wait_for_timeout(200)
+        assert _filtered_count(page, ".card") == 2
+        page.close()
+
+    def test_cannot_deselect_both(self, playwright_ctx, server_url):
+        """Clicking the only active color does nothing (guard)."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        # Deactivate black first
+        page.evaluate("""() => {
+            var btn = document.querySelector('.color-btn[data-color-filter="black"]');
+            if (btn && btn.classList.contains('active')) btn.click();
+        }""")
+        page.wait_for_timeout(200)
+        # Try to deactivate white — should be blocked
+        page.evaluate("""() => {
+            var btn = document.querySelector('.color-btn[data-color-filter="white"]');
+            if (btn) btn.click();
+        }""")
+        page.wait_for_timeout(200)
+        is_active = page.evaluate("""() => {
+            return document.querySelector('.color-btn[data-color-filter="white"]')
+                .classList.contains('active');
+        }""")
+        assert is_active
+        assert _filtered_count(page, ".card") == 2  # still white cards
+        page.close()
+
+    def test_color_plus_platform(self, playwright_ctx, server_url):
+        """White + lichess = 0 (both lichess are black)."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        page.evaluate("""() => {
+            var btn = document.querySelector('.color-btn[data-color-filter="black"]');
+            if (btn && btn.classList.contains('active')) btn.click();
+        }""")
+        page.wait_for_timeout(200)
+        _select_option(page, "platform-select", "lichess")
+        assert _filtered_count(page, ".card") == 0
+        assert _no_results_visible(page, "no-results")
+        page.close()
+
+
+# ---------------------------------------------------------------------------
+# Sort dropdown tests (openings page)
+# ---------------------------------------------------------------------------
+
+class TestOpeningsSort:
+    """Test the sort dropdown on the openings page."""
+
+    def _goto_openings(self, playwright_ctx, server_url):
+        page = playwright_ctx.new_page()
+        page.goto(server_url)
+        page.wait_for_selector(".board-best svg", timeout=10000)
+        _set_range(page, "min-games-range", 1)
+        page.evaluate("""() => {
+            var btn = document.querySelector('.color-btn[data-color-filter="black"]');
+            if (btn && !btn.classList.contains('active')) btn.click();
+        }""")
+        page.wait_for_timeout(200)
+        return page
+
+    def test_sort_dropdown_exists(self, playwright_ctx, server_url):
+        """Sort dropdown is present with expected options."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        options = page.evaluate("""() => {
+            var sel = document.getElementById('sort-select');
+            return Array.from(sel.options).map(o => o.value);
+        }""")
+        assert "eval-loss" in options
+        assert "loss-pct" in options
+        page.close()
+
+    def test_sort_by_eval_loss(self, playwright_ctx, server_url):
+        """Cards are ordered by eval-loss descending after sort."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        _select_option(page, "sort-select", "eval-loss")
+        losses = page.evaluate("""() => {
+            var cards = document.querySelectorAll('.card[data-filtered="yes"]');
+            var vals = [];
+            cards.forEach(c => { if (c.style.display !== 'none') vals.push(
+                parseFloat(c.getAttribute('data-eval-loss'))); });
+            return vals;
+        }""")
+        assert losses == sorted(losses, reverse=True)
+        page.close()
+
+    def test_sort_by_loss_pct(self, playwright_ctx, server_url):
+        """Cards are ordered by loss-pct descending after sort."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        _select_option(page, "sort-select", "loss-pct")
+        page.wait_for_timeout(200)
+        pcts = page.evaluate("""() => {
+            var cards = document.querySelectorAll('.card[data-filtered="yes"]');
+            var vals = [];
+            cards.forEach(c => { if (c.style.display !== 'none') vals.push(
+                parseFloat(c.getAttribute('data-loss-pct'))); });
+            return vals;
+        }""")
+        assert pcts == sorted(pcts, reverse=True)
+        page.close()
+
+
+# ---------------------------------------------------------------------------
+# Stats bar tests (openings page)
+# ---------------------------------------------------------------------------
+
+class TestOpeningsStats:
+    """Test the stats bar and donut chart on the openings page.
+
+    Fixture: 6 total evals, all deviations by player, all eval_loss_cp=50.
+      - total_games_analyzed = 6
+      - theory_knowledge_pct = 0% (all player-deviated)
+      - avg_eval_loss = 0.5 (50cp / 100)
+      - accuracy_pct = 0% (none < 50cp; all exactly 50)
+    """
+
+    def test_total_games_displayed(self, playwright_ctx, server_url):
+        page = playwright_ctx.new_page()
+        page.goto(server_url)
+        page.wait_for_selector(".stat-card", timeout=10000)
+        text = page.evaluate("""() => {
+            var cards = document.querySelectorAll('.stat-card');
+            return cards[0].querySelector('.stat-value').textContent.trim();
+        }""")
+        assert text == "6"
+        page.close()
+
+    def test_avg_eval_loss_displayed(self, playwright_ctx, server_url):
+        page = playwright_ctx.new_page()
+        page.goto(server_url)
+        page.wait_for_selector(".stat-card", timeout=10000)
+        text = page.evaluate("""() => {
+            var cards = document.querySelectorAll('.stat-card');
+            return cards[1].querySelector('.stat-value').textContent.trim();
+        }""")
+        assert text == "0.5"
+        page.close()
+
+    def test_theory_knowledge_displayed(self, playwright_ctx, server_url):
+        page = playwright_ctx.new_page()
+        page.goto(server_url)
+        page.wait_for_selector(".stat-card", timeout=10000)
+        text = page.evaluate("""() => {
+            var cards = document.querySelectorAll('.stat-card');
+            return cards[2].querySelector('.stat-value').textContent.trim();
+        }""")
+        assert text == "0%"
+        page.close()
+
+    def test_donut_chart_present(self, playwright_ctx, server_url):
+        page = playwright_ctx.new_page()
+        page.goto(server_url)
+        page.wait_for_selector(".stat-card", timeout=10000)
+        has_donut = page.evaluate("""() => {
+            var donut = document.querySelector('.donut-card');
+            return donut !== null && donut.querySelector('svg') !== null;
+        }""")
+        assert has_donut
+        page.close()
+
+    def test_stat_cards_have_tooltips(self, playwright_ctx, server_url):
+        """Stat cards (except Total Games) have title attributes."""
+        page = playwright_ctx.new_page()
+        page.goto(server_url)
+        page.wait_for_selector(".stat-card", timeout=10000)
+        titles = page.evaluate("""() => {
+            var cards = document.querySelectorAll('.stat-card');
+            return Array.from(cards).map(c => c.getAttribute('title') || '');
+        }""")
+        # cards[1]=avg loss, cards[2]=theory, cards[3]=donut — all should have titles
+        assert titles[1] != ""
+        assert titles[2] != ""
+        assert titles[3] != ""
         page.close()

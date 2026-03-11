@@ -197,6 +197,7 @@ class CoachingReportGenerator:
             "platform": "lichess" if "lichess.org" in ev.game_url else "chesscom" if ev.game_url else "unknown",
             "opponent_name": ev.opponent_name or "",
             "game_date": self._format_date(ev.end_time),
+            "game_date_iso": ev.end_time.strftime("%Y-%m-%d") if ev.end_time else "",
         }
 
     def _get_opening_groups(self):
@@ -533,6 +534,36 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
         .color-btn:last-child { border-right: none; }
         .color-btn:hover { background: #f8fafc; color: #1e293b; }
         .color-btn.active { background: #f1f5f9; color: #1e293b; }
+        .sidebar-date {
+            width: 100%;
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            background: #f8fafc;
+            color: #334155;
+            font-size: 0.85rem;
+            font-family: inherit;
+            cursor: pointer;
+        }
+        .sidebar-date:focus { outline: none; border-color: #94a3b8; }
+        .date-presets {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+        .date-preset {
+            padding: 4px 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            background: #ffffff;
+            color: #64748b;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .date-preset:hover { border-color: #94a3b8; color: #1e293b; }
+        .date-preset.active { background: #f1f5f9; color: #1e293b; border-color: #94a3b8; }
         .sidebar-range-wrap {
             display: flex;
             align-items: center;
@@ -825,6 +856,16 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                     <input type="range" id="min-games-range" class="sidebar-range" min="1" max="20" value="3">
                 </div>
             </div>
+            <div class="sidebar-filter-group">
+                <label class="sidebar-filter-label">From</label>
+                <input type="date" id="date-from" class="sidebar-date">
+                <div class="date-presets">
+                    <button class="date-preset active" data-days="">All-time</button>
+                    <button class="date-preset" data-days="7">Last week</button>
+                    <button class="date-preset" data-days="180">6 months</button>
+                    <button class="date-preset" data-days="365">Last year</button>
+                </div>
+            </div>
             <div class="sidebar-bottom">
                 <button class="sync-btn" onclick="window.location.reload()">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
@@ -867,10 +908,8 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                         <circle cx="60" cy="60" r="50" fill="none" stroke="#3b82f6" stroke-width="12"
                                 stroke-dasharray="{{ (accuracy_pct / 100 * 314.16)|round(1) }} 314.16"
                                 transform="rotate(-90 60 60)" stroke-linecap="round"/>
-                        <text x="60" y="55" text-anchor="middle" font-size="20" font-weight="700"
+                        <text x="60" y="60" text-anchor="middle" dominant-baseline="central" font-size="20" font-weight="700"
                               fill="#1e293b">{{ accuracy_pct }}%</text>
-                        <text x="60" y="72" text-anchor="middle" font-size="9"
-                              fill="#64748b">Accurate</text>
                     </svg>
                     <div class="stat-label">Accuracy Rate</div>
                 </div>
@@ -878,7 +917,7 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
 
             {% if items %}
                 {% for item in items %}
-                <div class="card {{ 'positive' if item.eval_loss_class == 'good' else '' }}" style="display:none" data-eval-loss="{{ item.eval_loss_raw }}" data-loss-pct="{{ item.loss_pct }}" data-time-class="{{ item.time_class }}" data-platform="{{ item.platform }}" data-times="{{ item.times_played }}" data-fen="{{ item.fen }}" data-best-move="{{ item.best_move_uci }}" data-played-move="{{ item.played_move_uci }}" data-color="{{ item.color }}">
+                <div class="card {{ 'positive' if item.eval_loss_class == 'good' else '' }}" style="display:none" data-eval-loss="{{ item.eval_loss_raw }}" data-loss-pct="{{ item.loss_pct }}" data-time-class="{{ item.time_class }}" data-platform="{{ item.platform }}" data-times="{{ item.times_played }}" data-fen="{{ item.fen }}" data-best-move="{{ item.best_move_uci }}" data-played-move="{{ item.played_move_uci }}" data-color="{{ item.color }}" data-date="{{ item.game_date_iso }}">
                     <div class="card-header">
                         <span class="card-title">
                             {{ item.eco_name }}
@@ -973,6 +1012,36 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             });
         }
 
+        /* Date filter */
+        var dateFrom = document.getElementById('date-from');
+        var datePresets = document.querySelectorAll('.date-preset');
+        datePresets.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                datePresets.forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                var days = btn.getAttribute('data-days');
+                if (days) {
+                    var d = new Date();
+                    d.setDate(d.getDate() - parseInt(days, 10));
+                    var mm = String(d.getMonth() + 1).padStart(2, '0');
+                    var dd = String(d.getDate()).padStart(2, '0');
+                    dateFrom.value = d.getFullYear() + '-' + mm + '-' + dd;
+                } else {
+                    dateFrom.value = '';
+                }
+                applyFilters();
+            });
+        });
+        if (dateFrom) {
+            dateFrom.addEventListener('change', function() {
+                datePresets.forEach(function(b) { b.classList.remove('active'); });
+                if (!dateFrom.value) {
+                    datePresets[0].classList.add('active');
+                }
+                applyFilters();
+            });
+        }
+
         /* Infinite scroll state */
         var PAGE_SIZE = 10;
         var shownCount = 0;
@@ -983,15 +1052,18 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             var minGames = minGamesRange ? parseInt(minGamesRange.value, 10) : 1;
             var activeColors = new Set();
             colorBtns.forEach(function(b) { if (b.classList.contains('active')) activeColors.add(b.getAttribute('data-color-filter')); });
+            var fromDate = dateFrom ? dateFrom.value : '';
 
             document.querySelectorAll('.card').forEach(function(card) {
                 var pl = card.getAttribute('data-platform');
                 var times = parseInt(card.getAttribute('data-times'), 10) || 0;
                 var color = card.getAttribute('data-color');
+                var cardDate = card.getAttribute('data-date') || '';
                 var plOk = selectedPlat === 'all' || !pl || pl === selectedPlat;
                 var minOk = times >= minGames;
                 var colorOk = activeColors.size === 0 || activeColors.has(color);
-                card.setAttribute('data-filtered', (plOk && minOk && colorOk) ? 'yes' : 'no');
+                var dateOk = !fromDate || !cardDate || cardDate >= fromDate;
+                card.setAttribute('data-filtered', (plOk && minOk && colorOk && dateOk) ? 'yes' : 'no');
                 card.style.display = 'none';
             });
             shownCount = 0;

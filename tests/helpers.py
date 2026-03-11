@@ -103,7 +103,8 @@ def make_eval(eco_code="B90", eco_name="Sicilian", my_color="white",
               is_fully_booked=False, fen=None, best_move="d2d4",
               played_move="g1f3", book_moves=None, eval_loss_cp=50,
               game_moves_uci=None, my_result="win", time_class="blitz",
-              game_url="https://www.chess.com/game/live/12345"):
+              game_url="https://www.chess.com/game/live/12345",
+              end_time=None):
     """Build an OpeningEvaluation with coaching data for testing."""
     if fen is None:
         fen = chess.Board().fen()
@@ -124,6 +125,7 @@ def make_eval(eco_code="B90", eco_name="Sicilian", my_color="white",
         my_result=my_result,
         time_class=time_class,
         game_url=game_url,
+        end_time=end_time,
     )
 
 

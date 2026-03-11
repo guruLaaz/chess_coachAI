@@ -556,6 +556,66 @@ class TestMinGamesFilter:
         assert b'id="min-games-range"' in resp.data
 
 
+class TestDateFilter:
+    """Tests for the date filter UI and data-date attribute."""
+
+    def test_date_filter_present(self):
+        """Date filter input and preset buttons appear in the report."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b'id="date-from"' in resp.data
+        assert b'class="date-presets"' in resp.data
+        assert b"All-time" in resp.data
+        assert b"Last week" in resp.data
+        assert b"6 months" in resp.data
+        assert b"Last year" in resp.data
+
+    def test_data_date_attribute_with_end_time(self):
+        """Cards have data-date attribute when end_time is set."""
+        import datetime
+        evals = [_make_eval(end_time=datetime.datetime(2025, 3, 15, 10, 0, 0))]
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b'data-date="2025-03-15"' in resp.data
+
+    def test_data_date_attribute_without_end_time(self):
+        """Cards have empty data-date when end_time is None."""
+        evals = [_make_eval(end_time=None)]
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b'data-date=""' in resp.data
+
+    def test_date_filter_on_filtered_page(self):
+        """Date filter also appears on opening-filtered pages."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/opening/B90/white")
+        assert b'id="date-from"' in resp.data
+        assert b'class="date-presets"' in resp.data
+
+    def test_date_preset_data_days_attributes(self):
+        """Preset buttons have correct data-days attributes."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        html = resp.data.decode()
+        assert 'data-days=""' in html       # All-time
+        assert 'data-days="7"' in html      # Last week
+        assert 'data-days="180"' in html    # 6 months
+        assert 'data-days="365"' in html    # Last year
+
+
 class TestEndgamePage:
     """Tests for the /endgames report page."""
 

@@ -248,6 +248,11 @@ def run_analysis(games, username, stockfish_path, book_path, depth,
         if stale:
             print(f"\n  Note: {stale} cached evaluations lack coaching data. "
                   "Run with --no-cache to re-analyze and update cache.")
+        # Backfill end_time from game data (cache doesn't store it)
+        game_dates = {g.game_url: g.end_time for g in games if g.game_url}
+        for ev in all_evals:
+            if not ev.end_time and ev.game_url in game_dates:
+                ev.end_time = game_dates[ev.game_url]
         return all_evals
 
 
