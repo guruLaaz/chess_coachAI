@@ -221,6 +221,45 @@ class TestFlaskRoutes:
         assert b"view example game" not in resp.data
 
 
+class TestSingleUsernameReport:
+    """Tests for reports with only one platform username."""
+
+    def test_chesscom_only_username_displayed(self):
+        """Report shows Chess.com username when only chesscom_user is given."""
+        gen = CoachingReportGenerator([], chesscom_user="bob")
+        assert gen.username == "bob"
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b"bob" in resp.data
+
+    def test_lichess_only_username_displayed(self):
+        """Report shows Lichess username when only lichess_user is given."""
+        gen = CoachingReportGenerator([], lichess_user="alice")
+        assert gen.username == "alice"
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b"alice" in resp.data
+
+    def test_chesscom_only_no_lichess_user(self):
+        """lichess_user defaults to empty when only chesscom_user is given."""
+        gen = CoachingReportGenerator([], chesscom_user="bob")
+        assert gen.lichess_user == ""
+        assert gen.chesscom_user == "bob"
+
+    def test_lichess_only_no_chesscom_user(self):
+        """chesscom_user defaults to empty when only lichess_user is given."""
+        gen = CoachingReportGenerator([], lichess_user="alice")
+        assert gen.chesscom_user == ""
+        assert gen.lichess_user == "alice"
+
+    def test_both_usernames_prefers_chesscom_for_display(self):
+        """When both are given, display username is chesscom_user."""
+        gen = CoachingReportGenerator([], chesscom_user="bob", lichess_user="alice")
+        assert gen.username == "bob"
+
+
 class TestDeviationGrouping:
     """Tests for _group_deviations() and min_times filtering."""
 
@@ -379,13 +418,15 @@ class TestTimeControlFilter:
     """Tests for the time control filter dropdown."""
 
     def test_filter_checkboxes_present(self):
-        """Time control filter checkboxes appear in the report."""
+        """Time control filter checkboxes appear in the endgame report."""
         evals = [_make_eval()]
         gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
-        resp = app.test_client().get("/")
-        assert b'class="tc-filter"' in resp.data
+        # Time control filters were removed from the openings page;
+        # verify they still exist on the endgames page.
+        resp = app.test_client().get("/endgames")
+        assert b'class="eg-tc-filter"' in resp.data
         assert b"Bullet" in resp.data
         assert b"Blitz" in resp.data
         assert b"Rapid" in resp.data
@@ -416,14 +457,14 @@ class TestTimeControlFilter:
 class TestPlatformFilter:
     """Tests for the platform filter dropdown (Chess.com / Lichess)."""
 
-    def test_platform_filter_checkboxes_present(self):
-        """Platform filter checkboxes appear in the report."""
+    def test_platform_filter_present(self):
+        """Platform filter dropdown appears in the report."""
         evals = [_make_eval()]
         gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
-        assert b'class="platform-filter"' in resp.data
+        assert b'id="platform-select"' in resp.data
         assert b"Chess.com" in resp.data
         assert b"Lichess" in resp.data
 
@@ -458,40 +499,39 @@ class TestPlatformFilter:
         assert b'data-platform="unknown"' in resp.data
 
     def test_platform_filter_on_filtered_page(self):
-        """Platform filter checkboxes also appear on opening-filtered pages."""
+        """Platform filter dropdown also appears on opening-filtered pages."""
         evals = [_make_eval()]
         gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/opening/B90/white")
-        assert b'class="platform-filter"' in resp.data
+        assert b'id="platform-select"' in resp.data
 
 
 class TestMinGamesFilter:
     """Tests for the client-side min games filter dropdown."""
 
-    def test_min_games_select_present(self):
-        """Min games select dropdown appears in the report."""
+    def test_min_games_range_present(self):
+        """Min games range slider appears in the report."""
         evals = [_make_eval()]
         gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
-        assert b'id="min-games-select"' in resp.data
-        assert b"Min games" in resp.data
+        assert b'id="min-games-range"' in resp.data
+        assert b"Min. Games" in resp.data
 
-    def test_min_games_options(self):
-        """Min games select has expected threshold options."""
+    def test_min_games_range_attributes(self):
+        """Min games range slider has expected min/max attributes."""
         evals = [_make_eval()]
         gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/")
         html = resp.data.decode()
-        assert 'value="1"' in html
-        assert 'value="2"' in html
-        assert 'value="5"' in html
-        assert 'value="10"' in html
+        assert 'id="min-games-range"' in html
+        assert 'min="1"' in html
+        assert 'max="20"' in html
 
     def test_data_times_attribute_on_cards(self):
         """Cards have data-times attribute with times_played value."""
@@ -513,7 +553,7 @@ class TestMinGamesFilter:
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/opening/B90/white")
-        assert b'id="min-games-select"' in resp.data
+        assert b'id="min-games-range"' in resp.data
 
 
 class TestEndgamePage:

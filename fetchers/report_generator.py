@@ -35,6 +35,17 @@ class CoachingReportGenerator:
             self._group_deviations(candidates))
         # Sort worst first (biggest eval loss = biggest mistake)
         self.deviations.sort(key=lambda ev: ev.eval_loss_cp, reverse=True)
+        # Summary stats for the openings page
+        self.total_games_analyzed = len(evaluations)
+        self.avg_eval_loss_cp = (
+            sum(ev.eval_loss_cp for ev in self.deviations) / len(self.deviations)
+            if self.deviations else 0
+        )
+        self.theory_knowledge_pct = (
+            round(100 * sum(1 for ev in evaluations if ev.is_fully_booked)
+                  / len(evaluations))
+            if evaluations else 0
+        )
         # Pre-compute item dicts (no SVGs — those are rendered lazily via API)
         self._cached_items = [self._prepare_deviation(ev) for ev in self.deviations]
 
@@ -217,6 +228,9 @@ class CoachingReportGenerator:
                 filter_color=None,
                 page="openings",
                 endgame_count=endgame_count,
+                total_games_analyzed=self.total_games_analyzed,
+                avg_eval_loss=round(self.avg_eval_loss_cp / 100, 2),
+                theory_knowledge_pct=self.theory_knowledge_pct,
             )
 
         @app.route("/opening/<eco_code>/<color>")
@@ -238,6 +252,9 @@ class CoachingReportGenerator:
                 filter_color=color,
                 page="openings",
                 endgame_count=endgame_count,
+                total_games_analyzed=self.total_games_analyzed,
+                avg_eval_loss=round(self.avg_eval_loss_cp / 100, 2),
+                theory_knowledge_pct=self.theory_knowledge_pct,
             )
 
         @app.route("/endgames")
@@ -393,73 +410,189 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: system-ui, -apple-system, sans-serif;
-            background: #0f172a;
-            color: #e2e8f0;
+            background: #f8fafc;
+            color: #1e293b;
             line-height: 1.6;
         }
         .layout { display: flex; min-height: 100vh; }
         .sidebar {
-            width: 280px;
-            background: #1e293b;
-            padding: 20px;
-            border-right: 1px solid #334155;
+            width: 260px;
+            background: #ffffff;
+            border-right: 1px solid #e2e8f0;
             position: sticky;
             top: 0;
             height: 100vh;
             overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
         }
-        .sidebar h2 {
-            color: #f8fafc;
-            font-size: 1.1rem;
-            margin-bottom: 16px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid #334155;
-            cursor: pointer;
-            user-select: none;
+        .sidebar-brand {
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            gap: 10px;
+            padding: 20px 20px 16px;
+            border-bottom: 1px solid #e2e8f0;
+            margin-bottom: 8px;
         }
-        .sidebar h2::after {
-            content: "\25BE";
-            font-size: 0.8rem;
-            transition: transform 0.2s;
+        .sidebar-brand svg { width: 28px; height: 28px; flex-shrink: 0; }
+        .sidebar-brand span {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #1e293b;
+            letter-spacing: -0.3px;
         }
-        .sidebar h2.collapsed::after {
-            transform: rotate(-90deg);
+        .sidebar-nav {
+            padding: 8px 0;
         }
-        .section-links {
-            overflow: hidden;
-            transition: max-height 0.25s ease;
-        }
-        .section-links.collapsed {
-            max-height: 0 !important;
-        }
-        .sidebar a {
-            display: block;
-            padding: 8px 12px;
-            color: #94a3b8;
+        .sidebar-nav a {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px;
+            color: #64748b;
             text-decoration: none;
-            border-radius: 6px;
-            margin-bottom: 4px;
             font-size: 0.9rem;
+            font-weight: 500;
+            border-left: 3px solid transparent;
+            transition: all 0.15s;
         }
-        .sidebar a:hover { background: #334155; color: #e2e8f0; }
-        .sidebar a.active { background: #3b82f6; color: #fff; }
-        .sidebar .count { float: right; color: #64748b; font-size: 0.8rem; }
-        .sidebar a.active .count { color: #bfdbfe; }
+        .sidebar-nav a:hover { background: #f8fafc; color: #1e293b; }
+        .sidebar-nav a.active {
+            color: #f97316;
+            border-left-color: #f97316;
+            background: #fff7ed;
+        }
+        .sidebar-nav a svg { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.7; }
+        .sidebar-nav a.active svg { opacity: 1; }
+        .sidebar-divider { height: 1px; background: #e2e8f0; margin: 8px 0; }
+        .sidebar-section-label {
+            font-size: 0.7rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            font-weight: 600;
+            padding: 12px 20px 6px;
+        }
+        .sidebar-filter-group {
+            padding: 6px 20px;
+        }
+        .sidebar-filter-label {
+            font-size: 0.7rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: block;
+        }
+        .sidebar-filter-group label:not(.sidebar-filter-label) {
+            display: block;
+            padding: 3px 0;
+            font-size: 0.85rem;
+            cursor: pointer;
+            color: #334155;
+        }
+        .sidebar-filter-group input[type="checkbox"] { margin-right: 6px; }
+        .sidebar-select {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+            background: #f8fafc;
+            color: #334155;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+        .sidebar-select:focus { outline: none; border-color: #94a3b8; }
+        .color-toggle { display: flex; border: 1px solid #d1d5db; border-radius: 6px; overflow: hidden; }
+        .color-btn {
+            flex: 1;
+            padding: 7px 12px;
+            border: none;
+            border-right: 1px solid #d1d5db;
+            background: #ffffff;
+            color: #64748b;
+            font-size: 0.82rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .color-btn:last-child { border-right: none; }
+        .color-btn:hover { background: #f8fafc; color: #1e293b; }
+        .color-btn.active { background: #f1f5f9; color: #1e293b; }
+        .sidebar-range-wrap {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .sidebar-range {
+            flex: 1;
+            -webkit-appearance: none;
+            height: 4px;
+            border-radius: 2px;
+            background: #e2e8f0;
+            outline: none;
+        }
+        .sidebar-range::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px; height: 16px;
+            border-radius: 50%;
+            background: #f97316;
+            cursor: pointer;
+            border: 2px solid #fff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+        }
+        .sidebar-range::-moz-range-thumb {
+            width: 16px; height: 16px;
+            border-radius: 50%;
+            background: #f97316;
+            cursor: pointer;
+            border: 2px solid #fff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+        }
+        .sidebar-range-value {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #1e293b;
+            min-width: 20px;
+            text-align: right;
+        }
+        .sidebar-bottom {
+            margin-top: auto;
+            padding: 16px 20px;
+            border-top: 1px solid #e2e8f0;
+        }
+        .sync-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            padding: 10px 16px;
+            background: #0d9488;
+            color: #ffffff;
+            border: none;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .sync-btn:hover { background: #0f766e; }
+        .sync-btn svg { width: 16px; height: 16px; }
         .main {
             flex: 1;
             padding: 32px;
             max-width: 960px;
         }
-        h1 { font-size: 1.8rem; color: #f8fafc; margin-bottom: 8px; }
+        h1 { font-size: 1.8rem; color: #1e293b; margin-bottom: 8px; }
         .user-badges { display: inline; }
         .user-badge {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            background: #334155;
+            background: #f1f5f9;
             padding: 4px 12px;
             border-radius: 6px;
             font-size: 1rem;
@@ -468,18 +601,19 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
         }
         .user-badge + .user-badge { margin-left: 8px; }
         .user-badge svg { width: 18px; height: 18px; flex-shrink: 0; }
-        a.user-badge { color: #e2e8f0; text-decoration: none; transition: background 0.15s; }
-        a.user-badge:hover { background: #475569; }
-        .subtitle { color: #94a3b8; margin-bottom: 32px; font-size: 0.95rem; }
-        .board-spinner { text-align:center; padding:60px 0; color:#64748b; font-size:0.9rem; }
+        a.user-badge { color: #1e293b; text-decoration: none; transition: background 0.15s; }
+        a.user-badge:hover { background: #e2e8f0; }
+        .subtitle { color: #64748b; margin-bottom: 32px; font-size: 0.95rem; }
+        .board-spinner { text-align:center; padding:60px 0; color:#94a3b8; font-size:0.9rem; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .board-spinner::before { content:""; display:block; width:32px; height:32px; margin:0 auto 12px; border:3px solid #334155; border-top-color:#3b82f6; border-radius:50%; animation:spin .8s linear infinite; }
+        .board-spinner::before { content:""; display:block; width:32px; height:32px; margin:0 auto 12px; border:3px solid #e2e8f0; border-top-color:#3b82f6; border-radius:50%; animation:spin .8s linear infinite; }
         .card {
-            background: #1e293b;
+            background: #ffffff;
             border-radius: 12px;
             padding: 24px;
             margin-bottom: 24px;
-            border-left: 4px solid #ef4444;
+            border-left: 4px solid #f97316;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
         }
         .card.positive { border-left-color: #22c55e; }
         .card-header {
@@ -490,13 +624,13 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             flex-wrap: wrap;
             gap: 8px;
         }
-        .card-title { font-size: 1.15rem; font-weight: 600; color: #f8fafc; }
+        .card-title { font-size: 1.15rem; font-weight: 600; color: #1e293b; }
         .eco-badge {
-            background: #334155;
+            background: #f1f5f9;
             padding: 2px 8px;
             border-radius: 4px;
             font-size: 0.8rem;
-            color: #94a3b8;
+            color: #64748b;
         }
         .eval-badges { display: flex; gap: 8px; align-items: center; }
         .eval-badge {
@@ -505,14 +639,14 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             font-weight: 700;
             font-size: 0.95rem;
         }
-        .eval-badge.bad { background: #7f1d1d; color: #fca5a5; }
-        .eval-badge.good { background: #166534; color: #4ade80; }
+        .eval-badge.bad { background: #fef2f2; color: #dc2626; }
+        .eval-badge.good { background: #f0fdf4; color: #16a34a; }
         .eval-badge-secondary {
             padding: 4px 8px;
             border-radius: 6px;
             font-size: 0.75rem;
-            background: #334155;
-            color: #94a3b8;
+            background: #f1f5f9;
+            color: #64748b;
         }
         .result-badge {
             padding: 4px 8px;
@@ -520,8 +654,8 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             font-size: 0.75rem;
             font-weight: 600;
         }
-        .result-badge.win-high { background: #166534; color: #4ade80; }
-        .result-badge.win-low { background: #7f1d1d; color: #fca5a5; }
+        .result-badge.win-high { background: #f0fdf4; color: #16a34a; }
+        .result-badge.win-low { background: #fef2f2; color: #dc2626; }
         /* --- Static SVG fallback boards --- */
         .boards {
             display: flex;
@@ -531,86 +665,100 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             margin: 16px 0;
         }
         .board-panel { text-align: center; }
-        .board-panel h4 { margin-bottom: 8px; font-size: 0.95rem; color: #cbd5e1; }
-        .board-panel h4.best { color: #4ade80; }
-        .board-panel h4.played { color: #f87171; }
+        .board-panel h4 { margin-bottom: 8px; font-size: 0.95rem; color: #64748b; }
+        .board-panel h4.best { color: #16a34a; }
+        .board-panel h4.played { color: #dc2626; }
         .board-panel svg { border-radius: 4px; }
-        .meta { margin-top: 12px; font-size: 0.9rem; color: #94a3b8; }
+        .meta { margin-top: 12px; font-size: 0.9rem; color: #64748b; }
         .times-badge {
-            background: #334155;
+            background: #f1f5f9;
             padding: 2px 8px;
             border-radius: 4px;
             font-size: 0.8rem;
-            color: #94a3b8;
+            color: #64748b;
         }
-        .times-badge.recurring { background: #3730a3; color: #c7d2fe; }
+        .times-badge.recurring { background: #e0e7ff; color: #4338ca; }
         .recommendation {
             margin-top: 12px;
             padding: 10px 16px;
-            background: #0f2a1a;
+            background: #f0fdf4;
             border-radius: 8px;
-            color: #4ade80;
+            color: #15803d;
             font-size: 1rem;
         }
-        .recommendation strong { color: #86efac; }
+        .recommendation strong { color: #16a34a; }
         .game-link {
             display: inline-block;
             margin-top: 8px;
             font-size: 0.85rem;
-            color: #60a5fa;
+            color: #2563eb;
             text-decoration: none;
         }
-        .game-link:hover { text-decoration: underline; color: #93bbfc; }
+        .game-link:hover { text-decoration: underline; color: #1d4ed8; }
         .sort-controls { display: inline; }
         .sort-select {
-            background: #334155;
-            color: #e2e8f0;
-            border: 1px solid #475569;
+            background: #ffffff;
+            color: #334155;
+            border: 1px solid #d1d5db;
             border-radius: 6px;
             padding: 4px 8px;
             font-size: 0.9rem;
             cursor: pointer;
         }
-        .sort-select:hover { border-color: #60a5fa; }
+        .sort-select:hover { border-color: #3b82f6; }
         .filter-wrapper {
             display: inline-block;
             position: relative;
             margin-left: 12px;
         }
         .filter-btn {
-            background: #334155;
-            color: #e2e8f0;
-            border: 1px solid #475569;
+            background: #ffffff;
+            color: #334155;
+            border: 1px solid #d1d5db;
             border-radius: 6px;
             padding: 4px 10px;
             font-size: 0.9rem;
             cursor: pointer;
         }
-        .filter-btn:hover { border-color: #60a5fa; }
+        .filter-btn:hover { border-color: #3b82f6; }
         .filter-panel {
             display: none;
             position: absolute;
             top: 100%;
             left: 0;
             margin-top: 4px;
-            background: #1e293b;
-            border: 1px solid #475569;
+            background: #ffffff;
+            border: 1px solid #d1d5db;
             border-radius: 8px;
             padding: 8px 12px;
             z-index: 100;
             min-width: 140px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
         .filter-panel.open { display: block; }
         .filter-panel label {
             display: block;
             padding: 4px 0;
             font-size: 0.85rem;
-            color: #cbd5e1;
+            color: #334155;
             cursor: pointer;
         }
         .filter-panel input[type="checkbox"] { margin-right: 6px; }
-        .empty-state { text-align: center; padding: 80px 20px; color: #64748b; }
-        .empty-state h2 { color: #94a3b8; margin-bottom: 12px; }
+        .stats-bar { display: flex; gap: 16px; margin-bottom: 28px; }
+        .stat-card {
+            flex: 1;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 16px 20px;
+            text-align: center;
+        }
+        .stat-value { font-size: 1.8rem; font-weight: 700; color: #1e293b; }
+        .stat-label { font-size: 0.8rem; color: #64748b; margin-top: 4px; }
+        .donut-card { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .donut-chart { display: block; }
+        .empty-state { text-align: center; padding: 80px 20px; color: #94a3b8; }
+        .empty-state h2 { color: #64748b; margin-bottom: 12px; }
         @media (max-width: 768px) {
             .layout { flex-direction: column; }
             .sidebar {
@@ -618,106 +766,103 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                 height: auto;
                 position: static;
                 border-right: none;
-                border-bottom: 1px solid #334155;
+                border-bottom: 1px solid #e2e8f0;
             }
             .boards { flex-direction: column; align-items: center; }
+            .stats-bar { flex-direction: column; }
         }
     </style>
 </head>
 <body>
     <div class="layout">
         <nav class="sidebar">
-            <h2 id="hdr-openings">Openings</h2>
-            <div class="section-links" id="openings-links">
-                <a href="/" {% if page == 'openings' and not filter_eco %}class="active"{% endif %}>
-                    All deviations <span class="count">{{ total }}</span>
-                </a>
-                {% for g in groups %}
-                <a href="/opening/{{ g.eco_code }}/{{ g.color }}"
-                   {% if filter_eco == g.eco_code and filter_color == g.color %}class="active"{% endif %}>
-                    {{ g.eco_name }} ({{ g.color }})
-                    <span class="count">{{ g.count }}</span>
-                </a>
-                {% endfor %}
+            <div class="sidebar-brand">
+                <svg viewBox="0 0 96.4 144"><path fill="#f97316" d="M48.2 0C35.4-.1 25 10.3 24.9 23.1c0 7.5 3.6 14.6 9.7 18.9L17.9 53c0 3.5.9 6.9 2.6 9.9h14.8c-.3 6.6 2.4 22.6-21.8 41.1C5 110.4 0 121.3 0 134.6c0 .6 1.3 9.4 48.2 9.4s48.2-8.8 48.2-9.4c0-13.3-5-24.3-13.4-30.7-24.2-18.5-21.5-34.5-21.8-41.1H76c1.7-3 2.6-6.4 2.6-9.8L61.8 42c10.4-7.5 12.8-21.9 5.3-32.3C62.8 3.6 55.7 0 48.2 0z"/></svg>
+                <span>Chessalyzer</span>
             </div>
-            <h2 id="hdr-analysis" style="margin-top: 24px;">Analysis</h2>
-            <div class="section-links" id="analysis-links">
-                <a href="/endgames" {% if page == 'endgames' %}class="active"{% endif %}>
-                    Endgames <span class="count">{{ endgame_count }}</span>
+            <div class="sidebar-nav">
+                <a href="/" {% if page == 'openings' %}class="active"{% endif %}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                    Openings
                 </a>
+                <a href="/endgames" {% if page == 'endgames' %}class="active"{% endif %}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                    Endgames
+                </a>
+            </div>
+            <div class="sidebar-divider"></div>
+            <div class="sidebar-section-label">Filters</div>
+            <div class="sidebar-filter-group">
+                <label class="sidebar-filter-label">Platform</label>
+                <select id="platform-select" class="sidebar-select">
+                    <option value="all">All Platforms</option>
+                    <option value="chesscom">Chess.com</option>
+                    <option value="lichess">Lichess</option>
+                </select>
+            </div>
+            <div class="sidebar-filter-group">
+                <label class="sidebar-filter-label">Playing As</label>
+                <div class="color-toggle">
+                    <button class="color-btn active" data-color-filter="white">White</button>
+                    <button class="color-btn" data-color-filter="black">Black</button>
+                </div>
+            </div>
+            <div class="sidebar-filter-group">
+                <label class="sidebar-filter-label">Min. Games: <span id="min-games-value">3</span></label>
+                <div class="sidebar-range-wrap">
+                    <input type="range" id="min-games-range" class="sidebar-range" min="1" max="20" value="3">
+                </div>
+            </div>
+            <div class="sidebar-bottom">
+                <button class="sync-btn" onclick="window.location.reload()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    Sync Games
+                </button>
             </div>
         </nav>
         <main class="main">
-            <h1>Chess Coach: <span class="user-badges">{% if chesscom_user %}<a class="user-badge" href="https://www.chess.com/member/{{ chesscom_user }}" target="_blank" rel="noopener"><svg viewBox="0 0 96.4 144"><path fill="#81b64c" d="M48.2 0C35.4-.1 25 10.3 24.9 23.1c0 7.5 3.6 14.6 9.7 18.9L17.9 53c0 3.5.9 6.9 2.6 9.9h14.8c-.3 6.6 2.4 22.6-21.8 41.1C5 110.4 0 121.3 0 134.6c0 .6 1.3 9.4 48.2 9.4s48.2-8.8 48.2-9.4c0-13.3-5-24.3-13.4-30.7-24.2-18.5-21.5-34.5-21.8-41.1H76c1.7-3 2.6-6.4 2.6-9.8L61.8 42c10.4-7.5 12.8-21.9 5.3-32.3C62.8 3.6 55.7 0 48.2 0z"/></svg>{{ chesscom_user }}</a>{% endif %}{% if lichess_user %}<a class="user-badge" href="https://lichess.org/@/{{ lichess_user }}" target="_blank" rel="noopener"><svg viewBox="0 0 50 50"><path fill="#fff" stroke="#fff" stroke-linejoin="round" d="M38.956.5c-3.53.418-6.452.902-9.286 2.984C5.534 1.786-.692 18.533.68 29.364 3.493 50.214 31.918 55.785 41.329 41.7c-7.444 7.696-19.276 8.752-28.323 3.084C3.959 39.116-.506 27.392 4.683 17.567 9.873 7.742 18.996 4.535 29.03 6.405c2.43-1.418 5.225-3.22 7.655-3.187l-1.694 4.86 12.752 21.37c-.439 5.654-5.459 6.112-5.459 6.112-.574-1.47-1.634-2.942-4.842-6.036-3.207-3.094-17.465-10.177-15.788-16.207-2.001 6.967 10.311 14.152 14.04 17.663 3.73 3.51 5.426 6.04 5.795 6.756 0 0 9.392-2.504 7.838-8.927L37.4 7.171z"/></svg>{{ lichess_user }}</a>{% endif %}</span></h1>
+            <h1>Chess Coach: <span class="user-badges">{% if chesscom_user %}<a class="user-badge" href="https://www.chess.com/member/{{ chesscom_user }}" target="_blank" rel="noopener"><svg viewBox="0 0 96.4 144"><path fill="#81b64c" d="M48.2 0C35.4-.1 25 10.3 24.9 23.1c0 7.5 3.6 14.6 9.7 18.9L17.9 53c0 3.5.9 6.9 2.6 9.9h14.8c-.3 6.6 2.4 22.6-21.8 41.1C5 110.4 0 121.3 0 134.6c0 .6 1.3 9.4 48.2 9.4s48.2-8.8 48.2-9.4c0-13.3-5-24.3-13.4-30.7-24.2-18.5-21.5-34.5-21.8-41.1H76c1.7-3 2.6-6.4 2.6-9.8L61.8 42c10.4-7.5 12.8-21.9 5.3-32.3C62.8 3.6 55.7 0 48.2 0z"/></svg>{{ chesscom_user }}</a>{% endif %}{% if lichess_user %}<a class="user-badge" href="https://lichess.org/@/{{ lichess_user }}" target="_blank" rel="noopener"><svg viewBox="0 0 50 50"><path fill="#000" stroke="#000" stroke-linejoin="round" d="M38.956.5c-3.53.418-6.452.902-9.286 2.984C5.534 1.786-.692 18.533.68 29.364 3.493 50.214 31.918 55.785 41.329 41.7c-7.444 7.696-19.276 8.752-28.323 3.084C3.959 39.116-.506 27.392 4.683 17.567 9.873 7.742 18.996 4.535 29.03 6.405c2.43-1.418 5.225-3.22 7.655-3.187l-1.694 4.86 12.752 21.37c-.439 5.654-5.459 6.112-5.459 6.112-.574-1.47-1.634-2.942-4.842-6.036-3.207-3.094-17.465-10.177-15.788-16.207-2.001 6.967 10.311 14.152 14.04 17.663 3.73 3.51 5.426 6.04 5.795 6.756 0 0 9.392-2.504 7.838-8.927L37.4 7.171z"/></svg>{{ lichess_user }}</a>{% endif %}</span></h1>
             {% if filter_eco %}
             <div class="subtitle">Showing {{ items|length }} deviations for {{ filter_eco }} as {{ filter_color }} &mdash; sorted by
                 <select id="sort-select" class="sort-select">
                     <option value="eval-loss">Biggest mistake</option>
                     <option value="loss-pct">Loss %</option>
-                </select>
-                <span class="filter-wrapper">
-                    <button class="filter-btn" id="filter-btn">Time controls &#9662;</button>
-                    <div class="filter-panel" id="filter-panel">
-                        <label><input type="checkbox" class="tc-filter" value="bullet" checked> Bullet</label>
-                        <label><input type="checkbox" class="tc-filter" value="blitz" checked> Blitz</label>
-                        <label><input type="checkbox" class="tc-filter" value="rapid" checked> Rapid</label>
-                        <label><input type="checkbox" class="tc-filter" value="daily" checked> Daily</label>
-                    </div>
-                </span>
-                <span class="filter-wrapper">
-                    <button class="filter-btn" id="platform-btn">Platform &#9662;</button>
-                    <div class="filter-panel" id="platform-panel">
-                        <label><input type="checkbox" class="platform-filter" value="chesscom" checked> Chess.com</label>
-                        <label><input type="checkbox" class="platform-filter" value="lichess" checked> Lichess</label>
-                    </div>
-                </span>
-                <span class="filter-wrapper">
-                    <button class="filter-btn" id="min-games-btn">Min games &#9662;</button>
-                    <div class="filter-panel" id="min-games-panel">
-                        <select id="min-games-select" class="sort-select" style="width:100%">
-                            <option value="1">1+ (all)</option>
-                            <option value="2">2+</option>
-                            <option value="3" selected>3+</option>
-                            <option value="5">5+</option>
-                            <option value="10">10+</option>
-                        </select>
-                    </div>
-                </span></div>
+                </select></div>
             {% else %}
             <div class="subtitle">{{ items|length }} positions where you deviated from book/engine &mdash; sorted by
                 <select id="sort-select" class="sort-select">
                     <option value="eval-loss">Biggest mistake</option>
                     <option value="loss-pct">Loss %</option>
-                </select>
-                <span class="filter-wrapper">
-                    <button class="filter-btn" id="filter-btn">Time controls &#9662;</button>
-                    <div class="filter-panel" id="filter-panel">
-                        <label><input type="checkbox" class="tc-filter" value="bullet" checked> Bullet</label>
-                        <label><input type="checkbox" class="tc-filter" value="blitz" checked> Blitz</label>
-                        <label><input type="checkbox" class="tc-filter" value="rapid" checked> Rapid</label>
-                        <label><input type="checkbox" class="tc-filter" value="daily" checked> Daily</label>
-                    </div>
-                </span>
-                <span class="filter-wrapper">
-                    <button class="filter-btn" id="platform-btn">Platform &#9662;</button>
-                    <div class="filter-panel" id="platform-panel">
-                        <label><input type="checkbox" class="platform-filter" value="chesscom" checked> Chess.com</label>
-                        <label><input type="checkbox" class="platform-filter" value="lichess" checked> Lichess</label>
-                    </div>
-                </span>
-                <span class="filter-wrapper">
-                    <button class="filter-btn" id="min-games-btn">Min games &#9662;</button>
-                    <div class="filter-panel" id="min-games-panel">
-                        <select id="min-games-select" class="sort-select" style="width:100%">
-                            <option value="1">1+ (all)</option>
-                            <option value="2">2+</option>
-                            <option value="3" selected>3+</option>
-                            <option value="5">5+</option>
-                            <option value="10">10+</option>
-                        </select>
-                    </div>
-                </span></div>
+                </select></div>
             {% endif %}
+
+            <div class="stats-bar">
+                <div class="stat-card">
+                    <div class="stat-value">{{ "{:,}".format(total_games_analyzed) }}</div>
+                    <div class="stat-label">Total Games Analyzed</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{{ avg_eval_loss }}</div>
+                    <div class="stat-label">Avg. Eval Loss</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{{ theory_knowledge_pct }}%</div>
+                    <div class="stat-label">Theory Knowledge</div>
+                </div>
+                <div class="stat-card donut-card">
+                    <svg viewBox="0 0 120 120" class="donut-chart" width="100" height="100">
+                        <circle cx="60" cy="60" r="50" fill="none" stroke="#e2e8f0" stroke-width="12"/>
+                        <circle cx="60" cy="60" r="50" fill="none" stroke="#3b82f6" stroke-width="12"
+                                stroke-dasharray="{{ (theory_knowledge_pct / 100 * 314.16)|round(1) }} 314.16"
+                                transform="rotate(-90 60 60)" stroke-linecap="round"/>
+                        <text x="60" y="55" text-anchor="middle" font-size="20" font-weight="700"
+                              fill="#1e293b">{{ "{:,}".format(total_games_analyzed) }}</text>
+                        <text x="60" y="72" text-anchor="middle" font-size="9"
+                              fill="#64748b">Games</text>
+                    </svg>
+                    <div class="stat-label">Opening Performance</div>
+                </div>
+            </div>
 
             {% if items %}
                 {% for item in items %}
@@ -774,42 +919,7 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
 
     <script>
     (function() {
-        /* Sidebar accordion */
-        (function() {
-            var sections = [
-                { hdr: document.getElementById('hdr-openings'), links: document.getElementById('openings-links') },
-                { hdr: document.getElementById('hdr-analysis'), links: document.getElementById('analysis-links') }
-            ];
-            var activePage = '{{ page }}';
-            var activeIdx = (activePage === 'endgames') ? 1 : 0;
-            sections.forEach(function(s, i) {
-                if (i === activeIdx) {
-                    s.links.style.maxHeight = s.links.scrollHeight + 'px';
-                } else {
-                    s.links.classList.add('collapsed');
-                    s.hdr.classList.add('collapsed');
-                }
-                s.hdr.addEventListener('click', function() {
-                    sections.forEach(function(other) {
-                        if (other === s) {
-                            var isCollapsed = other.links.classList.contains('collapsed');
-                            if (isCollapsed) {
-                                other.links.classList.remove('collapsed');
-                                other.hdr.classList.remove('collapsed');
-                                other.links.style.maxHeight = other.links.scrollHeight + 'px';
-                            } else {
-                                other.links.classList.add('collapsed');
-                                other.hdr.classList.add('collapsed');
-                            }
-                        } else {
-                            other.links.classList.add('collapsed');
-                            other.hdr.classList.add('collapsed');
-                        }
-                    });
-                });
-            });
-        })();
-
+        /* ECO search — filters sidebar opening links */
         /* Sort dropdown */
         var select = document.getElementById('sort-select');
         if (select) {
@@ -825,10 +935,31 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             });
         }
 
-        /* Shared filter logic: card visible only if it passes ALL active filters */
-        var tcChecks = document.querySelectorAll('.tc-filter');
-        var platChecks = document.querySelectorAll('.platform-filter');
-        var minGamesSelect = document.getElementById('min-games-select');
+        /* Playing As color filter (toggle: both active = show all) */
+        var colorBtns = document.querySelectorAll('.color-btn');
+        colorBtns.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var otherActive = Array.from(colorBtns).some(function(b) {
+                    return b !== btn && b.classList.contains('active');
+                });
+                if (btn.classList.contains('active') && !otherActive) return;
+                btn.classList.toggle('active');
+                applyFilters();
+            });
+        });
+
+        /* Platform dropdown */
+        var platformSelect = document.getElementById('platform-select');
+
+        /* Min games range slider */
+        var minGamesRange = document.getElementById('min-games-range');
+        var minGamesValue = document.getElementById('min-games-value');
+        if (minGamesRange && minGamesValue) {
+            minGamesRange.addEventListener('input', function() {
+                minGamesValue.textContent = minGamesRange.value;
+                applyFilters();
+            });
+        }
 
         /* Infinite scroll state */
         var PAGE_SIZE = 10;
@@ -836,20 +967,19 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
         var fetchingBoards = false;
 
         function applyFilters() {
-            var enabledTC = new Set();
-            tcChecks.forEach(function(c) { if (c.checked) enabledTC.add(c.value); });
-            var enabledPlat = new Set();
-            platChecks.forEach(function(c) { if (c.checked) enabledPlat.add(c.value); });
-            var minGames = minGamesSelect ? parseInt(minGamesSelect.value, 10) : 1;
+            var selectedPlat = platformSelect ? platformSelect.value : 'all';
+            var minGames = minGamesRange ? parseInt(minGamesRange.value, 10) : 1;
+            var activeColors = new Set();
+            colorBtns.forEach(function(b) { if (b.classList.contains('active')) activeColors.add(b.getAttribute('data-color-filter')); });
 
             document.querySelectorAll('.card').forEach(function(card) {
-                var tc = card.getAttribute('data-time-class');
                 var pl = card.getAttribute('data-platform');
                 var times = parseInt(card.getAttribute('data-times'), 10) || 0;
-                var tcOk = !tc || enabledTC.has(tc);
-                var plOk = !pl || enabledPlat.has(pl);
+                var color = card.getAttribute('data-color');
+                var plOk = selectedPlat === 'all' || !pl || pl === selectedPlat;
                 var minOk = times >= minGames;
-                card.setAttribute('data-filtered', (tcOk && plOk && minOk) ? 'yes' : 'no');
+                var colorOk = activeColors.size === 0 || activeColors.has(color);
+                card.setAttribute('data-filtered', (plOk && minOk && colorOk) ? 'yes' : 'no');
                 card.style.display = 'none';
             });
             shownCount = 0;
@@ -911,9 +1041,7 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             });
         }
 
-        tcChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
-        platChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
-        if (minGamesSelect) { minGamesSelect.addEventListener('change', applyFilters); }
+        if (platformSelect) { platformSelect.addEventListener('change', applyFilters); }
         applyFilters();
 
         window.addEventListener('scroll', function() {
@@ -922,32 +1050,10 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             }
         });
 
-        /* Re-apply scroll after sort */
+        /* Re-apply after sort */
         if (select) {
             select.addEventListener('change', function() { applyFilters(); });
         }
-
-        /* Dropdown panel toggles */
-        var panels = [
-            {btn: document.getElementById('filter-btn'), panel: document.getElementById('filter-panel')},
-            {btn: document.getElementById('platform-btn'), panel: document.getElementById('platform-panel')},
-            {btn: document.getElementById('min-games-btn'), panel: document.getElementById('min-games-panel')}
-        ];
-        panels.forEach(function(p) {
-            if (p.btn && p.panel) {
-                p.btn.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    p.panel.classList.toggle('open');
-                });
-            }
-        });
-        document.addEventListener('click', function(e) {
-            panels.forEach(function(p) {
-                if (p.panel && !p.panel.contains(e.target) && e.target !== p.btn) {
-                    p.panel.classList.remove('open');
-                }
-            });
-        });
     })();
     </script>
 </body>
@@ -964,69 +1070,88 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: system-ui, -apple-system, sans-serif;
-            background: #0f172a;
-            color: #e2e8f0;
+            background: #f8fafc;
+            color: #1e293b;
             min-height: 100vh;
         }
         .layout { display: flex; min-height: 100vh; }
         .sidebar {
-            width: 280px;
-            background: #1e293b;
-            border-right: 1px solid #334155;
-            padding: 20px 0;
+            width: 260px;
+            background: #ffffff;
+            border-right: 1px solid #e2e8f0;
             position: sticky;
             top: 0;
             height: 100vh;
             overflow-y: auto;
+            display: flex;
+            flex-direction: column;
             flex-shrink: 0;
         }
-        .sidebar h2 {
-            padding: 0 16px;
-            font-size: 0.85rem;
-            color: #64748b;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+        .sidebar-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 20px 20px 16px;
+            border-bottom: 1px solid #e2e8f0;
             margin-bottom: 8px;
-            cursor: pointer;
-            user-select: none;
+        }
+        .sidebar-brand svg { width: 28px; height: 28px; flex-shrink: 0; }
+        .sidebar-brand span {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #1e293b;
+            letter-spacing: -0.3px;
+        }
+        .sidebar-nav {
+            padding: 8px 0;
+        }
+        .sidebar-nav a {
             display: flex;
             align-items: center;
-            justify-content: space-between;
-        }
-        .sidebar h2::after {
-            content: "\25BE";
-            font-size: 0.8rem;
-            transition: transform 0.2s;
-        }
-        .sidebar h2.collapsed::after {
-            transform: rotate(-90deg);
-        }
-        .section-links {
-            overflow: hidden;
-            transition: max-height 0.25s ease;
-        }
-        .section-links.collapsed {
-            max-height: 0 !important;
-        }
-        .sidebar a {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 8px 16px;
-            color: #94a3b8;
+            gap: 10px;
+            padding: 10px 20px;
+            color: #64748b;
             text-decoration: none;
             font-size: 0.9rem;
+            font-weight: 500;
+            border-left: 3px solid transparent;
             transition: all 0.15s;
         }
-        .sidebar a:hover { background: #334155; color: #e2e8f0; }
-        .sidebar a.active {
-            background: #1e3a5f;
-            color: #60a5fa;
-            border-left: 3px solid #3b82f6;
+        .sidebar-nav a:hover { background: #f8fafc; color: #1e293b; }
+        .sidebar-nav a.active {
+            color: #f97316;
+            border-left-color: #f97316;
+            background: #fff7ed;
         }
+        .sidebar-nav a svg { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.7; }
+        .sidebar-nav a.active svg { opacity: 1; }
+        .sidebar-divider { height: 1px; background: #e2e8f0; margin: 8px 0; }
+        .sidebar-bottom {
+            margin-top: auto;
+            padding: 16px 20px;
+            border-top: 1px solid #e2e8f0;
+        }
+        .sync-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            background: #f8fafc;
+            color: #64748b;
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .sync-btn:hover { background: #f1f5f9; color: #1e293b; border-color: #d1d5db; }
+        .sync-btn svg { width: 16px; height: 16px; }
         .count {
-            background: #334155;
-            color: #94a3b8;
+            background: #f1f5f9;
+            color: #64748b;
             padding: 2px 8px;
             border-radius: 10px;
             font-size: 0.75rem;
@@ -1036,13 +1161,13 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
             padding: 30px 40px;
             max-width: 960px;
         }
-        h1 { font-size: 1.6rem; margin-bottom: 8px; color: #f8fafc; }
+        h1 { font-size: 1.6rem; margin-bottom: 8px; color: #1e293b; }
         .user-badges { display: inline; }
         .user-badge {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            background: #334155;
+            background: #f1f5f9;
             padding: 4px 12px;
             border-radius: 6px;
             font-size: 1rem;
@@ -1051,12 +1176,12 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
         }
         .user-badge + .user-badge { margin-left: 8px; }
         .user-badge svg { width: 18px; height: 18px; flex-shrink: 0; }
-        a.user-badge { color: #e2e8f0; text-decoration: none; transition: background 0.15s; }
-        a.user-badge:hover { background: #475569; }
-        .subtitle { color: #94a3b8; margin-bottom: 24px; font-size: 0.95rem; }
+        a.user-badge { color: #1e293b; text-decoration: none; transition: background 0.15s; }
+        a.user-badge:hover { background: #e2e8f0; }
+        .subtitle { color: #64748b; margin-bottom: 24px; font-size: 0.95rem; }
         .type-label {
             font-weight: 600;
-            color: #e2e8f0;
+            color: #1e293b;
         }
         .balance-badge {
             display: inline-block;
@@ -1065,21 +1190,22 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
             font-size: 0.8rem;
             font-weight: 500;
         }
-        .balance-equal { background: #334155; color: #94a3b8; }
-        .balance-up { background: #14532d; color: #4ade80; }
-        .balance-down { background: #450a0a; color: #f87171; }
-        .pct-good { color: #4ade80; }
-        .pct-bad { color: #f87171; }
-        .pct-neutral { color: #94a3b8; }
-        .board-spinner { text-align:center; padding:60px 0; color:#64748b; font-size:0.9rem; }
+        .balance-equal { background: #f1f5f9; color: #64748b; }
+        .balance-up { background: #f0fdf4; color: #16a34a; }
+        .balance-down { background: #fef2f2; color: #dc2626; }
+        .pct-good { color: #16a34a; }
+        .pct-bad { color: #dc2626; }
+        .pct-neutral { color: #64748b; }
+        .board-spinner { text-align:center; padding:60px 0; color:#94a3b8; font-size:0.9rem; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .board-spinner::before { content:""; display:block; width:32px; height:32px; margin:0 auto 12px; border:3px solid #334155; border-top-color:#3b82f6; border-radius:50%; animation:spin .8s linear infinite; }
+        .board-spinner::before { content:""; display:block; width:32px; height:32px; margin:0 auto 12px; border:3px solid #e2e8f0; border-top-color:#3b82f6; border-radius:50%; animation:spin .8s linear infinite; }
         .eg-card {
-            background: #1e293b;
+            background: #ffffff;
             border-radius: 12px;
             padding: 20px 24px;
             margin-bottom: 16px;
-            border-left: 4px solid #334155;
+            border-left: 4px solid #e2e8f0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
         }
         .eg-card-header {
             display: flex;
@@ -1088,7 +1214,7 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
             flex-wrap: wrap;
         }
         .eg-games {
-            color: #94a3b8;
+            color: #64748b;
             font-size: 0.9rem;
             margin-left: auto;
         }
@@ -1104,18 +1230,18 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
             gap: 4px;
         }
         .eg-clock-icon {
-            color: #94a3b8;
+            color: #64748b;
         }
         .clock-you {
-            background: #16a34a22;
-            color: #4ade80;
+            background: #dcfce7;
+            color: #16a34a;
             padding: 1px 5px;
             border-radius: 4px;
             font-weight: 600;
         }
         .clock-opp {
-            background: #64748b22;
-            color: #94a3b8;
+            background: #f1f5f9;
+            color: #64748b;
             padding: 1px 5px;
             border-radius: 4px;
         }
@@ -1127,17 +1253,17 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
         .board-panel h4 {
             margin-bottom: 8px;
             font-size: 0.9rem;
-            color: #94a3b8;
+            color: #64748b;
         }
         .board-panel svg { border-radius: 4px; }
         .game-link {
             display: inline-block;
             margin-top: 10px;
             font-size: 0.85rem;
-            color: #60a5fa;
+            color: #2563eb;
             text-decoration: none;
         }
-        .game-link:hover { text-decoration: underline; color: #93bbfc; }
+        .game-link:hover { text-decoration: underline; color: #1d4ed8; }
         .eval-badge {
             display: inline-block;
             margin-top: 6px;
@@ -1146,58 +1272,59 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
             font-size: 0.85rem;
             font-weight: 600;
         }
-        .eval-positive { background: #166534; color: #4ade80; }
-        .eval-negative { background: #7f1d1d; color: #f87171; }
-        .eval-zero     { background: #334155; color: #94a3b8; }
+        .eval-positive { background: #f0fdf4; color: #16a34a; }
+        .eval-negative { background: #fef2f2; color: #dc2626; }
+        .eval-zero     { background: #f1f5f9; color: #64748b; }
         .sort-select {
-            background: #334155;
-            color: #e2e8f0;
-            border: 1px solid #475569;
+            background: #ffffff;
+            color: #334155;
+            border: 1px solid #d1d5db;
             border-radius: 6px;
             padding: 4px 8px;
             font-size: 0.9rem;
             cursor: pointer;
         }
-        .sort-select:hover { border-color: #60a5fa; }
+        .sort-select:hover { border-color: #3b82f6; }
         .filter-wrapper {
             display: inline-block;
             position: relative;
             margin-left: 12px;
         }
         .filter-btn {
-            background: #334155;
-            color: #e2e8f0;
-            border: 1px solid #475569;
+            background: #ffffff;
+            color: #334155;
+            border: 1px solid #d1d5db;
             border-radius: 6px;
             padding: 4px 10px;
             font-size: 0.9rem;
             cursor: pointer;
         }
-        .filter-btn:hover { border-color: #60a5fa; }
+        .filter-btn:hover { border-color: #3b82f6; }
         .filter-panel {
             display: none;
             position: absolute;
             top: 100%;
             left: 0;
             margin-top: 4px;
-            background: #1e293b;
-            border: 1px solid #475569;
+            background: #ffffff;
+            border: 1px solid #d1d5db;
             border-radius: 8px;
             padding: 8px 12px;
             z-index: 100;
             min-width: 140px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
         .filter-panel.open { display: block; }
         .filter-panel label {
             display: block;
             padding: 4px 0;
             font-size: 0.85rem;
-            color: #cbd5e1;
+            color: #334155;
             cursor: pointer;
         }
         .filter-panel input[type="checkbox"] { margin-right: 6px; }
-        .empty-state { text-align: center; padding: 80px 20px; color: #64748b; }
-        .empty-state h2 { color: #94a3b8; margin-bottom: 12px; }
+        .empty-state { text-align: center; padding: 80px 20px; color: #94a3b8; }
+        .empty-state h2 { color: #64748b; margin-bottom: 12px; }
         @media (max-width: 768px) {
             .layout { flex-direction: column; }
             .sidebar {
@@ -1205,7 +1332,7 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                 height: auto;
                 position: static;
                 border-right: none;
-                border-bottom: 1px solid #334155;
+                border-bottom: 1px solid #e2e8f0;
             }
         }
     </style>
@@ -1213,27 +1340,30 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
 <body>
     <div class="layout">
         <nav class="sidebar">
-            <h2 id="hdr-openings">Openings</h2>
-            <div class="section-links" id="openings-links">
-                <a href="/" {% if page == 'openings' and not filter_eco %}class="active"{% endif %}>
-                    All deviations <span class="count">{{ total }}</span>
-                </a>
-                {% for g in groups %}
-                <a href="/opening/{{ g.eco_code }}/{{ g.color }}">
-                    {{ g.eco_name }} ({{ g.color }})
-                    <span class="count">{{ g.count }}</span>
-                </a>
-                {% endfor %}
+            <div class="sidebar-brand">
+                <svg viewBox="0 0 96.4 144"><path fill="#f97316" d="M48.2 0C35.4-.1 25 10.3 24.9 23.1c0 7.5 3.6 14.6 9.7 18.9L17.9 53c0 3.5.9 6.9 2.6 9.9h14.8c-.3 6.6 2.4 22.6-21.8 41.1C5 110.4 0 121.3 0 134.6c0 .6 1.3 9.4 48.2 9.4s48.2-8.8 48.2-9.4c0-13.3-5-24.3-13.4-30.7-24.2-18.5-21.5-34.5-21.8-41.1H76c1.7-3 2.6-6.4 2.6-9.8L61.8 42c10.4-7.5 12.8-21.9 5.3-32.3C62.8 3.6 55.7 0 48.2 0z"/></svg>
+                <span>Chessalyzer</span>
             </div>
-            <h2 id="hdr-analysis" style="margin-top: 24px;">Analysis</h2>
-            <div class="section-links" id="analysis-links">
-                <a href="/endgames" {% if page == 'endgames' %}class="active"{% endif %}>
-                    Endgames <span class="count">{{ endgame_count }}</span>
+            <div class="sidebar-nav">
+                <a href="/">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                    Openings
                 </a>
+                <a href="/endgames" {% if page == 'endgames' %}class="active"{% endif %}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                    Endgames
+                </a>
+            </div>
+            <div class="sidebar-divider"></div>
+            <div class="sidebar-bottom">
+                <button class="sync-btn" onclick="window.location.reload()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    Sync Games
+                </button>
             </div>
         </nav>
         <main class="main">
-            <h1>Chess Coach: <span class="user-badges">{% if chesscom_user %}<a class="user-badge" href="https://www.chess.com/member/{{ chesscom_user }}" target="_blank" rel="noopener"><svg viewBox="0 0 96.4 144"><path fill="#81b64c" d="M48.2 0C35.4-.1 25 10.3 24.9 23.1c0 7.5 3.6 14.6 9.7 18.9L17.9 53c0 3.5.9 6.9 2.6 9.9h14.8c-.3 6.6 2.4 22.6-21.8 41.1C5 110.4 0 121.3 0 134.6c0 .6 1.3 9.4 48.2 9.4s48.2-8.8 48.2-9.4c0-13.3-5-24.3-13.4-30.7-24.2-18.5-21.5-34.5-21.8-41.1H76c1.7-3 2.6-6.4 2.6-9.8L61.8 42c10.4-7.5 12.8-21.9 5.3-32.3C62.8 3.6 55.7 0 48.2 0z"/></svg>{{ chesscom_user }}</a>{% endif %}{% if lichess_user %}<a class="user-badge" href="https://lichess.org/@/{{ lichess_user }}" target="_blank" rel="noopener"><svg viewBox="0 0 50 50"><path fill="#fff" stroke="#fff" stroke-linejoin="round" d="M38.956.5c-3.53.418-6.452.902-9.286 2.984C5.534 1.786-.692 18.533.68 29.364 3.493 50.214 31.918 55.785 41.329 41.7c-7.444 7.696-19.276 8.752-28.323 3.084C3.959 39.116-.506 27.392 4.683 17.567 9.873 7.742 18.996 4.535 29.03 6.405c2.43-1.418 5.225-3.22 7.655-3.187l-1.694 4.86 12.752 21.37c-.439 5.654-5.459 6.112-5.459 6.112-.574-1.47-1.634-2.942-4.842-6.036-3.207-3.094-17.465-10.177-15.788-16.207-2.001 6.967 10.311 14.152 14.04 17.663 3.73 3.51 5.426 6.04 5.795 6.756 0 0 9.392-2.504 7.838-8.927L37.4 7.171z"/></svg>{{ lichess_user }}</a>{% endif %}</span></h1>
+            <h1>Chess Coach: <span class="user-badges">{% if chesscom_user %}<a class="user-badge" href="https://www.chess.com/member/{{ chesscom_user }}" target="_blank" rel="noopener"><svg viewBox="0 0 96.4 144"><path fill="#81b64c" d="M48.2 0C35.4-.1 25 10.3 24.9 23.1c0 7.5 3.6 14.6 9.7 18.9L17.9 53c0 3.5.9 6.9 2.6 9.9h14.8c-.3 6.6 2.4 22.6-21.8 41.1C5 110.4 0 121.3 0 134.6c0 .6 1.3 9.4 48.2 9.4s48.2-8.8 48.2-9.4c0-13.3-5-24.3-13.4-30.7-24.2-18.5-21.5-34.5-21.8-41.1H76c1.7-3 2.6-6.4 2.6-9.8L61.8 42c10.4-7.5 12.8-21.9 5.3-32.3C62.8 3.6 55.7 0 48.2 0z"/></svg>{{ chesscom_user }}</a>{% endif %}{% if lichess_user %}<a class="user-badge" href="https://lichess.org/@/{{ lichess_user }}" target="_blank" rel="noopener"><svg viewBox="0 0 50 50"><path fill="#000" stroke="#000" stroke-linejoin="round" d="M38.956.5c-3.53.418-6.452.902-9.286 2.984C5.534 1.786-.692 18.533.68 29.364 3.493 50.214 31.918 55.785 41.329 41.7c-7.444 7.696-19.276 8.752-28.323 3.084C3.959 39.116-.506 27.392 4.683 17.567 9.873 7.742 18.996 4.535 29.03 6.405c2.43-1.418 5.225-3.22 7.655-3.187l-1.694 4.86 12.752 21.37c-.439 5.654-5.459 6.112-5.459 6.112-.574-1.47-1.634-2.942-4.842-6.036-3.207-3.094-17.465-10.177-15.788-16.207-2.001 6.967 10.311 14.152 14.04 17.663 3.73 3.51 5.426 6.04 5.795 6.756 0 0 9.392-2.504 7.838-8.927L37.4 7.171z"/></svg>{{ lichess_user }}</a>{% endif %}</span></h1>
             <div class="subtitle">Endgame performance &mdash; sorted by
                 <select id="eg-sort-select" class="sort-select">
                     <option value="data-total" selected>Games</option>
@@ -1324,42 +1454,6 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
 
     <script>
     (function() {
-        /* Sidebar accordion */
-        (function() {
-            var sections = [
-                { hdr: document.getElementById('hdr-openings'), links: document.getElementById('openings-links') },
-                { hdr: document.getElementById('hdr-analysis'), links: document.getElementById('analysis-links') }
-            ];
-            var activePage = '{{ page }}';
-            var activeIdx = (activePage === 'endgames' || activePage === 'endgames_all') ? 1 : 0;
-            sections.forEach(function(s, i) {
-                if (i === activeIdx) {
-                    s.links.style.maxHeight = s.links.scrollHeight + 'px';
-                } else {
-                    s.links.classList.add('collapsed');
-                    s.hdr.classList.add('collapsed');
-                }
-                s.hdr.addEventListener('click', function() {
-                    sections.forEach(function(other) {
-                        if (other === s) {
-                            var isCollapsed = other.links.classList.contains('collapsed');
-                            if (isCollapsed) {
-                                other.links.classList.remove('collapsed');
-                                other.hdr.classList.remove('collapsed');
-                                other.links.style.maxHeight = other.links.scrollHeight + 'px';
-                            } else {
-                                other.links.classList.add('collapsed');
-                                other.hdr.classList.add('collapsed');
-                            }
-                        } else {
-                            other.links.classList.add('collapsed');
-                            other.hdr.classList.add('collapsed');
-                        }
-                    });
-                });
-            });
-        })();
-
         /* Sort dropdown for endgame cards */
         var sortSelect = document.getElementById('eg-sort-select');
         var container = document.querySelector('.main');
@@ -1560,85 +1654,97 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: system-ui, -apple-system, sans-serif;
-            background: #0f172a;
-            color: #e2e8f0;
+            background: #f8fafc;
+            color: #1e293b;
             min-height: 100vh;
         }
         .layout { display: flex; min-height: 100vh; }
         .sidebar {
-            width: 280px;
-            background: #1e293b;
-            border-right: 1px solid #334155;
-            padding: 20px 0;
+            width: 260px;
+            background: #ffffff;
+            border-right: 1px solid #e2e8f0;
             position: sticky;
             top: 0;
             height: 100vh;
             overflow-y: auto;
+            display: flex;
+            flex-direction: column;
             flex-shrink: 0;
         }
-        .sidebar h2 {
-            padding: 0 16px;
-            font-size: 0.85rem;
-            color: #64748b;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+        .sidebar-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 20px 20px 16px;
+            border-bottom: 1px solid #e2e8f0;
             margin-bottom: 8px;
-            cursor: pointer;
-            user-select: none;
+        }
+        .sidebar-brand svg { width: 28px; height: 28px; flex-shrink: 0; }
+        .sidebar-brand span {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #1e293b;
+            letter-spacing: -0.3px;
+        }
+        .sidebar-nav {
+            padding: 8px 0;
+        }
+        .sidebar-nav a {
             display: flex;
             align-items: center;
-            justify-content: space-between;
-        }
-        .sidebar h2::after {
-            content: "\25BE";
-            font-size: 0.8rem;
-            transition: transform 0.2s;
-        }
-        .sidebar h2.collapsed::after {
-            transform: rotate(-90deg);
-        }
-        .section-links {
-            overflow: hidden;
-            transition: max-height 0.25s ease;
-        }
-        .section-links.collapsed {
-            max-height: 0 !important;
-        }
-        .sidebar a {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 8px 16px;
-            color: #94a3b8;
+            gap: 10px;
+            padding: 10px 20px;
+            color: #64748b;
             text-decoration: none;
             font-size: 0.9rem;
+            font-weight: 500;
+            border-left: 3px solid transparent;
             transition: all 0.15s;
         }
-        .sidebar a:hover { background: #334155; color: #e2e8f0; }
-        .sidebar a.active {
-            background: #1e3a5f;
-            color: #60a5fa;
-            border-left: 3px solid #3b82f6;
+        .sidebar-nav a:hover { background: #f8fafc; color: #1e293b; }
+        .sidebar-nav a.active {
+            color: #f97316;
+            border-left-color: #f97316;
+            background: #fff7ed;
         }
-        .count {
-            background: #334155;
-            color: #94a3b8;
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 0.75rem;
+        .sidebar-nav a svg { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.7; }
+        .sidebar-nav a.active svg { opacity: 1; }
+        .sidebar-divider { height: 1px; background: #e2e8f0; margin: 8px 0; }
+        .sidebar-bottom {
+            margin-top: auto;
+            padding: 16px 20px;
+            border-top: 1px solid #e2e8f0;
         }
+        .sync-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            background: #f8fafc;
+            color: #64748b;
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .sync-btn:hover { background: #f1f5f9; color: #1e293b; border-color: #d1d5db; }
+        .sync-btn svg { width: 16px; height: 16px; }
         .main {
             flex: 1;
             padding: 30px 40px;
             max-width: 960px;
         }
-        h1 { font-size: 1.6rem; margin-bottom: 8px; color: #f8fafc; }
+        h1 { font-size: 1.6rem; margin-bottom: 8px; color: #1e293b; }
         .user-badges { display: inline; }
         .user-badge {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            background: #334155;
+            background: #f1f5f9;
             padding: 4px 12px;
             border-radius: 6px;
             font-size: 1rem;
@@ -1647,30 +1753,31 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
         }
         .user-badge + .user-badge { margin-left: 8px; }
         .user-badge svg { width: 18px; height: 18px; flex-shrink: 0; }
-        a.user-badge { color: #e2e8f0; text-decoration: none; transition: background 0.15s; }
-        a.user-badge:hover { background: #475569; }
-        .subtitle { color: #94a3b8; margin-bottom: 24px; font-size: 0.95rem; }
+        a.user-badge { color: #1e293b; text-decoration: none; transition: background 0.15s; }
+        a.user-badge:hover { background: #e2e8f0; }
+        .subtitle { color: #64748b; margin-bottom: 24px; font-size: 0.95rem; }
         .back-link {
             display: inline-block;
             margin-bottom: 16px;
-            color: #60a5fa;
+            color: #2563eb;
             text-decoration: none;
             font-size: 0.9rem;
         }
         .back-link:hover { text-decoration: underline; }
         .filter-wrapper { display: inline-block; position: relative; }
         .filter-btn {
-            background: #1e293b; color: #94a3b8; border: 1px solid #475569;
+            background: #ffffff; color: #334155; border: 1px solid #d1d5db;
             border-radius: 8px; padding: 6px 14px; font-size: 0.85rem; cursor: pointer;
         }
-        .filter-btn:hover { border-color: #60a5fa; }
+        .filter-btn:hover { border-color: #3b82f6; }
         .filter-panel {
             display: none; position: absolute; top: 100%; left: 0; margin-top: 4px;
-            background: #1e293b; border: 1px solid #475569; border-radius: 8px;
+            background: #ffffff; border: 1px solid #d1d5db; border-radius: 8px;
             padding: 8px 12px; z-index: 100; min-width: 140px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
         .filter-panel.open { display: block; }
-        .filter-panel label { display: block; padding: 4px 0; font-size: 0.85rem; cursor: pointer; white-space: nowrap; }
+        .filter-panel label { display: block; padding: 4px 0; font-size: 0.85rem; cursor: pointer; white-space: nowrap; color: #334155; }
         .filter-panel input[type="checkbox"] { margin-right: 6px; }
         .balance-badge {
             display: inline-block;
@@ -1679,21 +1786,22 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
             font-size: 0.8rem;
             font-weight: 500;
         }
-        .balance-equal { background: #334155; color: #94a3b8; }
-        .balance-up { background: #14532d; color: #4ade80; }
-        .balance-down { background: #450a0a; color: #f87171; }
+        .balance-equal { background: #f1f5f9; color: #64748b; }
+        .balance-up { background: #f0fdf4; color: #16a34a; }
+        .balance-down { background: #fef2f2; color: #dc2626; }
         .game-row {
-            background: #1e293b;
+            background: #ffffff;
             border-radius: 12px;
             padding: 20px 24px;
             margin-bottom: 16px;
             display: flex;
             align-items: flex-start;
             gap: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
         }
-        .board-spinner { text-align:center; padding:60px 0; color:#64748b; font-size:0.9rem; }
+        .board-spinner { text-align:center; padding:60px 0; color:#94a3b8; font-size:0.9rem; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .board-spinner::before { content:""; display:block; width:32px; height:32px; margin:0 auto 12px; border:3px solid #334155; border-top-color:#3b82f6; border-radius:50%; animation:spin .8s linear infinite; }
+        .board-spinner::before { content:""; display:block; width:32px; height:32px; margin:0 auto 12px; border:3px solid #e2e8f0; border-top-color:#3b82f6; border-radius:50%; animation:spin .8s linear infinite; }
         .game-board { flex-shrink: 0; text-align: center; }
         .game-board svg { border-radius: 4px; }
         .game-info { flex: 1; display: flex; flex-direction: column; gap: 8px; }
@@ -1705,9 +1813,9 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
             font-size: 0.85rem;
             font-weight: 600;
         }
-        .result-win { background: #166534; color: #4ade80; }
-        .result-loss { background: #7f1d1d; color: #f87171; }
-        .result-draw { background: #334155; color: #94a3b8; }
+        .result-win { background: #f0fdf4; color: #16a34a; }
+        .result-loss { background: #fef2f2; color: #dc2626; }
+        .result-draw { background: #f1f5f9; color: #64748b; }
         .eval-badge {
             display: inline-block;
             padding: 3px 10px;
@@ -1715,37 +1823,37 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
             font-size: 0.85rem;
             font-weight: 600;
         }
-        .eval-positive { background: #166534; color: #4ade80; }
-        .eval-negative { background: #7f1d1d; color: #f87171; }
-        .eval-zero     { background: #334155; color: #94a3b8; }
+        .eval-positive { background: #f0fdf4; color: #16a34a; }
+        .eval-negative { background: #fef2f2; color: #dc2626; }
+        .eval-zero     { background: #f1f5f9; color: #64748b; }
         .clock-badge {
             font-size: 0.85rem;
             display: inline-flex;
             align-items: center;
             gap: 4px;
         }
-        .clock-icon { color: #94a3b8; }
+        .clock-icon { color: #64748b; }
         .clock-you {
-            background: #16a34a22;
-            color: #4ade80;
+            background: #dcfce7;
+            color: #16a34a;
             padding: 1px 5px;
             border-radius: 4px;
             font-weight: 600;
         }
         .clock-opp {
-            background: #64748b22;
-            color: #94a3b8;
+            background: #f1f5f9;
+            color: #64748b;
             padding: 1px 5px;
             border-radius: 4px;
         }
         .game-link {
             font-size: 0.85rem;
-            color: #60a5fa;
+            color: #2563eb;
             text-decoration: none;
         }
-        .game-link:hover { text-decoration: underline; color: #93bbfc; }
-        .empty-state { text-align: center; padding: 80px 20px; color: #64748b; }
-        .empty-state h2 { color: #94a3b8; margin-bottom: 12px; }
+        .game-link:hover { text-decoration: underline; color: #1d4ed8; }
+        .empty-state { text-align: center; padding: 80px 20px; color: #94a3b8; }
+        .empty-state h2 { color: #64748b; margin-bottom: 12px; }
         @media (max-width: 768px) {
             .layout { flex-direction: column; }
             .sidebar {
@@ -1753,7 +1861,7 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
                 height: auto;
                 position: static;
                 border-right: none;
-                border-bottom: 1px solid #334155;
+                border-bottom: 1px solid #e2e8f0;
             }
             .game-row { flex-direction: column; align-items: center; }
         }
@@ -1762,23 +1870,26 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
 <body>
     <div class="layout">
         <nav class="sidebar">
-            <h2 id="hdr-openings">Openings</h2>
-            <div class="section-links" id="openings-links">
-                <a href="/">
-                    All deviations <span class="count">{{ total }}</span>
-                </a>
-                {% for g in groups %}
-                <a href="/opening/{{ g.eco_code }}/{{ g.color }}">
-                    {{ g.eco_name }} ({{ g.color }})
-                    <span class="count">{{ g.count }}</span>
-                </a>
-                {% endfor %}
+            <div class="sidebar-brand">
+                <svg viewBox="0 0 96.4 144"><path fill="#f97316" d="M48.2 0C35.4-.1 25 10.3 24.9 23.1c0 7.5 3.6 14.6 9.7 18.9L17.9 53c0 3.5.9 6.9 2.6 9.9h14.8c-.3 6.6 2.4 22.6-21.8 41.1C5 110.4 0 121.3 0 134.6c0 .6 1.3 9.4 48.2 9.4s48.2-8.8 48.2-9.4c0-13.3-5-24.3-13.4-30.7-24.2-18.5-21.5-34.5-21.8-41.1H76c1.7-3 2.6-6.4 2.6-9.8L61.8 42c10.4-7.5 12.8-21.9 5.3-32.3C62.8 3.6 55.7 0 48.2 0z"/></svg>
+                <span>Chessalyzer</span>
             </div>
-            <h2 id="hdr-analysis" style="margin-top: 24px;">Analysis</h2>
-            <div class="section-links" id="analysis-links">
-                <a href="/endgames" {% if page == 'endgames_all' %}class="active"{% endif %}>
-                    Endgames <span class="count">{{ endgame_count }}</span>
+            <div class="sidebar-nav">
+                <a href="/">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                    Openings
                 </a>
+                <a href="/endgames" class="active">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                    Endgames
+                </a>
+            </div>
+            <div class="sidebar-divider"></div>
+            <div class="sidebar-bottom">
+                <button class="sync-btn" onclick="window.location.reload()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    Sync Games
+                </button>
             </div>
         </nav>
         <main class="main">
@@ -1840,41 +1951,6 @@ _ENDGAME_ALL_GAMES_TEMPLATE = r"""<!DOCTYPE html>
 
     <script>
     (function() {
-        /* Sidebar accordion */
-        (function() {
-            var sections = [
-                { hdr: document.getElementById('hdr-openings'), links: document.getElementById('openings-links') },
-                { hdr: document.getElementById('hdr-analysis'), links: document.getElementById('analysis-links') }
-            ];
-            var activeIdx = 1;
-            sections.forEach(function(s, i) {
-                if (i === activeIdx) {
-                    s.links.style.maxHeight = s.links.scrollHeight + 'px';
-                } else {
-                    s.links.classList.add('collapsed');
-                    s.hdr.classList.add('collapsed');
-                }
-                s.hdr.addEventListener('click', function() {
-                    sections.forEach(function(other) {
-                        if (other === s) {
-                            var isCollapsed = other.links.classList.contains('collapsed');
-                            if (isCollapsed) {
-                                other.links.classList.remove('collapsed');
-                                other.hdr.classList.remove('collapsed');
-                                other.links.style.maxHeight = other.links.scrollHeight + 'px';
-                            } else {
-                                other.links.classList.add('collapsed');
-                                other.hdr.classList.add('collapsed');
-                            }
-                        } else {
-                            other.links.classList.add('collapsed');
-                            other.hdr.classList.add('collapsed');
-                        }
-                    });
-                });
-            });
-        })();
-
         var PAGE_SIZE = 10;
         var shownCount = 0;
         var fetchingBoards = false;

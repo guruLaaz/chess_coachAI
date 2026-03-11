@@ -106,6 +106,19 @@ def _select_option(page, select_id, value):
     page.wait_for_timeout(200)
 
 
+def _set_range(page, range_id, value):
+    """Set a range input value and dispatch input+change events."""
+    page.evaluate("""(args) => {
+        var el = document.getElementById(args[0]);
+        if (el) {
+            el.value = args[1];
+            el.dispatchEvent(new Event('input'));
+            el.dispatchEvent(new Event('change'));
+        }
+    }""", [range_id, str(value)])
+    page.wait_for_timeout(200)
+
+
 def _no_results_visible(page, elem_id):
     """Check if the no-results empty-state element is visible."""
     return page.evaluate(f"""() => {{
@@ -325,183 +338,98 @@ class TestOpeningsFilters:
         page = playwright_ctx.new_page()
         page.goto(server_url)
         page.wait_for_selector(".board-best svg", timeout=10000)
-        # Set min-games to 1 so all test cards are visible
-        _select_option(page, "min-games-select", "1")
+        # Set min-games to 1 and enable both colors so all test cards are visible
+        _set_range(page, "min-games-range", 1)
+        # Default is White-only; click Black to enable both
+        page.evaluate("""() => {
+            var btn = document.querySelector('.color-btn[data-color-filter="black"]');
+            if (btn && !btn.classList.contains('active')) btn.click();
+        }""")
+        page.wait_for_timeout(200)
         return page
 
-    # -- Time class filter --
+    # -- Default state --
 
-    def test_all_tc_checked_shows_all(self, playwright_ctx, server_url):
+    def test_default_shows_all(self, playwright_ctx, server_url):
+        """With min-games=1, all 4 cards show."""
         page = self._goto_openings(playwright_ctx, server_url)
         assert _filtered_count(page, ".card") == 4
         page.close()
 
-    def test_tc_blitz_only(self, playwright_ctx, server_url):
-        """Only the Sicilian (blitz) card should show."""
-        page = self._goto_openings(playwright_ctx, server_url)
-        _set_checkboxes(page, ".tc-filter", ["blitz"])
-        assert _filtered_count(page, ".card") == 1
-        page.close()
-
-    def test_tc_rapid_only(self, playwright_ctx, server_url):
-        """Only the French (rapid) card."""
-        page = self._goto_openings(playwright_ctx, server_url)
-        _set_checkboxes(page, ".tc-filter", ["rapid"])
-        assert _filtered_count(page, ".card") == 1
-        page.close()
-
-    def test_tc_bullet_only(self, playwright_ctx, server_url):
-        """Only the Italian (bullet) card."""
-        page = self._goto_openings(playwright_ctx, server_url)
-        _set_checkboxes(page, ".tc-filter", ["bullet"])
-        assert _filtered_count(page, ".card") == 1
-        page.close()
-
-    def test_tc_daily_only(self, playwright_ctx, server_url):
-        """Only the Caro-Kann (daily) card."""
-        page = self._goto_openings(playwright_ctx, server_url)
-        _set_checkboxes(page, ".tc-filter", ["daily"])
-        assert _filtered_count(page, ".card") == 1
-        page.close()
-
-    def test_tc_blitz_and_rapid(self, playwright_ctx, server_url):
-        """Sicilian + French."""
-        page = self._goto_openings(playwright_ctx, server_url)
-        _set_checkboxes(page, ".tc-filter", ["blitz", "rapid"])
-        assert _filtered_count(page, ".card") == 2
-        page.close()
-
-    def test_tc_none_shows_empty(self, playwright_ctx, server_url):
-        """Unchecking all TCs shows empty state."""
-        page = self._goto_openings(playwright_ctx, server_url)
-        _set_checkboxes(page, ".tc-filter", [])
-        assert _filtered_count(page, ".card") == 0
-        assert _no_results_visible(page, "no-results")
-        page.close()
-
-    # -- Platform filter --
+    # -- Platform filter (dropdown) --
 
     def test_platform_chesscom_only(self, playwright_ctx, server_url):
         """Sicilian + Italian (chess.com)."""
         page = self._goto_openings(playwright_ctx, server_url)
-        _set_checkboxes(page, ".platform-filter", ["chesscom"])
+        _select_option(page, "platform-select", "chesscom")
         assert _filtered_count(page, ".card") == 2
         page.close()
 
     def test_platform_lichess_only(self, playwright_ctx, server_url):
         """French + Caro-Kann (lichess)."""
         page = self._goto_openings(playwright_ctx, server_url)
-        _set_checkboxes(page, ".platform-filter", ["lichess"])
+        _select_option(page, "platform-select", "lichess")
         assert _filtered_count(page, ".card") == 2
         page.close()
 
-    def test_platform_none_shows_empty(self, playwright_ctx, server_url):
+    def test_platform_all_shows_all(self, playwright_ctx, server_url):
+        """Selecting 'all' platforms shows all cards."""
         page = self._goto_openings(playwright_ctx, server_url)
-        _set_checkboxes(page, ".platform-filter", [])
-        assert _filtered_count(page, ".card") == 0
-        assert _no_results_visible(page, "no-results")
+        _select_option(page, "platform-select", "chesscom")
+        assert _filtered_count(page, ".card") == 2
+        _select_option(page, "platform-select", "all")
+        assert _filtered_count(page, ".card") == 4
         page.close()
 
-    # -- Min games filter --
+    # -- Min games filter (range slider) --
 
     def test_min_games_1(self, playwright_ctx, server_url):
         """All 4 cards pass min=1."""
         page = self._goto_openings(playwright_ctx, server_url)
-        _select_option(page, "min-games-select", "1")
+        _set_range(page, "min-games-range", 1)
         assert _filtered_count(page, ".card") == 4
         page.close()
 
     def test_min_games_2(self, playwright_ctx, server_url):
         """Only Sicilian (3x played) passes min=2."""
         page = self._goto_openings(playwright_ctx, server_url)
-        _select_option(page, "min-games-select", "2")
+        _set_range(page, "min-games-range", 2)
         assert _filtered_count(page, ".card") == 1
         page.close()
 
     def test_min_games_5(self, playwright_ctx, server_url):
         """No card has 5+ plays."""
         page = self._goto_openings(playwright_ctx, server_url)
-        _select_option(page, "min-games-select", "5")
+        _set_range(page, "min-games-range", 5)
         assert _filtered_count(page, ".card") == 0
         assert _no_results_visible(page, "no-results")
         page.close()
 
     # -- Combined filters --
 
-    def test_tc_blitz_platform_chesscom(self, playwright_ctx, server_url):
-        """blitz + chess.com = Sicilian only."""
+    def test_platform_chesscom_min_2(self, playwright_ctx, server_url):
+        """chess.com + min 2 = Sicilian only (3x played, chess.com)."""
         page = self._goto_openings(playwright_ctx, server_url)
-        _set_checkboxes(page, ".tc-filter", ["blitz"])
-        _set_checkboxes(page, ".platform-filter", ["chesscom"])
+        _select_option(page, "platform-select", "chesscom")
+        _set_range(page, "min-games-range", 2)
         assert _filtered_count(page, ".card") == 1
         page.close()
 
-    def test_tc_rapid_platform_chesscom(self, playwright_ctx, server_url):
-        """rapid + chess.com = no match (French is lichess)."""
+    def test_platform_lichess_min_2(self, playwright_ctx, server_url):
+        """lichess + min 2 = nothing (both lichess openings are 1x)."""
         page = self._goto_openings(playwright_ctx, server_url)
-        _set_checkboxes(page, ".tc-filter", ["rapid"])
-        _set_checkboxes(page, ".platform-filter", ["chesscom"])
-        assert _filtered_count(page, ".card") == 0
-        assert _no_results_visible(page, "no-results")
-        page.close()
-
-    def test_tc_bullet_platform_lichess(self, playwright_ctx, server_url):
-        """bullet + lichess = no match (Italian is chess.com)."""
-        page = self._goto_openings(playwright_ctx, server_url)
-        _set_checkboxes(page, ".tc-filter", ["bullet"])
-        _set_checkboxes(page, ".platform-filter", ["lichess"])
-        assert _filtered_count(page, ".card") == 0
-        page.close()
-
-    def test_tc_daily_platform_lichess(self, playwright_ctx, server_url):
-        """daily + lichess = Caro-Kann."""
-        page = self._goto_openings(playwright_ctx, server_url)
-        _set_checkboxes(page, ".tc-filter", ["daily"])
-        _set_checkboxes(page, ".platform-filter", ["lichess"])
-        assert _filtered_count(page, ".card") == 1
-        page.close()
-
-    def test_tc_blitz_min_games_2(self, playwright_ctx, server_url):
-        """blitz + min 2 = Sicilian (3x blitz)."""
-        page = self._goto_openings(playwright_ctx, server_url)
-        _set_checkboxes(page, ".tc-filter", ["blitz"])
-        _select_option(page, "min-games-select", "2")
-        assert _filtered_count(page, ".card") == 1
-        page.close()
-
-    def test_tc_rapid_min_games_2(self, playwright_ctx, server_url):
-        """rapid + min 2 = nothing (French is 1x)."""
-        page = self._goto_openings(playwright_ctx, server_url)
-        _set_checkboxes(page, ".tc-filter", ["rapid"])
-        _select_option(page, "min-games-select", "2")
-        assert _filtered_count(page, ".card") == 0
-        page.close()
-
-    def test_all_three_filters_combined(self, playwright_ctx, server_url):
-        """blitz + chess.com + min 2 = Sicilian."""
-        page = self._goto_openings(playwright_ctx, server_url)
-        _set_checkboxes(page, ".tc-filter", ["blitz"])
-        _set_checkboxes(page, ".platform-filter", ["chesscom"])
-        _select_option(page, "min-games-select", "2")
-        assert _filtered_count(page, ".card") == 1
-        page.close()
-
-    def test_all_three_filters_no_match(self, playwright_ctx, server_url):
-        """bullet + lichess + min 2 = nothing."""
-        page = self._goto_openings(playwright_ctx, server_url)
-        _set_checkboxes(page, ".tc-filter", ["bullet"])
-        _set_checkboxes(page, ".platform-filter", ["lichess"])
-        _select_option(page, "min-games-select", "2")
+        _select_option(page, "platform-select", "lichess")
+        _set_range(page, "min-games-range", 2)
         assert _filtered_count(page, ".card") == 0
         assert _no_results_visible(page, "no-results")
         page.close()
 
     def test_filter_then_reset(self, playwright_ctx, server_url):
-        """Filtering down then re-checking all restores full list."""
+        """Filtering down by platform then resetting restores full list."""
         page = self._goto_openings(playwright_ctx, server_url)
-        _set_checkboxes(page, ".tc-filter", ["blitz"])
-        assert _filtered_count(page, ".card") == 1
-        _set_checkboxes(page, ".tc-filter", ["bullet", "blitz", "rapid", "daily"])
+        _select_option(page, "platform-select", "chesscom")
+        assert _filtered_count(page, ".card") == 2
+        _select_option(page, "platform-select", "all")
         assert _filtered_count(page, ".card") == 4
         page.close()
 

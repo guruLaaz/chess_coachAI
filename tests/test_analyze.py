@@ -711,6 +711,111 @@ class TestMain:
         MockParser.return_value.error.assert_called_once()
 
 
+class TestSingleUsername:
+    """Tests for providing only one username (Chess.com-only or Lichess-only)."""
+
+    @pytest.mark.asyncio
+    async def test_chesscom_only_skips_lichess(self):
+        """Only Chess.com is fetched when lichess_user is empty."""
+        with patch("analyze.fetch_games", new_callable=AsyncMock,
+                   return_value=[]) as mock_cc, \
+             patch("analyze.fetch_lichess_games", new_callable=AsyncMock,
+                   return_value=[]) as mock_li:
+            await fetch_all_sources("bob", "", 0)
+            mock_cc.assert_called_once()
+            mock_li.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_lichess_only_skips_chesscom(self):
+        """Only Lichess is fetched when chesscom_user is empty."""
+        with patch("analyze.fetch_games", new_callable=AsyncMock,
+                   return_value=[]) as mock_cc, \
+             patch("analyze.fetch_lichess_games", new_callable=AsyncMock,
+                   return_value=[]) as mock_li:
+            await fetch_all_sources("", "alice", 0)
+            mock_cc.assert_not_called()
+            mock_li.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_both_users_fetches_both(self):
+        """Both platforms are fetched when both usernames are provided."""
+        with patch("analyze.fetch_games", new_callable=AsyncMock,
+                   return_value=[]) as mock_cc, \
+             patch("analyze.fetch_lichess_games", new_callable=AsyncMock,
+                   return_value=[]) as mock_li:
+            await fetch_all_sources("bob", "alice", 0)
+            mock_cc.assert_called_once()
+            mock_li.assert_called_once()
+
+    @patch("analyze.EndgameClassifier")
+    @patch("analyze.run_analysis")
+    @patch("analyze.asyncio.run")
+    @patch("analyze.GameCache")
+    @patch("analyze.os.makedirs")
+    @patch("analyze.argparse.ArgumentParser")
+    @patch("analyze.os.path.isfile", return_value=True)
+    def test_chesscom_only_passes_validation(self, mock_isfile, MockParser,
+                                              mock_makedirs, MockCache,
+                                              mock_asyncio_run, mock_run_analysis,
+                                              MockEndgame):
+        """Chess.com-only (lichess_user='') passes validation and runs."""
+        MockEndgame.aggregate.return_value = []
+        args = MagicMock()
+        args.chesscom_user = "bob"
+        args.lichess_user = ""
+        args.days = 0
+        args.depth = 18
+        args.stockfish = "/path/to/stockfish"
+        args.book = "/path/to/book.bin"
+        args.workers = 1
+        args.no_cache = False
+        args.report = False
+        args.include = None
+        args.exclude = None
+        MockParser.return_value.parse_args.return_value = args
+        MockParser.return_value.error.side_effect = SystemExit(2)
+        mock_asyncio_run.return_value = [MagicMock()]
+        mock_run_analysis.return_value = None
+
+        main()  # should not raise
+
+        MockParser.return_value.error.assert_not_called()
+
+    @patch("analyze.EndgameClassifier")
+    @patch("analyze.run_analysis")
+    @patch("analyze.asyncio.run")
+    @patch("analyze.GameCache")
+    @patch("analyze.os.makedirs")
+    @patch("analyze.argparse.ArgumentParser")
+    @patch("analyze.os.path.isfile", return_value=True)
+    def test_lichess_only_passes_validation(self, mock_isfile, MockParser,
+                                             mock_makedirs, MockCache,
+                                             mock_asyncio_run, mock_run_analysis,
+                                             MockEndgame):
+        """Lichess-only (chesscom_user='') passes validation and runs."""
+        MockEndgame.aggregate.return_value = []
+        args = MagicMock()
+        args.chesscom_user = ""
+        args.lichess_user = "alice"
+        args.days = 0
+        args.depth = 18
+        args.stockfish = "/path/to/stockfish"
+        args.book = "/path/to/book.bin"
+        args.workers = 1
+        args.no_cache = False
+        args.report = False
+        args.include = None
+        args.exclude = None
+        MockParser.return_value.parse_args.return_value = args
+        MockParser.return_value.error.side_effect = SystemExit(2)
+        mock_asyncio_run.return_value = [MagicMock()]
+        mock_run_analysis.return_value = None
+
+        main()  # should not raise
+
+        MockParser.return_value.error.assert_not_called()
+
+
 class TestFetchLichessGames:
     """Tests for fetch_lichess_games()."""
 
