@@ -50,6 +50,12 @@ class CoachingReportGenerator:
                   / len(evaluations))
             if evaluations else 0
         )
+        # Accuracy = % of deviations with eval loss < 50cp (minor inaccuracies)
+        self.accuracy_pct = (
+            round(100 * sum(1 for ev in self.deviations if ev.eval_loss_cp < 50)
+                  / len(self.deviations))
+            if self.deviations else 0
+        )
         # Pre-compute item dicts (no SVGs — those are rendered lazily via API)
         self._cached_items = [self._prepare_deviation(ev) for ev in self.deviations]
 
@@ -235,6 +241,7 @@ class CoachingReportGenerator:
                 total_games_analyzed=self.total_games_analyzed,
                 avg_eval_loss=round(self.avg_eval_loss_cp / 100, 2),
                 theory_knowledge_pct=self.theory_knowledge_pct,
+                accuracy_pct=self.accuracy_pct,
             )
 
         @app.route("/opening/<eco_code>/<color>")
@@ -259,6 +266,7 @@ class CoachingReportGenerator:
                 total_games_analyzed=self.total_games_analyzed,
                 avg_eval_loss=round(self.avg_eval_loss_cp / 100, 2),
                 theory_knowledge_pct=self.theory_knowledge_pct,
+                accuracy_pct=self.accuracy_pct,
             )
 
         @app.route("/endgames")
@@ -845,26 +853,26 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                     <div class="stat-value">{{ "{:,}".format(total_games_analyzed) }}</div>
                     <div class="stat-label">Total Games Analyzed</div>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" title="Average centipawn loss across all your opening deviations. Lower is better.">
                     <div class="stat-value">{{ avg_eval_loss }}</div>
                     <div class="stat-label">Avg. Eval Loss</div>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" title="Percentage of games where you never deviated from book — either the game stayed fully in theory, or your opponent left book first.">
                     <div class="stat-value">{{ theory_knowledge_pct }}%</div>
                     <div class="stat-label">Theory Knowledge</div>
                 </div>
-                <div class="stat-card donut-card">
+                <div class="stat-card donut-card" title="Percentage of your deviations that lost less than 0.5 pawns (50 centipawns). Higher means your opening choices are more accurate.">
                     <svg viewBox="0 0 120 120" class="donut-chart" width="100" height="100">
                         <circle cx="60" cy="60" r="50" fill="none" stroke="#e2e8f0" stroke-width="12"/>
                         <circle cx="60" cy="60" r="50" fill="none" stroke="#3b82f6" stroke-width="12"
-                                stroke-dasharray="{{ (theory_knowledge_pct / 100 * 314.16)|round(1) }} 314.16"
+                                stroke-dasharray="{{ (accuracy_pct / 100 * 314.16)|round(1) }} 314.16"
                                 transform="rotate(-90 60 60)" stroke-linecap="round"/>
                         <text x="60" y="55" text-anchor="middle" font-size="20" font-weight="700"
-                              fill="#1e293b">{{ "{:,}".format(total_games_analyzed) }}</text>
+                              fill="#1e293b">{{ accuracy_pct }}%</text>
                         <text x="60" y="72" text-anchor="middle" font-size="9"
-                              fill="#64748b">Games</text>
+                              fill="#64748b">Accurate</text>
                     </svg>
-                    <div class="stat-label">Opening Performance</div>
+                    <div class="stat-label">Accuracy Rate</div>
                 </div>
             </div>
 
