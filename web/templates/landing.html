@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess CoachAI — Find Your Opening Weaknesses</title>
+    <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Ubuntu', sans-serif;
+            color: #111;
+            background: #fff;
+        }
+
+        /* Header */
+        header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            background: #fff;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+            height: 60px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 1.25rem;
+            font-weight: 500;
+            text-decoration: none;
+            color: #111;
+        }
+
+        .logo .icon {
+            font-size: 1.5rem;
+        }
+
+        .logo .ai {
+            color: #2563eb;
+            font-weight: 700;
+        }
+
+        .header-btn {
+            background: #2563eb;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-family: 'Ubuntu', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background 0.2s;
+        }
+
+        .header-btn:hover {
+            background: #1d4ed8;
+        }
+
+        /* Hero */
+        .hero {
+            background: #f0f4f8;
+            padding: 140px 24px 100px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid #d1d5db;
+            border-radius: 9999px;
+            padding: 6px 16px;
+            font-size: 0.85rem;
+            font-weight: 400;
+            color: #374151;
+            background: #fff;
+            margin-bottom: 24px;
+        }
+
+        h1 {
+            font-size: 3.2rem;
+            font-weight: 700;
+            line-height: 1.15;
+            margin-bottom: 20px;
+        }
+
+        h1 .blue {
+            color: #2563eb;
+        }
+
+        .subtitle {
+            color: #6b7280;
+            font-size: 1.1rem;
+            font-weight: 400;
+            line-height: 1.6;
+            max-width: 600px;
+            margin: 0 auto 48px;
+        }
+
+        /* Form Card */
+        .form-card {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            max-width: 560px;
+            width: 100%;
+            padding: 32px;
+        }
+
+        .input-row {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .input-group {
+            flex: 1;
+            text-align: left;
+        }
+
+        .input-group label {
+            display: block;
+            font-weight: 500;
+            font-size: 0.9rem;
+            margin-bottom: 6px;
+            color: #374151;
+        }
+
+        .input-wrapper {
+            position: relative;
+        }
+
+        .input-wrapper .prefix-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 1.1rem;
+            pointer-events: none;
+        }
+
+        .input-wrapper .prefix-icon.green {
+            color: #16a34a;
+        }
+
+        .input-wrapper .prefix-icon.dark {
+            color: #1f2937;
+        }
+
+        .input-wrapper input {
+            width: 100%;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 12px 12px 12px 40px;
+            font-size: 1rem;
+            font-family: 'Ubuntu', sans-serif;
+            font-weight: 400;
+            color: #111;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .input-wrapper input::placeholder {
+            color: #9ca3af;
+        }
+
+        .input-wrapper input:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .submit-btn {
+            width: 100%;
+            background: #2563eb;
+            color: #fff;
+            border: none;
+            padding: 14px;
+            border-radius: 8px;
+            font-family: 'Ubuntu', sans-serif;
+            font-size: 1.05rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .submit-btn:hover {
+            background: #1d4ed8;
+        }
+
+        .error-msg {
+            color: #dc2626;
+            font-size: 0.85rem;
+            margin-bottom: 12px;
+            display: none;
+            text-align: left;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            header {
+                padding: 0 16px;
+            }
+
+            .hero {
+                padding: 100px 16px 60px;
+            }
+
+            h1 {
+                font-size: 2rem;
+            }
+
+            .subtitle {
+                font-size: 1rem;
+            }
+
+            .input-row {
+                flex-direction: column;
+            }
+
+            .form-card {
+                padding: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/" class="logo">
+            <span class="icon">♞</span>
+            <span>Chess Coach<span class="ai">AI</span></span>
+        </a>
+        <a href="#form" class="header-btn">Start Analyzing</a>
+    </header>
+
+    <main>
+        <section class="hero">
+            <span class="badge">⚡ Powered by Stockfish 16</span>
+            <h1>
+                Find your opening weaknesses.<br>
+                <span class="blue">Fix your endgame habits.</span>
+            </h1>
+            <p class="subtitle">
+                Connect your accounts to run deep engine analysis.
+                Pinpoint exactly where you leave book theory and discover the best moves.
+            </p>
+
+            <div class="form-card" id="form">
+                <form action="/analyze" method="POST" id="analyze-form" novalidate>
+                    <div class="input-row">
+                        <div class="input-group">
+                            <label for="chesscom_username">Chess.com Username</label>
+                            <div class="input-wrapper">
+                                <span class="prefix-icon green">♟</span>
+                                <input type="text" id="chesscom_username" name="chesscom_username" placeholder="e.g., Hikaru">
+                            </div>
+                        </div>
+                        <div class="input-group">
+                            <label for="lichess_username">Lichess Username</label>
+                            <div class="input-wrapper">
+                                <span class="prefix-icon dark">♞</span>
+                                <input type="text" id="lichess_username" name="lichess_username" placeholder="e.g., DrNykterstein">
+                            </div>
+                        </div>
+                    </div>
+                    <p class="error-msg" id="error-msg">Please enter at least one username.</p>
+                    <button type="submit" class="submit-btn">Analyze My Games →</button>
+                </form>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        document.getElementById('analyze-form').addEventListener('submit', function(e) {
+            var chesscom = document.getElementById('chesscom_username').value.trim();
+            var lichess = document.getElementById('lichess_username').value.trim();
+            if (!chesscom && !lichess) {
+                e.preventDefault();
+                document.getElementById('error-msg').style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>

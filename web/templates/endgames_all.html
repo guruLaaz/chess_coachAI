@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Coach - {% if chesscom_user %}{{ chesscom_user }}{% endif %}{% if chesscom_user and lichess_user %} / {% endif %}{% if lichess_user %}{{ lichess_user }}{% endif %} - {{ eg_type }} ({{ balance }})</title>
+    <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Ubuntu', sans-serif;
+            background: #f8fafc;
+            color: #1e293b;
+            line-height: 1.6;
+        }
+        .layout { display: flex; min-height: 100vh; }
+        .sidebar {
+            width: 260px;
+            background: #ffffff;
+            border-right: 1px solid #e2e8f0;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+        .sidebar-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 20px 20px 16px;
+            border-bottom: 1px solid #e2e8f0;
+            margin-bottom: 8px;
+        }
+        .sidebar-brand svg { width: 28px; height: 28px; flex-shrink: 0; }
+        .sidebar-brand span {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #1e293b;
+            letter-spacing: -0.3px;
+        }
+        .sidebar-nav {
+            padding: 8px 0;
+        }
+        .sidebar-nav a {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 20px;
+            color: #64748b;
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            border-left: 3px solid transparent;
+            transition: all 0.15s;
+        }
+        .sidebar-nav a:hover { background: #f8fafc; color: #1e293b; }
+        .sidebar-nav a.active {
+            color: #f97316;
+            border-left-color: #f97316;
+            background: #fff7ed;
+        }
+        .sidebar-nav a svg { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.7; }
+        .sidebar-nav a.active svg { opacity: 1; }
+        .sidebar-divider { height: 1px; background: #e2e8f0; margin: 8px 0; }
+        .sidebar-section-label {
+            font-size: 0.7rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            font-weight: 600;
+            padding: 12px 20px 6px;
+        }
+        .sidebar-filter-group {
+            padding: 6px 20px;
+        }
+        .sidebar-filter-label {
+            font-size: 0.7rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: block;
+        }
+        .sidebar-filter-group label:not(.sidebar-filter-label) {
+            display: block;
+            padding: 3px 0;
+            font-size: 0.85rem;
+            cursor: pointer;
+            color: #334155;
+        }
+        .sidebar-filter-group input[type="checkbox"] { margin-right: 6px; }
+        .sidebar-select {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+            background: #f8fafc;
+            color: #334155;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+        .sidebar-select:focus { outline: none; border-color: #94a3b8; }
+        .color-toggle, .tc-toggle { display: flex; border: 1px solid #d1d5db; border-radius: 6px; overflow: hidden; }
+        .tc-toggle { flex-wrap: wrap; }
+        .tc-btn {
+            flex: 1 1 45%;
+            padding: 7px 8px;
+            border: none;
+            border-right: 1px solid #d1d5db;
+            border-bottom: 1px solid #d1d5db;
+            background: #ffffff;
+            color: #64748b;
+            font-size: 0.78rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .tc-btn:nth-child(2n) { border-right: none; }
+        .tc-btn:nth-child(n+3) { border-bottom: none; }
+        .tc-btn:hover { background: #f8fafc; color: #1e293b; }
+        .tc-btn.active { background: #e2e8f0; color: #1e293b; }
+        .color-btn {
+            flex: 1;
+            padding: 7px 12px;
+            border: none;
+            border-right: 1px solid #d1d5db;
+            background: #ffffff;
+            color: #64748b;
+            font-size: 0.82rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .color-btn:last-child { border-right: none; }
+        .color-btn:hover { background: #f8fafc; color: #1e293b; }
+        .color-btn.active { background: #e2e8f0; color: #1e293b; }
+        .sidebar-date {
+            width: 100%;
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            background: #f8fafc;
+            color: #334155;
+            font-size: 0.85rem;
+            font-family: inherit;
+            cursor: pointer;
+        }
+        .sidebar-date:focus { outline: none; border-color: #94a3b8; }
+        .date-presets {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+        .date-preset {
+            padding: 4px 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            background: #ffffff;
+            color: #64748b;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .date-preset:hover { border-color: #94a3b8; color: #1e293b; }
+        .date-preset.active { background: #f1f5f9; color: #1e293b; border-color: #94a3b8; }
+        .sidebar-range-wrap {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .sidebar-range {
+            flex: 1;
+            -webkit-appearance: none;
+            height: 4px;
+            border-radius: 2px;
+            background: #e2e8f0;
+            outline: none;
+        }
+        .sidebar-range::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px; height: 16px;
+            border-radius: 50%;
+            background: #f97316;
+            cursor: pointer;
+            border: 2px solid #fff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+        }
+        .sidebar-range::-moz-range-thumb {
+            width: 16px; height: 16px;
+            border-radius: 50%;
+            background: #f97316;
+            cursor: pointer;
+            border: 2px solid #fff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+        }
+        .sidebar-range-value {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #1e293b;
+            min-width: 20px;
+            text-align: right;
+        }
+        .sidebar-bottom {
+            margin-top: auto;
+            padding: 16px 20px;
+            border-top: 1px solid #e2e8f0;
+        }
+        .sync-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            padding: 10px 16px;
+            background: #0d9488;
+            color: #ffffff;
+            border: none;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .sync-btn:hover { background: #0f766e; }
+        .sync-btn svg { width: 16px; height: 16px; }
+        .main {
+            flex: 1;
+            padding: 30px 40px;
+            max-width: 960px;
+        }
+        h1 { font-size: 1.6rem; margin-bottom: 8px; color: #1e293b; }
+        .user-badges { display: inline; }
+        .user-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #f1f5f9;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 500;
+            vertical-align: middle;
+        }
+        .user-badge + .user-badge { margin-left: 8px; }
+        .user-badge svg { width: 18px; height: 18px; flex-shrink: 0; }
+        a.user-badge { color: #1e293b; text-decoration: none; transition: background 0.15s; }
+        a.user-badge:hover { background: #e2e8f0; }
+        .subtitle { color: #64748b; margin-bottom: 24px; font-size: 0.95rem; }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 16px;
+            color: #2563eb;
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+        .back-link:hover { text-decoration: underline; }
+        .filter-wrapper { display: inline-block; position: relative; }
+        .filter-btn {
+            background: #ffffff; color: #334155; border: 1px solid #d1d5db;
+            border-radius: 8px; padding: 6px 14px; font-size: 0.85rem; cursor: pointer;
+        }
+        .filter-btn:hover { border-color: #3b82f6; }
+        .filter-panel {
+            display: none; position: absolute; top: 100%; left: 0; margin-top: 4px;
+            background: #ffffff; border: 1px solid #d1d5db; border-radius: 8px;
+            padding: 8px 12px; z-index: 100; min-width: 140px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .filter-panel.open { display: block; }
+        .filter-panel label { display: block; padding: 4px 0; font-size: 0.85rem; cursor: pointer; white-space: nowrap; color: #334155; }
+        .filter-panel input[type="checkbox"] { margin-right: 6px; }
+        .balance-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        .balance-equal { background: #f1f5f9; color: #64748b; }
+        .balance-up { background: #f0fdf4; color: #16a34a; }
+        .balance-down { background: #fef2f2; color: #dc2626; }
+        .game-row {
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 20px 24px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: flex-start;
+            gap: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        .board-spinner { text-align:center; padding:60px 0; color:#94a3b8; font-size:0.9rem; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .board-spinner::before { content:""; display:block; width:32px; height:32px; margin:0 auto 12px; border:3px solid #e2e8f0; border-top-color:#3b82f6; border-radius:50%; animation:spin .8s linear infinite; }
+        .game-board { flex-shrink: 0; text-align: center; }
+        .game-board svg { border-radius: 4px; }
+        .game-info { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+        .game-badges { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .result-tag {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .result-win { background: #f0fdf4; color: #16a34a; }
+        .result-loss { background: #fef2f2; color: #dc2626; }
+        .result-draw { background: #f1f5f9; color: #64748b; }
+        .eval-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .eval-positive { background: #f0fdf4; color: #16a34a; }
+        .eval-negative { background: #fef2f2; color: #dc2626; }
+        .eval-zero     { background: #f1f5f9; color: #64748b; }
+        .clock-badge {
+            font-size: 0.85rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .clock-icon { color: #64748b; }
+        .clock-you {
+            background: #dcfce7;
+            color: #16a34a;
+            padding: 1px 5px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .clock-opp {
+            background: #f1f5f9;
+            color: #64748b;
+            padding: 1px 5px;
+            border-radius: 4px;
+        }
+        .game-link {
+            font-size: 0.85rem;
+            color: #2563eb;
+            text-decoration: none;
+        }
+        .game-link:hover { text-decoration: underline; color: #1d4ed8; }
+        .empty-state { text-align: center; padding: 80px 20px; color: #94a3b8; }
+        .empty-state h2 { color: #64748b; margin-bottom: 12px; }
+        @media (max-width: 768px) {
+            .layout { flex-direction: column; }
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: static;
+                border-right: none;
+                border-bottom: 1px solid #e2e8f0;
+            }
+            .game-row { flex-direction: column; align-items: center; }
+        }
+    </style>
+</head>
+<body>
+    <div class="layout">
+{% include "partials/sidebar.html" %}
+        <main class="main">
+            <a class="back-link" href="/u/{{ user_path }}/endgames">&larr; Back to endgames</a>
+            <h1>{{ eg_type }} <span class="balance-badge balance-{{ balance }}">{{ balance }}</span></h1>
+            <div class="subtitle"><span id="ag-game-count">{{ games|length }}</span> games &mdash; definition: {{ definition }} &mdash; sorted by most recent</div>
+            <div style="margin-bottom:16px">
+                <span class="filter-wrapper">
+                    <button class="filter-btn" id="ag-tc-btn">Time class &#9662;</button>
+                    <div class="filter-panel" id="ag-tc-panel">
+                        <label><input type="checkbox" class="ag-tc-filter" value="bullet" checked> Bullet</label>
+                        <label><input type="checkbox" class="ag-tc-filter" value="blitz" checked> Blitz</label>
+                        <label><input type="checkbox" class="ag-tc-filter" value="rapid" checked> Rapid</label>
+                        <label><input type="checkbox" class="ag-tc-filter" value="daily" checked> Daily</label>
+                    </div>
+                </span>
+            </div>
+
+            {% if games %}
+                {% for g in games %}
+                <div class="game-row" style="display:none" data-fen="{{ g.get('fen', '') }}" data-color="{{ g.get('my_color', 'white') }}" data-time-class="{{ g.get('time_class', '') }}">
+                    {% if g.get('fen') %}
+                    <div class="game-board">
+                        <div class="board-slot allgames-board"><div class="board-spinner">Loading board&hellip;</div></div>
+                    </div>
+                    {% endif %}
+                    <div class="game-info">
+                        <div class="game-badges">
+                            <span class="result-tag result-{{ g.result_class }}">{{ g.my_result|upper }}</span>
+                            {% set diff = g.get("material_diff", 0) %}
+                            <span class="eval-badge {{ 'eval-positive' if diff > 0 else 'eval-negative' if diff < 0 else 'eval-zero' }}">
+                                material {{ "+%d"|format(diff) if diff > 0 else diff }}
+                            </span>
+                            {% if g.my_clock_fmt %}
+                            <span class="clock-badge" title="Time remaining (you / opponent)">
+                                <span class="clock-icon">&#9201;</span>
+                                <span class="clock-you">{{ g.my_clock_fmt }}</span>
+                                {% if g.opp_clock_fmt %}<span class="clock-opp">{{ g.opp_clock_fmt }}</span>{% endif %}
+                            </span>
+                            {% endif %}
+                        </div>
+                        {% if g.deep_link %}
+                        <a class="game-link" href="{{ g.deep_link }}" target="_blank" rel="noopener">view game &rarr;</a>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            <div id="ag-no-results" class="empty-state" style="display:none">
+                <p>No games match the selected filters.</p>
+            </div>
+            {% else %}
+                <div class="empty-state">
+                    <h2>No games found</h2>
+                    <p>No games matched this endgame type and balance.</p>
+                </div>
+            {% endif %}
+        </main>
+    </div>
+
+    <script>
+    (function() {
+        var PAGE_SIZE = 10;
+        var shownCount = 0;
+        var fetchingBoards = false;
+        var allRows = Array.from(document.querySelectorAll('.game-row'));
+        var agTcChecks = document.querySelectorAll('.ag-tc-filter');
+        var gameCountEl = document.getElementById('ag-game-count');
+
+        function applyFilters() {
+            var enabledTC = new Set();
+            agTcChecks.forEach(function(c) { if (c.checked) enabledTC.add(c.value); });
+            var visibleCount = 0;
+            allRows.forEach(function(row) {
+                var tc = row.getAttribute('data-time-class');
+                var ok = !tc || enabledTC.has(tc);
+                row.setAttribute('data-filtered', ok ? 'yes' : 'no');
+                row.style.display = 'none';
+                if (ok) visibleCount++;
+            });
+            if (gameCountEl) gameCountEl.textContent = visibleCount;
+            shownCount = 0;
+            showNextBatch();
+            var noResults = document.getElementById('ag-no-results');
+            if (noResults) noResults.style.display = visibleCount > 0 ? 'none' : '';
+        }
+
+        agTcChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
+
+        function showNextBatch() {
+            if (fetchingBoards) return;
+            var passing = allRows.filter(function(r) { return r.getAttribute('data-filtered') === 'yes'; });
+            var end = Math.min(shownCount + PAGE_SIZE, passing.length);
+            var newRows = [];
+            for (var i = shownCount; i < end; i++) {
+                passing[i].style.display = '';
+                newRows.push(passing[i]);
+            }
+            shownCount = end;
+            loadBoards(newRows);
+        }
+
+        function loadBoards(items) {
+            var specs = [];
+            var targets = [];
+            items.forEach(function(row) {
+                var slot = row.querySelector('.allgames-board');
+                if (slot && slot.querySelector('.board-spinner')) {
+                    var fen = row.getAttribute('data-fen');
+                    if (fen) {
+                        specs.push({fen: fen, color: row.getAttribute('data-color')});
+                        targets.push(slot);
+                    }
+                }
+            });
+            if (!specs.length) return;
+            fetchingBoards = true;
+            fetch('/u/{{ user_path }}/api/render-boards', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(specs)
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(svgs) {
+                for (var i = 0; i < targets.length; i++) {
+                    targets[i].innerHTML = svgs[i];
+                }
+                fetchingBoards = false;
+                showNextBatch();
+            })
+            .catch(function() {
+                targets.forEach(function(t) { t.innerHTML = ''; });
+                fetchingBoards = false;
+                showNextBatch();
+            });
+        }
+
+        applyFilters();
+
+        window.addEventListener('scroll', function() {
+            if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 200) {
+                showNextBatch();
+            }
+        });
+
+        /* Dropdown panel toggle */
+        var agTcBtn = document.getElementById('ag-tc-btn');
+        var agTcPanel = document.getElementById('ag-tc-panel');
+        if (agTcBtn && agTcPanel) {
+            agTcBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                agTcPanel.classList.toggle('open');
+            });
+            document.addEventListener('click', function() { agTcPanel.classList.remove('open'); });
+        }
+    })();
+    </script>
+</body>
+</html>

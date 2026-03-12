@@ -5,3 +5,4 @@ __pycache__/
 engines/
 data/
 .claude/
+.env
