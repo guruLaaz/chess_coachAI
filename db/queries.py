@@ -4,6 +4,7 @@ Mirrors the GameCache method signatures but uses PostgreSQL via psycopg2.
 """
 
 import json
+import logging
 from datetime import datetime, timezone
 
 from psycopg2.extras import RealDictCursor
@@ -11,6 +12,8 @@ from psycopg2.extras import RealDictCursor
 from db.connection import get_connection
 from fetchers.repertoire_analyzer import OpeningEvaluation
 from fetchers.endgame_detector import EndgameInfo
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -89,12 +92,15 @@ def get_archive(archive_url):
             row = cur.fetchone()
             if row:
                 raw = row["raw_json"]
+                logger.debug("Archive cache hit: %s", archive_url)
                 return raw if isinstance(raw, dict) else json.loads(raw)
+            logger.debug("Archive cache miss: %s", archive_url)
             return None
 
 
 def save_archive(archive_url, username, data):
     """Cache an archive month's JSON (upsert)."""
+    game_count = len(data.get("games", []))
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -108,6 +114,7 @@ def save_archive(archive_url, username, data):
                  datetime.now(timezone.utc)),
             )
         conn.commit()
+    logger.debug("Saved archive %s for %s (%d games)", archive_url, username, game_count)
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +147,7 @@ def get_cached_evaluations(game_urls, depth):
     results = {}
     for row in rows:
         results[row["game_url"]] = _row_to_evaluation(row)
+    logger.info("Evaluation cache: %d/%d hits (depth=%d)", len(results), len(game_urls), depth)
     return results
 
 
@@ -203,6 +211,7 @@ def save_evaluations_batch(username, depth, evals):
                     _eval_insert_params(game_url, username, depth, ev),
                 )
         conn.commit()
+    logger.info("Saved %d evaluations for %s (depth=%d)", len(evals), username, depth)
 
 
 def get_all_evaluations_for_user(username, depth):
@@ -275,6 +284,7 @@ def save_endgames_batch(rows):
                     _endgame_insert_params(game_url, definition, info),
                 )
         conn.commit()
+    logger.info("Saved %d endgame rows", len(rows))
 
 
 def get_endgames(game_urls):
@@ -326,12 +336,15 @@ def create_job(chesscom_user=None, lichess_user=None):
             )
             job_id = cur.fetchone()[0]
         conn.commit()
+    logger.info("Created job %s (chesscom=%s, lichess=%s)", job_id, chesscom_user, lichess_user)
     return job_id
 
 
 def update_job(job_id, status=None, progress_pct=None, total_games=None,
                message=None, error_message=None):
     """Update fields on an analysis job."""
+    if status:
+        logger.debug("Job %s -> status=%s pct=%s msg=%s", job_id, status, progress_pct, message)
     sets = []
     params = []
     if status is not None:
@@ -395,3 +408,42 @@ def get_latest_job(chesscom_user=None, lichess_user=None):
             )
             row = cur.fetchone()
     return dict(row) if row else None
+
+
+def get_queue_position(job_id):
+    """Return (position, total) for a pending job in the queue.
+
+    position is 1-based (1 = next up). Returns (0, 0) if not pending.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT COUNT(*) FROM analysis_jobs
+                   WHERE status = 'pending'
+                     AND created_at <= (SELECT created_at FROM analysis_jobs WHERE id = %s)""",
+                (job_id,),
+            )
+            position = cur.fetchone()[0]
+            cur.execute(
+                "SELECT COUNT(*) FROM analysis_jobs WHERE status = 'pending'",
+            )
+            total = cur.fetchone()[0]
+    if position == 0:
+        return (0, 0)
+    return (position, total)
+
+
+def cancel_job(job_id):
+    """Cancel a pending job. Only cancels if still pending."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """DELETE FROM analysis_jobs
+                   WHERE id = %s AND status = 'pending'""",
+                (job_id,),
+            )
+            deleted = cur.rowcount
+        conn.commit()
+    if deleted:
+        logger.info("Cancelled pending job %s", job_id)
+    return deleted > 0

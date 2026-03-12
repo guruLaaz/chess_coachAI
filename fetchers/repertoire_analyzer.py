@@ -1,5 +1,6 @@
 # repertoire_analyzer.py
 
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from threading import Lock
@@ -8,6 +9,8 @@ from typing import List, Optional
 from game_utils import game_result
 from pgn_parser import PGNParser
 from stockfish_evaluator import StockfishEvaluator
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -82,6 +85,8 @@ class RepertoireAnalyzer:
         board_after = deviation.board_at_deviation.copy()
         board_after.push(deviation.played_move)
         eval_after = evaluator.evaluate(board_after)
+        if eval_after is None:
+            return 0
         return eval_before_cp - eval_after.score_for_color(color)
 
     def analyze_game(self, game):
@@ -93,9 +98,8 @@ class RepertoireAnalyzer:
             return None
 
         if not game.time_class:
-            import warnings
             url = getattr(game, 'game_url', 'unknown')
-            warnings.warn(f"Skipping game with missing time_class: {url}")
+            logger.warning("Skipping game with missing time_class: %s", url)
             return None
 
         moves = PGNParser.parse_moves(game.pgn)
@@ -107,9 +111,20 @@ class RepertoireAnalyzer:
             return None
 
         eval_result = self.stockfish_evaluator.evaluate(deviation.board_at_deviation)
+        if eval_result is None:
+            logger.warning("Skipping game %s: engine error", getattr(game, 'game_url', 'unknown'))
+            return None
         eval_cp = eval_result.score_for_color(game.my_color)
-        eval_loss_cp = self._compute_eval_loss(
-            deviation, eval_cp, self.stockfish_evaluator, game.my_color)
+
+        # If the played move matches the engine's best move, eval_loss is 0 by definition.
+        # Computing it via two separate evaluations can produce noise from search depth variance.
+        played_uci = deviation.played_move.uci() if deviation.played_move else None
+        best_uci = eval_result.best_move.uci() if eval_result.best_move else None
+        if played_uci and played_uci == best_uci:
+            eval_loss_cp = 0
+        else:
+            eval_loss_cp = self._compute_eval_loss(
+                deviation, eval_cp, self.stockfish_evaluator, game.my_color)
 
         eco_name = game.eco_name or "Unknown Opening"
         if eco_name.lower().startswith("undefined"):
@@ -209,12 +224,18 @@ class RepertoireAnalyzer:
 
         # Phase 1: pre-process (PGN parse + book lookup) — fast, sequential
         prepared = []
+        skipped = 0
         for game in games:
             result = self._preprocess_game(game)
             if result is not None:
                 prepared.append(result)
+            else:
+                skipped += 1
 
         total = len(prepared)
+        logger.info("Repertoire analysis: %d games to analyze, %d skipped, %d cached, workers=%d",
+                     total, skipped, len(cached_evaluations) if cached_evaluations else 0, workers)
+
         if total == 0:
             if progress_callback:
                 progress_callback(0, 0)
@@ -225,6 +246,7 @@ class RepertoireAnalyzer:
         else:
             new_evals = self._analyze_parallel(prepared, total, progress_callback, workers, stats)
 
+        logger.info("Repertoire analysis complete: %d new evaluations", len(new_evals))
         return stats, new_evals
 
     def _analyze_sequential(self, prepared, total, progress_callback, stats):
@@ -235,6 +257,9 @@ class RepertoireAnalyzer:
                 progress_callback(i + 1, total)
 
             eval_result = self.stockfish_evaluator.evaluate(deviation.board_at_deviation)
+            if eval_result is None:
+                logger.warning("Skipping game %s: engine error", getattr(game, 'game_url', 'unknown'))
+                continue
             eval_cp = eval_result.score_for_color(game.my_color)
             eval_loss_cp = self._compute_eval_loss(
                 deviation, eval_cp, self.stockfish_evaluator, game.my_color)
@@ -256,6 +281,13 @@ class RepertoireAnalyzer:
             batch_evals = []
             for game, deviation, moves in batch:
                 eval_result = engine.evaluate(deviation.board_at_deviation)
+                if eval_result is None:
+                    logger.warning("Skipping game %s: engine error", getattr(game, 'game_url', 'unknown'))
+                    with lock:
+                        completed[0] += 1
+                        if progress_callback:
+                            progress_callback(completed[0], total)
+                    continue
                 eval_cp = eval_result.score_for_color(game.my_color)
                 eval_loss_cp = self._compute_eval_loss(
                     deviation, eval_cp, engine, game.my_color)

@@ -5,41 +5,88 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chess Coach - {% if chesscom_user %}{{ chesscom_user }}{% endif %}{% if chesscom_user and lichess_user %} / {% endif %}{% if lichess_user %}{{ lichess_user }}{% endif %}</title>
     <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script>try{var t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.setAttribute('data-theme','dark')}catch(e){}</script>
     <style>
+        :root {
+            --bg-body: #f8fafc;
+            --bg-primary: #ffffff;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --text-muted: #94a3b8;
+            --text-label: #334155;
+            --border: #e2e8f0;
+            --border-input: #d1d5db;
+            --card-bg: #ffffff;
+            --card-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            --badge-bg: #f1f5f9;
+            --toggle-active-bg: #e2e8f0;
+            --input-bg: #f8fafc;
+            --ctrl-active-bg: #f1f5f9;
+            --donut-text: #1e293b;
+            --sort-bg: #ffffff;
+        }
+        [data-theme="dark"] {
+            --bg-body: #0f172a;
+            --bg-primary: #1e293b;
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --text-label: #cbd5e1;
+            --border: #334155;
+            --border-input: #475569;
+            --card-bg: #1e293b;
+            --card-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            --badge-bg: #334155;
+            --toggle-active-bg: #475569;
+            --input-bg: #0f172a;
+            --ctrl-active-bg: #334155;
+            --donut-text: #e2e8f0;
+            --sort-bg: #1e293b;
+        }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: 'Ubuntu', sans-serif;
-            background: #f8fafc;
-            color: #1e293b;
+            background: var(--bg-body);
+            color: var(--text-primary);
             line-height: 1.6;
         }
-        .layout { display: flex; min-height: 100vh; }
+        .site-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+            height: 60px;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 1.25rem;
+            font-weight: 500;
+            text-decoration: none;
+            color: var(--text-primary);
+        }
+        .logo .icon { font-size: 1.5rem; }
+        .logo .ai { color: var(--blue, #2563eb); font-weight: 700; }
+        .layout { display: flex; min-height: 100vh; padding-top: 60px; }
         .sidebar {
             width: 260px;
-            background: #ffffff;
-            border-right: 1px solid #e2e8f0;
+            background: var(--bg-primary);
+            border-right: 1px solid var(--border);
             position: sticky;
-            top: 0;
-            height: 100vh;
+            top: 60px;
+            height: calc(100vh - 60px);
             overflow-y: auto;
             display: flex;
             flex-direction: column;
             flex-shrink: 0;
-        }
-        .sidebar-brand {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 20px 20px 16px;
-            border-bottom: 1px solid #e2e8f0;
-            margin-bottom: 8px;
-        }
-        .sidebar-brand svg { width: 28px; height: 28px; flex-shrink: 0; }
-        .sidebar-brand span {
-            font-size: 1.2rem;
-            font-weight: 700;
-            color: #1e293b;
-            letter-spacing: -0.3px;
         }
         .sidebar-nav {
             padding: 8px 0;
@@ -49,25 +96,26 @@
             align-items: center;
             gap: 10px;
             padding: 10px 20px;
-            color: #64748b;
+            color: var(--text-secondary);
             text-decoration: none;
             font-size: 0.9rem;
             font-weight: 500;
             border-left: 3px solid transparent;
             transition: all 0.15s;
         }
-        .sidebar-nav a:hover { background: #f8fafc; color: #1e293b; }
+        .sidebar-nav a:hover { background: var(--bg-body); color: var(--text-primary); }
         .sidebar-nav a.active {
             color: #f97316;
             border-left-color: #f97316;
             background: #fff7ed;
         }
+        [data-theme="dark"] .sidebar-nav a.active { background: #431407; }
         .sidebar-nav a svg { width: 18px; height: 18px; flex-shrink: 0; opacity: 0.7; }
         .sidebar-nav a.active svg { opacity: 1; }
-        .sidebar-divider { height: 1px; background: #e2e8f0; margin: 8px 0; }
+        .sidebar-divider { height: 1px; background: var(--border); margin: 8px 0; }
         .sidebar-section-label {
             font-size: 0.7rem;
-            color: #94a3b8;
+            color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 0.8px;
             font-weight: 600;
@@ -78,7 +126,7 @@
         }
         .sidebar-filter-label {
             font-size: 0.7rem;
-            color: #94a3b8;
+            color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 0.8px;
             font-weight: 600;
@@ -90,30 +138,30 @@
             padding: 3px 0;
             font-size: 0.85rem;
             cursor: pointer;
-            color: #334155;
+            color: var(--text-label);
         }
         .sidebar-filter-group input[type="checkbox"] { margin-right: 6px; }
         .sidebar-select {
             width: 100%;
             padding: 10px 12px;
             border-radius: 10px;
-            border: 1px solid #e2e8f0;
-            background: #f8fafc;
-            color: #334155;
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text-label);
             font-size: 0.9rem;
             cursor: pointer;
         }
-        .sidebar-select:focus { outline: none; border-color: #94a3b8; }
-        .color-toggle, .tc-toggle { display: flex; border: 1px solid #d1d5db; border-radius: 6px; overflow: hidden; }
+        .sidebar-select:focus { outline: none; border-color: var(--text-muted); }
+        .color-toggle, .tc-toggle { display: flex; border: 1px solid var(--border-input); border-radius: 6px; overflow: hidden; }
         .tc-toggle { flex-wrap: wrap; }
         .tc-btn {
             flex: 1 1 45%;
             padding: 7px 8px;
             border: none;
-            border-right: 1px solid #d1d5db;
-            border-bottom: 1px solid #d1d5db;
-            background: #ffffff;
-            color: #64748b;
+            border-right: 1px solid var(--border-input);
+            border-bottom: 1px solid var(--border-input);
+            background: var(--bg-primary);
+            color: var(--text-secondary);
             font-size: 0.78rem;
             font-weight: 500;
             cursor: pointer;
@@ -121,35 +169,35 @@
         }
         .tc-btn:nth-child(2n) { border-right: none; }
         .tc-btn:nth-child(n+3) { border-bottom: none; }
-        .tc-btn:hover { background: #f8fafc; color: #1e293b; }
-        .tc-btn.active { background: #e2e8f0; color: #1e293b; }
+        .tc-btn:hover { background: var(--bg-body); color: var(--text-primary); }
+        .tc-btn.active { background: var(--toggle-active-bg); color: var(--text-primary); }
         .color-btn {
             flex: 1;
             padding: 7px 12px;
             border: none;
-            border-right: 1px solid #d1d5db;
-            background: #ffffff;
-            color: #64748b;
+            border-right: 1px solid var(--border-input);
+            background: var(--bg-primary);
+            color: var(--text-secondary);
             font-size: 0.82rem;
             font-weight: 500;
             cursor: pointer;
             transition: all 0.15s;
         }
         .color-btn:last-child { border-right: none; }
-        .color-btn:hover { background: #f8fafc; color: #1e293b; }
-        .color-btn.active { background: #e2e8f0; color: #1e293b; }
+        .color-btn:hover { background: var(--bg-body); color: var(--text-primary); }
+        .color-btn.active { background: var(--toggle-active-bg); color: var(--text-primary); }
         .sidebar-date {
             width: 100%;
             padding: 8px 10px;
             border-radius: 8px;
-            border: 1px solid #e2e8f0;
-            background: #f8fafc;
-            color: #334155;
+            border: 1px solid var(--border);
+            background: var(--input-bg);
+            color: var(--text-label);
             font-size: 0.85rem;
             font-family: inherit;
             cursor: pointer;
         }
-        .sidebar-date:focus { outline: none; border-color: #94a3b8; }
+        .sidebar-date:focus { outline: none; border-color: var(--text-muted); }
         .date-presets {
             display: flex;
             flex-wrap: wrap;
@@ -158,16 +206,16 @@
         }
         .date-preset {
             padding: 4px 10px;
-            border: 1px solid #e2e8f0;
+            border: 1px solid var(--border);
             border-radius: 6px;
-            background: #ffffff;
-            color: #64748b;
+            background: var(--bg-primary);
+            color: var(--text-secondary);
             font-size: 0.75rem;
             cursor: pointer;
             transition: all 0.15s;
         }
-        .date-preset:hover { border-color: #94a3b8; color: #1e293b; }
-        .date-preset.active { background: #f1f5f9; color: #1e293b; border-color: #94a3b8; }
+        .date-preset:hover { border-color: var(--text-muted); color: var(--text-primary); }
+        .date-preset.active { background: var(--badge-bg); color: var(--text-primary); border-color: var(--text-muted); }
         .sidebar-range-wrap {
             display: flex;
             align-items: center;
@@ -178,7 +226,7 @@
             -webkit-appearance: none;
             height: 4px;
             border-radius: 2px;
-            background: #e2e8f0;
+            background: var(--border);
             outline: none;
         }
         .sidebar-range::-webkit-slider-thumb {
@@ -201,14 +249,14 @@
         .sidebar-range-value {
             font-size: 0.85rem;
             font-weight: 600;
-            color: #1e293b;
+            color: var(--text-primary);
             min-width: 20px;
             text-align: right;
         }
         .sidebar-bottom {
             margin-top: auto;
             padding: 16px 20px;
-            border-top: 1px solid #e2e8f0;
+            border-top: 1px solid var(--border);
         }
         .sync-btn {
             display: flex;
@@ -233,13 +281,13 @@
             padding: 32px;
             max-width: 960px;
         }
-        h1 { font-size: 1.8rem; color: #1e293b; margin-bottom: 8px; }
+        h1 { font-size: 1.8rem; color: var(--text-primary); margin-bottom: 8px; }
         .user-badges { display: inline; }
         .user-badge {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            background: #f1f5f9;
+            background: var(--badge-bg);
             padding: 4px 12px;
             border-radius: 6px;
             font-size: 1rem;
@@ -248,19 +296,19 @@
         }
         .user-badge + .user-badge { margin-left: 8px; }
         .user-badge svg { width: 18px; height: 18px; flex-shrink: 0; }
-        a.user-badge { color: #1e293b; text-decoration: none; transition: background 0.15s; }
-        a.user-badge:hover { background: #e2e8f0; }
-        .subtitle { color: #64748b; margin-bottom: 32px; font-size: 0.95rem; }
-        .board-spinner { text-align:center; padding:60px 0; color:#94a3b8; font-size:0.9rem; }
+        a.user-badge { color: var(--text-primary); text-decoration: none; transition: background 0.15s; }
+        a.user-badge:hover { background: var(--toggle-active-bg); }
+        .subtitle { color: var(--text-secondary); margin-bottom: 32px; font-size: 0.95rem; }
+        .board-spinner { text-align:center; padding:60px 0; color:var(--text-muted); font-size:0.9rem; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .board-spinner::before { content:""; display:block; width:32px; height:32px; margin:0 auto 12px; border:3px solid #e2e8f0; border-top-color:#3b82f6; border-radius:50%; animation:spin .8s linear infinite; }
+        .board-spinner::before { content:""; display:block; width:32px; height:32px; margin:0 auto 12px; border:3px solid var(--border); border-top-color:#3b82f6; border-radius:50%; animation:spin .8s linear infinite; }
         .card {
-            background: #ffffff;
+            background: var(--card-bg);
             border-radius: 12px;
             padding: 24px;
             margin-bottom: 24px;
             border-left: 4px solid #f97316;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            box-shadow: var(--card-shadow);
         }
         .card.positive { border-left-color: #22c55e; }
         .card-header {
@@ -271,13 +319,13 @@
             flex-wrap: wrap;
             gap: 8px;
         }
-        .card-title { font-size: 1.15rem; font-weight: 600; color: #1e293b; }
+        .card-title { font-size: 1.15rem; font-weight: 600; color: var(--text-primary); }
         .eco-badge {
-            background: #f1f5f9;
+            background: var(--badge-bg);
             padding: 2px 8px;
             border-radius: 4px;
             font-size: 0.8rem;
-            color: #64748b;
+            color: var(--text-secondary);
         }
         .eval-badges { display: flex; gap: 8px; align-items: center; }
         .eval-badge {
@@ -292,8 +340,8 @@
             padding: 4px 8px;
             border-radius: 6px;
             font-size: 0.75rem;
-            background: #f1f5f9;
-            color: #64748b;
+            background: var(--badge-bg);
+            color: var(--text-secondary);
         }
         .result-badge {
             padding: 4px 8px;
@@ -312,17 +360,17 @@
             margin: 16px 0;
         }
         .board-panel { text-align: center; }
-        .board-panel h4 { margin-bottom: 8px; font-size: 0.95rem; color: #64748b; }
+        .board-panel h4 { margin-bottom: 8px; font-size: 0.95rem; color: var(--text-secondary); }
         .board-panel h4.best { color: #16a34a; }
         .board-panel h4.played { color: #dc2626; }
         .board-panel svg { border-radius: 4px; }
-        .meta { margin-top: 12px; font-size: 0.9rem; color: #64748b; }
+        .meta { margin-top: 12px; font-size: 0.9rem; color: var(--text-secondary); }
         .times-badge {
-            background: #f1f5f9;
+            background: var(--badge-bg);
             padding: 2px 8px;
             border-radius: 4px;
             font-size: 0.8rem;
-            color: #64748b;
+            color: var(--text-secondary);
         }
         .times-badge.recurring { background: #e0e7ff; color: #4338ca; }
         .recommendation {
@@ -344,9 +392,9 @@
         .game-link:hover { text-decoration: underline; color: #1d4ed8; }
         .sort-controls { display: inline; }
         .sort-select {
-            background: #ffffff;
-            color: #334155;
-            border: 1px solid #d1d5db;
+            background: var(--sort-bg);
+            color: var(--text-label);
+            border: 1px solid var(--border-input);
             border-radius: 6px;
             padding: 4px 8px;
             font-size: 0.9rem;
@@ -359,9 +407,9 @@
             margin-left: 12px;
         }
         .filter-btn {
-            background: #ffffff;
-            color: #334155;
-            border: 1px solid #d1d5db;
+            background: var(--bg-primary);
+            color: var(--text-label);
+            border: 1px solid var(--border-input);
             border-radius: 6px;
             padding: 4px 10px;
             font-size: 0.9rem;
@@ -374,8 +422,8 @@
             top: 100%;
             left: 0;
             margin-top: 4px;
-            background: #ffffff;
-            border: 1px solid #d1d5db;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-input);
             border-radius: 8px;
             padding: 8px 12px;
             z-index: 100;
@@ -387,15 +435,15 @@
             display: block;
             padding: 4px 0;
             font-size: 0.85rem;
-            color: #334155;
+            color: var(--text-label);
             cursor: pointer;
         }
         .filter-panel input[type="checkbox"] { margin-right: 6px; }
         .stats-bar { display: flex; gap: 16px; margin-bottom: 28px; }
         .stat-card {
             flex: 1;
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
             border-radius: 12px;
             padding: 16px 20px;
             text-align: center;
@@ -408,7 +456,7 @@
         }
         .stat-card-games .stat-icon {
             width: 40px; height: 40px;
-            background: #eff6ff;
+            background: var(--badge-bg);
             border-radius: 10px;
             display: flex; align-items: center; justify-content: center;
             flex-shrink: 0;
@@ -421,20 +469,22 @@
         }
         .stat-card-games .stat-delta.positive { color: #16a34a; }
         .stat-card-games .stat-delta.neutral { color: #94a3b8; }
-        .stat-value { font-size: 1.8rem; font-weight: 700; color: #1e293b; }
-        .stat-label { font-size: 0.8rem; color: #64748b; margin-top: 4px; }
+        .stat-value { font-size: 1.8rem; font-weight: 700; color: var(--text-primary); }
+        .stat-label { font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; }
         .donut-card { display: flex; flex-direction: column; align-items: center; justify-content: center; }
         .donut-chart { display: block; }
-        .empty-state { text-align: center; padding: 80px 20px; color: #94a3b8; }
-        .empty-state h2 { color: #64748b; margin-bottom: 12px; }
+        .donut-chart text { fill: var(--text-primary); }
+        .empty-state { text-align: center; padding: 80px 20px; color: var(--text-muted); }
+        .empty-state h2 { color: var(--text-secondary); margin-bottom: 12px; }
         @media (max-width: 768px) {
+            .site-header { padding: 0 16px; }
             .layout { flex-direction: column; }
             .sidebar {
                 width: 100%;
                 height: auto;
                 position: static;
                 border-right: none;
-                border-bottom: 1px solid #e2e8f0;
+                border-bottom: 1px solid var(--border);
             }
             .boards { flex-direction: column; align-items: center; }
             .stats-bar { flex-direction: column; }
@@ -449,21 +499,21 @@
             {% if filter_eco %}
             <div class="subtitle">Showing {{ items|length }} deviations for {{ filter_eco }} as {{ filter_color }} &mdash; sorted by
                 <select id="sort-select" class="sort-select">
-                    <option value="eval-loss">Biggest mistake</option>
-                    <option value="loss-pct">Loss %</option>
+                    <option value="eval-loss" data-i18n="sort_biggest">Biggest mistake</option>
+                    <option value="loss-pct" data-i18n="sort_losspct">Loss %</option>
                 </select></div>
             {% else %}
-            <div class="subtitle">{{ items|length }} positions where you deviated from book/engine &mdash; sorted by
+            <div class="subtitle">{{ items|length }} <span data-i18n="endgame_subtitle_prefix">positions where you deviated from book/engine</span> &mdash; sorted by
                 <select id="sort-select" class="sort-select">
-                    <option value="eval-loss">Biggest mistake</option>
-                    <option value="loss-pct">Loss %</option>
+                    <option value="eval-loss" data-i18n="sort_biggest">Biggest mistake</option>
+                    <option value="loss-pct" data-i18n="sort_losspct">Loss %</option>
                 </select></div>
             {% endif %}
 
             <div class="stats-bar">
                 <div class="stat-card stat-card-games">
                     <div>
-                        <div class="stat-label">Total Games Analyzed</div>
+                        <div class="stat-label" data-i18n="stat_total_games">Total Games Analyzed</div>
                         <div class="stat-value">{{ "{:,}".format(total_games_analyzed) }}</div>
                         {% if new_games_analyzed > 0 %}
                         <div class="stat-delta positive">
@@ -484,22 +534,22 @@
                 </div>
                 <div class="stat-card" title="Average centipawn loss across all your opening deviations. Lower is better.">
                     <div class="stat-value">{{ avg_eval_loss }}</div>
-                    <div class="stat-label">Avg. Eval Loss</div>
+                    <div class="stat-label" data-i18n="stat_avg_eval">Avg. Eval Loss</div>
                 </div>
                 <div class="stat-card" title="Percentage of games where you never deviated from book — either the game stayed fully in theory, or your opponent left book first.">
                     <div class="stat-value">{{ theory_knowledge_pct }}%</div>
-                    <div class="stat-label">Theory Knowledge</div>
+                    <div class="stat-label" data-i18n="stat_theory">Theory Knowledge</div>
                 </div>
                 <div class="stat-card donut-card" title="Percentage of your deviations that lost less than 0.5 pawns (50 centipawns). Higher means your opening choices are more accurate.">
                     <svg viewBox="0 0 120 120" class="donut-chart" width="100" height="100">
-                        <circle cx="60" cy="60" r="50" fill="none" stroke="#e2e8f0" stroke-width="12"/>
+                        <circle cx="60" cy="60" r="50" fill="none" stroke="var(--border)" stroke-width="12"/>
                         <circle cx="60" cy="60" r="50" fill="none" stroke="#3b82f6" stroke-width="12"
                                 stroke-dasharray="{{ (accuracy_pct / 100 * 314.16)|round(1) }} 314.16"
                                 transform="rotate(-90 60 60)" stroke-linecap="round"/>
                         <text x="60" y="60" text-anchor="middle" dominant-baseline="central" font-size="20" font-weight="700"
                               fill="#1e293b">{{ accuracy_pct }}%</text>
                     </svg>
-                    <div class="stat-label">Accuracy Rate</div>
+                    <div class="stat-label" data-i18n="stat_accuracy">Accuracy Rate</div>
                 </div>
             </div>
 
@@ -561,18 +611,6 @@
         /* ECO search — filters sidebar opening links */
         /* Sort dropdown */
         var select = document.getElementById('sort-select');
-        if (select) {
-            select.addEventListener('change', function() {
-                var container = document.querySelector('.main');
-                var cards = Array.from(container.querySelectorAll('.card'));
-                if (!cards.length) return;
-                var attr = 'data-' + select.value;
-                cards.sort(function(a, b) {
-                    return parseFloat(b.getAttribute(attr)) - parseFloat(a.getAttribute(attr));
-                });
-                cards.forEach(function(card) { container.appendChild(card); });
-            });
-        }
 
         /* Playing As color filter (toggle: both active = show all) */
         var colorBtns = document.querySelectorAll('.color-btn');
@@ -729,9 +767,22 @@
 
         if (platformSelect) { platformSelect.addEventListener('change', applyFilters); }
 
+        function sortCards() {
+            if (!select) return;
+            var container = document.querySelector('.main');
+            var cards = Array.from(container.querySelectorAll('.card'));
+            if (!cards.length) return;
+            var attr = 'data-' + select.value;
+            cards.sort(function(a, b) {
+                return parseFloat(b.getAttribute(attr)) - parseFloat(a.getAttribute(attr));
+            });
+            cards.forEach(function(card) { container.appendChild(card); });
+        }
+
         /* Restore saved filter state or auto-escalate TC on first visit */
         var restored = restoreFilterState();
         function hasResults() { return !!document.querySelector('.card[data-filtered="yes"]'); }
+        sortCards();
         applyFilters();
         if (!restored && !hasResults() && tcBtns.length > 0) {
             var bullet = document.querySelector('.tc-btn[data-tc-filter="bullet"]');
@@ -748,16 +799,20 @@
             }
         }
 
+        if (select) {
+            select.addEventListener('change', function() {
+                sortCards();
+                fetchingBoards = false;
+                applyFilters();
+            });
+        }
+
         window.addEventListener('scroll', function() {
             if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 200) {
                 showNextBatch();
             }
         });
 
-        /* Re-apply after sort */
-        if (select) {
-            select.addEventListener('change', function() { applyFilters(); });
-        }
     })();
     </script>
 </body>

@@ -1,5 +1,6 @@
 """Flask route definitions for Chess CoachAI."""
 
+import logging
 import re
 from datetime import datetime, timezone
 
@@ -11,6 +12,8 @@ from web.reports import (
     render_board_svg,
 )
 from db import queries
+
+logger = logging.getLogger(__name__)
 
 # Validation pattern: alphanumeric, underscores, hyphens
 USERNAME_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
@@ -37,14 +40,19 @@ def register_routes(app):
         chesscom = (request.form.get('chesscom_username') or '').strip()
         lichess = (request.form.get('lichess_username') or '').strip()
 
+        logger.info("Analysis requested: chesscom=%s lichess=%s", chesscom or '-', lichess or '-')
+
         # Validate: at least one must be non-empty
         if not chesscom and not lichess:
+            logger.warning("Analysis rejected: no username provided")
             return 'At least one username is required.', 400
 
         # Validate format
         if not validate_username(chesscom):
+            logger.warning("Invalid Chess.com username: %s", chesscom)
             return f'Invalid Chess.com username: {chesscom}', 400
         if not validate_username(lichess):
+            logger.warning("Invalid Lichess username: %s", lichess)
             return f'Invalid Lichess username: {lichess}', 400
 
         chesscom_lower = chesscom.lower() if chesscom else None
@@ -61,9 +69,13 @@ def register_routes(app):
             if job['status'] == 'complete' and job.get('completed_at'):
                 age = datetime.now(timezone.utc) - job['completed_at']
                 if age.total_seconds() < 3600:
+                    logger.info("Reusing recent complete job %s for %s (age %ds)",
+                                job['id'], user_path, int(age.total_seconds()))
                     return redirect(f'/u/{user_path}')
 
             if job['status'] in ('pending', 'fetching', 'analyzing'):
+                logger.info("Job %s already in progress for %s (status=%s)",
+                            job['id'], user_path, job['status'])
                 return redirect(f'/u/{user_path}/status')
 
         # Create new job and dispatch
@@ -71,13 +83,14 @@ def register_routes(app):
             chesscom_user=chesscom_lower,
             lichess_user=lichess_lower,
         )
+        logger.info("Created job %s for %s", job_id, user_path)
 
         try:
             from worker.tasks import analyze_user
             analyze_user.delay(job_id, chesscom_lower, lichess_lower)
+            logger.info("Dispatched Celery task for job %s", job_id)
         except ImportError:
-            # Worker module not yet available — job created but not dispatched
-            pass
+            logger.error("Worker module not available — job %s created but not dispatched", job_id)
 
         return redirect(f'/u/{user_path}/status')
 
@@ -91,9 +104,11 @@ def register_routes(app):
         )
 
         if not job:
+            logger.info("No job found for %s, redirecting to landing", user_path)
             return redirect('/')
 
         if job['status'] == 'complete':
+            logger.info("Loading report for %s (job %s)", user_path, job['id'])
             data = load_openings_data(chesscom, lichess)
             data['user_path'] = user_path
             data['page'] = 'openings'
@@ -108,6 +123,8 @@ def register_routes(app):
             return redirect(f'/u/{user_path}/status')
 
         # Failed or unknown status
+        logger.warning("Job %s has status '%s' for %s, redirecting to landing",
+                        job['id'], job['status'], user_path)
         return redirect('/')
 
     @app.route('/u/<path:user_path>/opening/<eco>/<color>')
@@ -192,10 +209,31 @@ def register_routes(app):
         if not job:
             return jsonify({'status': 'not_found'}), 404
 
-        return jsonify({
+        data = {
             'status': job['status'],
             'progress_pct': job.get('progress_pct', 0),
             'total_games': job.get('total_games', 0),
             'message': job.get('message') or '',
             'error_message': job.get('error_message') or '',
-        })
+        }
+
+        if job['status'] == 'pending':
+            position, total = queries.get_queue_position(job['id'])
+            data['queue_position'] = position
+            data['queue_total'] = total
+
+        return jsonify(data)
+
+    @app.route('/u/<path:user_path>/status/cancel', methods=['POST'])
+    def status_cancel(user_path):
+        """Cancel a pending job when the user leaves the status page."""
+        chesscom, lichess = parse_user_path(user_path)
+        job = queries.get_latest_job(
+            chesscom_user=chesscom,
+            lichess_user=lichess,
+        )
+        if job and job['status'] == 'pending':
+            queries.cancel_job(job['id'])
+            logger.info("User left status page, cancelled pending job %s for %s",
+                        job['id'], user_path)
+        return '', 204

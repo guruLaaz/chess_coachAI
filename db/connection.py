@@ -1,3 +1,4 @@
+import logging
 import os
 import threading
 from contextlib import contextmanager
@@ -5,6 +6,8 @@ from contextlib import contextmanager
 import psycopg2
 from psycopg2.pool import ThreadedConnectionPool
 from psycopg2.extras import RealDictCursor
+
+logger = logging.getLogger(__name__)
 
 _pool = None
 _pool_lock = threading.Lock()
@@ -25,6 +28,7 @@ def _get_pool():
                     maxconn=10,
                     dsn=database_url,
                 )
+                logger.info("Database connection pool initialized (min=2, max=10)")
     return _pool
 
 
@@ -34,11 +38,13 @@ def init_pool(database_url=None):
     with _pool_lock:
         if _pool is not None:
             _pool.closeall()
+            logger.info("Closed existing connection pool")
         dsn = database_url or os.environ.get(
             "DATABASE_URL",
             "postgresql://localhost/chesscoach",
         )
         _pool = ThreadedConnectionPool(minconn=2, maxconn=10, dsn=dsn)
+        logger.info("Database connection pool initialized (min=2, max=10)")
 
 
 def close_pool():
@@ -48,6 +54,7 @@ def close_pool():
         if _pool is not None:
             _pool.closeall()
             _pool = None
+            logger.info("Database connection pool closed")
 
 
 @contextmanager
@@ -57,5 +64,9 @@ def get_connection():
     conn = pool.getconn()
     try:
         yield conn
+    except Exception:
+        logger.error("Database error, rolling back", exc_info=True)
+        conn.rollback()
+        raise
     finally:
         pool.putconn(conn)

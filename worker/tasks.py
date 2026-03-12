@@ -11,8 +11,10 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "fetchers"))
 
 from worker.celery_app import app
-from config import STOCKFISH_PATH, BOOK_PATH, ANALYSIS_DEPTH, STOCKFISH_WORKERS
+from config import STOCKFISH_PATH, BOOK_PATH, ANALYSIS_DEPTH, STOCKFISH_WORKERS, setup_logging
 import db.queries as dbq
+
+setup_logging()
 
 from chesscom_fetcher import ChessCom_Fetcher
 from lichess_fetcher import LichessFetcher
@@ -40,6 +42,7 @@ async def _fetch_chesscom_games(username, job_id=None):
     fetcher = ChessCom_Fetcher(user_agent="chess_coachAI/1.0")
     archive_urls = await fetcher.get_archives(username)
     total_archives = len(archive_urls)
+    logger.info("Chess.com: %d archives to process for '%s'", total_archives, username)
 
     raw_games = []
     for i, url in enumerate(archive_urls, 1):
@@ -55,8 +58,11 @@ async def _fetch_chesscom_games(username, job_id=None):
             dbq.update_job(job_id, progress_pct=pct,
                            message=f"Fetching Chess.com archive {i}/{total_archives} ({len(raw_games)} games)")
 
-    return [g for g in (ChessGame.from_json(g, username) for g in raw_games)
-            if g is not None]
+    games = [g for g in (ChessGame.from_json(g, username) for g in raw_games)
+             if g is not None]
+    logger.info("Chess.com: fetched %d raw, %d valid games for '%s'",
+                len(raw_games), len(games), username)
+    return games
 
 
 async def _get_lichess_game_count(username):
@@ -70,9 +76,11 @@ async def _get_lichess_game_count(username):
             ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    return data.get("count", {}).get("all", 0)
+                    count = data.get("count", {}).get("all", 0)
+                    logger.debug("Lichess game count for '%s': %d", username, count)
+                    return count
     except Exception:
-        pass
+        logger.warning("Failed to get Lichess game count for '%s'", username, exc_info=True)
     return 0
 
 
@@ -135,11 +143,14 @@ def analyze_user(self, job_id, chesscom_user=None, lichess_user=None):
         games = asyncio.run(_fetch_all(chesscom_user, lichess_user, job_id))
 
         if not games:
+            logger.warning("Job %s: no games found for chesscom=%s, lichess=%s",
+                           job_id, chesscom_user, lichess_user)
             dbq.update_job(job_id, status="complete", progress_pct=100,
                            total_games=0, message="No games found.")
             return {"job_id": job_id, "total_games": 0}
 
         total = len(games)
+        logger.info("Job %s: fetched %d total games, starting analysis", job_id, total)
         dbq.update_job(job_id, status="analyzing", total_games=total,
                        progress_pct=30,
                        message=f"Fetched {total} games, starting analysis")
@@ -155,6 +166,8 @@ def analyze_user(self, job_id, chesscom_user=None, lichess_user=None):
             if g.game_url not in cached_endgames
             or len(cached_endgames[g.game_url]) < len(ENDGAME_DEFINITIONS)
         ]
+        logger.info("Job %s: endgame analysis — %d cached, %d to analyze",
+                     job_id, len(cached_endgames), len(uncached_endgame_games))
 
         new_rows = []
         for game in uncached_endgame_games:
@@ -164,6 +177,7 @@ def analyze_user(self, job_id, chesscom_user=None, lichess_user=None):
 
         if new_rows:
             dbq.save_endgames_batch(new_rows)
+            logger.info("Job %s: saved %d endgame rows", job_id, len(new_rows))
 
         dbq.update_job(job_id, progress_pct=40,
                        message=f"Endgame analysis complete, starting openings")
@@ -180,9 +194,12 @@ def analyze_user(self, job_id, chesscom_user=None, lichess_user=None):
         uncached_games = [g for g in games if g.game_url not in cached_urls]
 
         username = chesscom_user or lichess_user
+        logger.info("Job %s: opening analysis — %d cached, %d to analyze (depth=%d, workers=%d)",
+                     job_id, len(cached_evals), len(uncached_games), depth, workers)
 
         if not uncached_games and cached_evals:
             # Everything cached — no engine work needed
+            logger.info("Job %s: all evaluations cached, skipping engine", job_id)
             dbq.update_job(job_id, progress_pct=95,
                            message="All games cached, skipping engine analysis")
             new_evals = []

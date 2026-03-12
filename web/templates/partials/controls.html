@@ -1,0 +1,240 @@
+<!-- Theme + Language controls (include once per page) -->
+<style>
+    .site-controls {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .lang-toggle {
+        display: flex;
+        border: 1px solid var(--border, #e2e8f0);
+        border-radius: 6px;
+        overflow: hidden;
+        height: 28px;
+    }
+    .lang-btn {
+        padding: 0 8px;
+        border: none;
+        background: transparent;
+        color: var(--text-muted, #94a3b8);
+        font-size: 0.7rem;
+        font-weight: 600;
+        font-family: inherit;
+        cursor: pointer;
+        transition: all 0.15s;
+        letter-spacing: 0.3px;
+    }
+    .lang-btn:first-child { border-right: 1px solid var(--border, #e2e8f0); }
+    .lang-btn:hover { color: var(--text-primary, #1e293b); }
+    .lang-btn.active {
+        background: var(--ctrl-active-bg, #f1f5f9);
+        color: var(--text-primary, #1e293b);
+    }
+    .theme-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border: 1px solid var(--border, #e2e8f0);
+        border-radius: 6px;
+        background: transparent;
+        cursor: pointer;
+        transition: all 0.15s;
+        color: var(--text-muted, #94a3b8);
+    }
+    .theme-btn:hover {
+        color: var(--text-primary, #1e293b);
+        background: var(--ctrl-active-bg, #f1f5f9);
+    }
+    .theme-btn svg { width: 14px; height: 14px; }
+    .theme-btn .icon-moon { display: none; }
+    [data-theme="dark"] .theme-btn .icon-sun { display: none; }
+    [data-theme="dark"] .theme-btn .icon-moon { display: block; }
+</style>
+
+<div class="site-controls">
+    <div class="lang-toggle">
+        <button class="lang-btn active" data-lang="en">EN</button>
+        <button class="lang-btn" data-lang="fr">FR</button>
+    </div>
+    <button class="theme-btn" id="theme-toggle" title="Toggle dark mode">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+</div>
+
+<script>
+(function() {
+    /* ── Theme toggle ── */
+    var saved = localStorage.getItem('theme');
+    if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+    }
+    var themeBtn = document.getElementById('theme-toggle');
+    if (themeBtn) {
+        themeBtn.addEventListener('click', function() {
+            var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            if (isDark) {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('theme', 'light');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                localStorage.setItem('theme', 'dark');
+            }
+        });
+    }
+
+    /* ── Language toggle ── */
+    var translations = {
+        /* Landing */
+        'badge': { en: 'Powered by Stockfish 16', fr: 'Propuls\u00e9 par Stockfish 16' },
+        'hero_line1': { en: 'Find your opening weaknesses.', fr: 'Trouvez vos faiblesses en ouverture.' },
+        'hero_line2': { en: 'Fix your endgame habits.', fr: 'Corrigez vos habitudes en finale.' },
+        'subtitle': { en: 'Connect your accounts to run deep engine analysis. Pinpoint exactly where you leave book theory and discover the best moves.', fr: 'Connectez vos comptes pour lancer une analyse moteur approfondie. Identifiez pr\u00e9cis\u00e9ment o\u00f9 vous quittez la th\u00e9orie et d\u00e9couvrez les meilleurs coups.' },
+        'label_chesscom': { en: 'Chess.com Username', fr: 'Nom d\u2019utilisateur Chess.com' },
+        'label_lichess': { en: 'Lichess Username', fr: 'Nom d\u2019utilisateur Lichess' },
+        'submit_btn': { en: 'Analyze My Games \u2192', fr: 'Analyser mes parties \u2192' },
+        'error_msg': { en: 'Please enter at least one username.', fr: 'Veuillez entrer au moins un nom d\u2019utilisateur.' },
+        /* Status */
+        'back_home': { en: '\u2190 Back to Home', fr: '\u2190 Retour \u00e0 l\u2019accueil' },
+        'retry_btn': { en: 'Try Again \u2192', fr: 'R\u00e9essayer \u2192' },
+        /* Sidebar */
+        'nav_openings': { en: 'Openings', fr: 'Ouvertures' },
+        'nav_endgames': { en: 'Endgames', fr: 'Finales' },
+        'filter_label': { en: 'Filters', fr: 'Filtres' },
+        'filter_platform': { en: 'Platform', fr: 'Plateforme' },
+        'filter_all_platforms': { en: 'All Platforms', fr: 'Toutes les plateformes' },
+        'filter_time_control': { en: 'Time Control', fr: 'Cadence' },
+        'filter_playing_as': { en: 'Playing As', fr: 'Jouer avec' },
+        'filter_min_games': { en: 'Min. Games:', fr: 'Min. parties\u00a0:' },
+        'filter_from': { en: 'From', fr: 'Depuis' },
+        'filter_alltime': { en: 'All-time', fr: 'Tout' },
+        'filter_lastweek': { en: 'Last week', fr: 'Semaine' },
+        'filter_6months': { en: '6 months', fr: '6 mois' },
+        'filter_lastyear': { en: 'Last year', fr: '1 an' },
+        'sync_btn': { en: 'Sync Games', fr: 'Synchroniser' },
+        /* Report stats */
+        'stat_total_games': { en: 'Total Games Analyzed', fr: 'Parties analys\u00e9es' },
+        'stat_avg_eval': { en: 'Avg. Eval Loss', fr: 'Perte moy.' },
+        'stat_theory': { en: 'Theory Knowledge', fr: 'Connaissance th\u00e9orique' },
+        'stat_accuracy': { en: 'Accuracy Rate', fr: 'Taux de pr\u00e9cision' },
+        'sort_biggest': { en: 'Biggest mistake', fr: 'Plus grosse erreur' },
+        'sort_losspct': { en: 'Loss %', fr: '% de d\u00e9faites' },
+        'empty_title': { en: 'No deviations found', fr: 'Aucune d\u00e9viation trouv\u00e9e' },
+        'empty_msg': { en: 'Either all your moves are in the book, or cached data lacks coaching info.', fr: 'Soit tous vos coups sont dans le livre, soit les donn\u00e9es en cache manquent d\u2019informations.' },
+        'no_filter_results': { en: 'No openings match the selected filters.', fr: 'Aucune ouverture ne correspond aux filtres.' },
+        /* Endgame specific */
+        'endgame_subtitle_prefix': { en: 'positions where you deviated from book/engine', fr: 'positions o\u00f9 vous avez d\u00e9vi\u00e9 du livre/moteur' },
+        /* Status page (dynamic) */
+        'status_queued_title': { en: 'Your analysis is queued...', fr: 'Votre analyse est en file d\u2019attente\u2026' },
+        'status_queued_msg': { en: "You're in line. Analysis will begin shortly.", fr: 'Vous \u00eates en file d\u2019attente. L\u2019analyse commencera bient\u00f4t.' },
+        'status_queue_position': { en: 'Position: {0} of {1}', fr: 'Position\u00a0: {0} sur {1}' },
+        'status_fetching_title': { en: 'Fetching your games...', fr: 'R\u00e9cup\u00e9ration de vos parties\u2026' },
+        'status_fetching_msg': { en: 'Downloading games from Chess.com and Lichess.', fr: 'T\u00e9l\u00e9chargement des parties depuis Chess.com et Lichess.' },
+        'status_analyzing_title': { en: 'Analyzing your openings...', fr: 'Analyse de vos ouvertures\u2026' },
+        'status_analyzing_msg': { en: 'Running engine analysis...', fr: 'Analyse moteur en cours\u2026' },
+        'status_complete_title': { en: 'Analysis complete!', fr: 'Analyse termin\u00e9e\u00a0!' },
+        'status_complete_msg': { en: 'Redirecting to your report...', fr: 'Redirection vers votre rapport\u2026' },
+        'status_failed_title': { en: 'Analysis failed', fr: 'L\u2019analyse a \u00e9chou\u00e9' },
+        'status_failed_msg': { en: 'Something went wrong during analysis.', fr: 'Une erreur s\u2019est produite lors de l\u2019analyse.' },
+        'status_checking_title': { en: 'Checking status...', fr: 'V\u00e9rification du statut\u2026' },
+        'status_checking_msg': { en: 'Please wait.', fr: 'Veuillez patienter.' },
+        'status_pct_complete': { en: 'complete', fr: 'termin\u00e9' },
+        'status_fetching_chesscom': { en: 'Fetching Chess.com games...', fr: 'R\u00e9cup\u00e9ration des parties Chess.com\u2026' },
+        'status_fetching_lichess': { en: 'Fetching Lichess games...', fr: 'R\u00e9cup\u00e9ration des parties Lichess\u2026' },
+        'status_analyzing_game': { en: 'Analyzing game', fr: 'Analyse de la partie' },
+        /* Backend progress messages */
+        'status_fetching_archive': { en: 'Fetching Chess.com archive', fr: 'Récupération de l\u2019archive Chess.com' },
+        'status_fetched_lichess': { en: 'Fetched {0} Lichess games', fr: '{0} parties Lichess récupérées' },
+        'status_fetched_starting': { en: 'Fetched {0} games, starting analysis', fr: '{0} parties récupérées, début de l\u2019analyse' },
+        'status_endgame_done': { en: 'Endgame analysis complete, starting openings', fr: 'Analyse des finales terminée, début des ouvertures' },
+        'status_all_cached': { en: 'All games cached, skipping engine analysis', fr: 'Toutes les parties en cache, analyse moteur ignorée' },
+        'status_analysis_done': { en: 'Analysis complete: {0} games', fr: 'Analyse terminée\u00a0: {0} parties' },
+        'status_no_games': { en: 'No games found.', fr: 'Aucune partie trouvée.' }
+    };
+
+    // Helper: get translated string by key
+    window._t = function(key) {
+        var l = localStorage.getItem('lang') || 'en';
+        if (translations[key] && translations[key][l]) return translations[key][l];
+        return null;
+    };
+
+    // Helper: translate server progress messages
+    window._tMsg = function(serverMsg) {
+        if (!serverMsg) return null;
+        var l = localStorage.getItem('lang') || 'en';
+        if (l === 'en') return serverMsg;
+
+        // "Fetching Chess.com games... (200/2280)"
+        var fetchMatch = serverMsg.match(/^Fetching (Chess\.com|Lichess) games\.\.\.\s*\((\d+)\/(\d+)\)$/);
+        if (fetchMatch) {
+            var platform = fetchMatch[1];
+            var key = platform === 'Chess.com' ? 'status_fetching_chesscom' : 'status_fetching_lichess';
+            return (translations[key][l] || serverMsg) + ' (' + fetchMatch[2] + '/' + fetchMatch[3] + ')';
+        }
+
+        // "Fetching Chess.com games..." / "Fetching Lichess games..."
+        if (/^Fetching Chess\.com games/.test(serverMsg)) return translations['status_fetching_chesscom'][l] || serverMsg;
+        if (/^Fetching Lichess games/.test(serverMsg)) return translations['status_fetching_lichess'][l] || serverMsg;
+
+        // "Analyzing game 5/120..."
+        var analyzeMatch = serverMsg.match(/^Analyzing game (\d+)\/(\d+)/);
+        if (analyzeMatch) return (translations['status_analyzing_game'][l] || 'Analyzing game') + ' ' + analyzeMatch[1] + '/' + analyzeMatch[2] + '\u2026';
+
+        // "Fetching Chess.com archive 3/12 (150 games)"
+        var archiveMatch = serverMsg.match(/^Fetching Chess\.com archive (\d+)\/(\d+) \((\d+) games\)$/);
+        if (archiveMatch) return (translations['status_fetching_archive'][l] || 'Fetching Chess.com archive') + ' ' + archiveMatch[1] + '/' + archiveMatch[2] + ' (' + archiveMatch[3] + ' ' + (l === 'fr' ? 'parties' : 'games') + ')';
+
+        // "Fetched 200 Lichess games"
+        var fetchedLiMatch = serverMsg.match(/^Fetched (\d+) Lichess games$/);
+        if (fetchedLiMatch) return (translations['status_fetched_lichess'][l] || serverMsg).replace('{0}', fetchedLiMatch[1]);
+
+        // "Fetched 500 games, starting analysis"
+        var fetchedStartMatch = serverMsg.match(/^Fetched (\d+) games, starting analysis$/);
+        if (fetchedStartMatch) return (translations['status_fetched_starting'][l] || serverMsg).replace('{0}', fetchedStartMatch[1]);
+
+        // "Endgame analysis complete, starting openings"
+        if (serverMsg === 'Endgame analysis complete, starting openings') return translations['status_endgame_done'][l] || serverMsg;
+
+        // "All games cached, skipping engine analysis"
+        if (serverMsg === 'All games cached, skipping engine analysis') return translations['status_all_cached'][l] || serverMsg;
+
+        // "Analysis complete: 500 games"
+        var completeMatch = serverMsg.match(/^Analysis complete: (\d+) games$/);
+        if (completeMatch) return (translations['status_analysis_done'][l] || serverMsg).replace('{0}', completeMatch[1]);
+
+        // "No games found."
+        if (serverMsg === 'No games found.') return translations['status_no_games'][l] || serverMsg;
+
+        return serverMsg;
+    };
+
+    var lang = localStorage.getItem('lang') || 'en';
+    applyLang(lang);
+
+    document.querySelectorAll('.lang-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var l = btn.getAttribute('data-lang');
+            localStorage.setItem('lang', l);
+            applyLang(l);
+        });
+    });
+
+    function applyLang(l) {
+        document.querySelectorAll('.lang-btn').forEach(function(b) {
+            b.classList.toggle('active', b.getAttribute('data-lang') === l);
+        });
+        document.querySelectorAll('[data-i18n]').forEach(function(el) {
+            var key = el.getAttribute('data-i18n');
+            if (translations[key] && translations[key][l]) {
+                if (el.tagName === 'INPUT' && el.type !== 'hidden') return;
+                if (el.tagName === 'OPTION') { el.textContent = translations[key][l]; }
+                else { el.textContent = translations[key][l]; }
+            }
+        });
+        document.documentElement.lang = l === 'fr' ? 'fr' : 'en';
+    }
+})();
+</script>

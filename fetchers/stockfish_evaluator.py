@@ -1,11 +1,13 @@
 # stockfish_evaluator.py
 
+import logging
 from dataclasses import dataclass
 from typing import Optional
 
 import chess
 import chess.engine
 
+logger = logging.getLogger(__name__)
 
 MATE_SCORE_CP = 10000  # centipawns used to represent mate
 
@@ -37,6 +39,7 @@ class StockfishEvaluator:
         self._engine = None
 
     def __enter__(self):
+        logger.info("Starting Stockfish engine: %s (depth=%d)", self.stockfish_path, self.depth)
         self._engine = chess.engine.SimpleEngine.popen_uci(self.stockfish_path)
         return self
 
@@ -44,6 +47,7 @@ class StockfishEvaluator:
         if self._engine:
             self._engine.quit()
             self._engine = None
+            logger.info("Stockfish engine stopped")
         return False
 
     def evaluate(self, board):
@@ -54,7 +58,12 @@ class StockfishEvaluator:
         if self._engine is None:
             raise RuntimeError("Engine not started. Use StockfishEvaluator as a context manager.")
 
-        info = self._engine.analyse(board, chess.engine.Limit(depth=self.depth))
+        try:
+            info = self._engine.analyse(board, chess.engine.Limit(depth=self.depth))
+        except chess.engine.EngineError as e:
+            logger.warning("Stockfish EngineError for FEN %s: %s", board.fen(), e)
+            return None
+
         score = info["score"].white()
 
         if score.is_mate():

@@ -1,10 +1,13 @@
 # opening_detector.py
 
+import logging
 from dataclasses import dataclass, field
 from typing import List, Optional
 
 import chess
 import chess.polyglot
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -58,7 +61,7 @@ class OpeningDetector:
 
                 last_booked_board = board.copy()
                 if move not in board.legal_moves:
-                    print(f"  Warning: Skipping game with illegal move {move.uci()} at ply {ply}")
+                    logger.warning("Skipping game with illegal move %s at ply %d", move.uci(), ply)
                     return None
                 board.push(move)
 

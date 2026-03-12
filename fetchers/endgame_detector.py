@@ -1,5 +1,6 @@
 """Endgame detection and classification from chess game PGNs."""
 
+import logging
 from dataclasses import dataclass
 from typing import Optional
 
@@ -7,6 +8,8 @@ import chess
 
 from game_utils import game_result, COLOR_MAP
 from pgn_parser import PGNParser
+
+logger = logging.getLogger(__name__)
 
 
 # Standard piece values (pawns)
@@ -174,8 +177,8 @@ class EndgameClassifier:
 
         for ply, (move, clock) in enumerate(moves_with_clocks):
             if move not in board.legal_moves:
-                print(f"  Warning: Skipping game with illegal move "
-                      f"{move.uci()} at ply {ply}: {game.game_url or 'no URL'}")
+                logger.warning("Skipping game with illegal move %s at ply %d: %s",
+                               move.uci(), ply, game.game_url or 'no URL')
                 return
 
             side_that_moved = chess.WHITE if ply % 2 == 0 else chess.BLACK

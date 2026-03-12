@@ -3,8 +3,9 @@
 import logging
 from celery import Celery
 from celery.signals import worker_ready
-from config import REDIS_URL
+from config import REDIS_URL, setup_logging
 
+setup_logging()
 logger = logging.getLogger(__name__)
 
 app = Celery("chesscoach", broker=REDIS_URL, backend=REDIS_URL)

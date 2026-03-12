@@ -907,6 +907,53 @@ class TestOpeningsSort:
         assert pcts == sorted(pcts, reverse=True)
         page.close()
 
+    def test_sort_by_loss_pct_cards_visible_immediately(self, playwright_ctx, server_url):
+        """Cards remain visible after sorting — no blank page from fetchingBoards race."""
+        page = playwright_ctx.new_page()
+        page.goto(server_url)
+        page.wait_for_selector(".card", timeout=10000)
+        # Sort before boards finish loading to exercise the fetchingBoards reset
+        _select_option(page, "sort-select", "loss-pct")
+        visible = page.evaluate("""() => {
+            return document.querySelectorAll('.card[data-filtered="yes"]').length;
+        }""")
+        shown = page.evaluate("""() => {
+            var count = 0;
+            document.querySelectorAll('.card[data-filtered="yes"]').forEach(c => {
+                if (c.style.display !== 'none') count++;
+            });
+            return count;
+        }""")
+        assert visible > 0, "Should have filtered cards"
+        assert shown > 0, "Cards should be visible after sort, not hidden"
+        page.close()
+
+    def test_sort_persists_across_navigation(self, playwright_ctx, server_url):
+        """Sort choice is saved and restored when navigating away and back."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        _select_option(page, "sort-select", "loss-pct")
+        page.wait_for_timeout(200)
+        # Navigate to endgames and back
+        page.click('a[href*="endgames"]')
+        page.wait_for_selector(".main", timeout=10000)
+        page.go_back()
+        page.wait_for_selector("#sort-select", timeout=10000)
+        val = page.evaluate("""() => {
+            return document.getElementById('sort-select').value;
+        }""")
+        assert val == "loss-pct", f"Sort should persist as loss-pct, got {val}"
+        # Verify cards are actually in loss-pct order
+        page.wait_for_timeout(300)
+        pcts = page.evaluate("""() => {
+            var cards = document.querySelectorAll('.card[data-filtered="yes"]');
+            var vals = [];
+            cards.forEach(c => { if (c.style.display !== 'none') vals.push(
+                parseFloat(c.getAttribute('data-loss-pct'))); });
+            return vals;
+        }""")
+        assert pcts == sorted(pcts, reverse=True)
+        page.close()
+
 
 # ---------------------------------------------------------------------------
 # Stats bar tests (openings page)

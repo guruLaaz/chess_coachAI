@@ -2,7 +2,10 @@
 
 import aiohttp
 import json
+import logging
 from typing import List, Optional
+
+logger = logging.getLogger(__name__)
 
 LICHESS_API_BASE = "https://lichess.org/api"
 
@@ -38,6 +41,7 @@ class LichessFetcher:
         if since is not None:
             params["since"] = str(since)
 
+        logger.info("Fetching Lichess games for '%s'", username)
         games = []
         async with aiohttp.ClientSession(headers=self.headers) as session:
             async with session.get(url, params=params) as resp:
@@ -46,4 +50,5 @@ class LichessFetcher:
                     line = line.strip()
                     if line:
                         games.append(json.loads(line))
+        logger.info("Fetched %d Lichess games for '%s'", len(games), username)
         return games

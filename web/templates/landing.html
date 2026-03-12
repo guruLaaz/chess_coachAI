@@ -5,7 +5,57 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chess CoachAI — Find Your Opening Weaknesses</title>
     <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script>try{var t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.setAttribute('data-theme','dark')}catch(e){}</script>
     <style>
+        :root {
+            --bg-primary: #fff;
+            --bg-secondary: #f0f4f8;
+            --text-primary: #111;
+            --text-secondary: #6b7280;
+            --text-label: #374151;
+            --border: #e5e7eb;
+            --border-input: #d1d5db;
+            --card-bg: #fff;
+            --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            --badge-bg: #fff;
+            --badge-border: #d1d5db;
+            --badge-text: #374151;
+            --input-bg: #fff;
+            --input-text: #111;
+            --input-placeholder: #9ca3af;
+            --blue: #2563eb;
+            --blue-hover: #1d4ed8;
+            --blue-focus: rgba(37, 99, 235, 0.1);
+            --error: #dc2626;
+            --icon-dark: #1f2937;
+            --text-muted: #94a3b8;
+            --ctrl-active-bg: #f1f5f9;
+        }
+        [data-theme="dark"] {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --text-label: #cbd5e1;
+            --border: #334155;
+            --border-input: #475569;
+            --card-bg: #1e293b;
+            --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+            --badge-bg: #1e293b;
+            --badge-border: #475569;
+            --badge-text: #cbd5e1;
+            --input-bg: #0f172a;
+            --input-text: #e2e8f0;
+            --input-placeholder: #64748b;
+            --blue: #3b82f6;
+            --blue-hover: #2563eb;
+            --blue-focus: rgba(59, 130, 246, 0.2);
+            --error: #f87171;
+            --icon-dark: #cbd5e1;
+            --text-muted: #64748b;
+            --ctrl-active-bg: #334155;
+        }
+
         *, *::before, *::after {
             box-sizing: border-box;
             margin: 0;
@@ -14,8 +64,8 @@
 
         body {
             font-family: 'Ubuntu', sans-serif;
-            color: #111;
-            background: #fff;
+            color: var(--text-primary);
+            background: var(--bg-primary);
         }
 
         /* Header */
@@ -25,8 +75,8 @@
             left: 0;
             right: 0;
             z-index: 100;
-            background: #fff;
-            border-bottom: 1px solid #e5e7eb;
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border);
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -41,7 +91,7 @@
             font-size: 1.25rem;
             font-weight: 500;
             text-decoration: none;
-            color: #111;
+            color: var(--text-primary);
         }
 
         .logo .icon {
@@ -49,31 +99,13 @@
         }
 
         .logo .ai {
-            color: #2563eb;
+            color: var(--blue);
             font-weight: 700;
-        }
-
-        .header-btn {
-            background: #2563eb;
-            color: #fff;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 8px;
-            font-family: 'Ubuntu', sans-serif;
-            font-size: 0.95rem;
-            font-weight: 500;
-            cursor: pointer;
-            text-decoration: none;
-            transition: background 0.2s;
-        }
-
-        .header-btn:hover {
-            background: #1d4ed8;
         }
 
         /* Hero */
         .hero {
-            background: #f0f4f8;
+            background: var(--bg-secondary);
             padding: 140px 24px 100px;
             text-align: center;
             display: flex;
@@ -85,13 +117,13 @@
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            border: 1px solid #d1d5db;
+            border: 1px solid var(--badge-border);
             border-radius: 9999px;
             padding: 6px 16px;
             font-size: 0.85rem;
             font-weight: 400;
-            color: #374151;
-            background: #fff;
+            color: var(--badge-text);
+            background: var(--badge-bg);
             margin-bottom: 24px;
         }
 
@@ -103,11 +135,11 @@
         }
 
         h1 .blue {
-            color: #2563eb;
+            color: var(--blue);
         }
 
         .subtitle {
-            color: #6b7280;
+            color: var(--text-secondary);
             font-size: 1.1rem;
             font-weight: 400;
             line-height: 1.6;
@@ -117,9 +149,9 @@
 
         /* Form Card */
         .form-card {
-            background: #fff;
+            background: var(--card-bg);
             border-radius: 16px;
-            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            box-shadow: var(--card-shadow);
             max-width: 560px;
             width: 100%;
             padding: 32px;
@@ -141,7 +173,7 @@
             font-weight: 500;
             font-size: 0.9rem;
             margin-bottom: 6px;
-            color: #374151;
+            color: var(--text-label);
         }
 
         .input-wrapper {
@@ -162,34 +194,35 @@
         }
 
         .input-wrapper .prefix-icon.dark {
-            color: #1f2937;
+            color: var(--icon-dark);
         }
 
         .input-wrapper input {
             width: 100%;
-            border: 1px solid #d1d5db;
+            border: 1px solid var(--border-input);
             border-radius: 8px;
             padding: 12px 12px 12px 40px;
             font-size: 1rem;
             font-family: 'Ubuntu', sans-serif;
             font-weight: 400;
-            color: #111;
+            color: var(--input-text);
+            background: var(--input-bg);
             outline: none;
             transition: border-color 0.2s;
         }
 
         .input-wrapper input::placeholder {
-            color: #9ca3af;
+            color: var(--input-placeholder);
         }
 
         .input-wrapper input:focus {
-            border-color: #2563eb;
-            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+            border-color: var(--blue);
+            box-shadow: 0 0 0 3px var(--blue-focus);
         }
 
         .submit-btn {
             width: 100%;
-            background: #2563eb;
+            background: var(--blue);
             color: #fff;
             border: none;
             padding: 14px;
@@ -202,11 +235,11 @@
         }
 
         .submit-btn:hover {
-            background: #1d4ed8;
+            background: var(--blue-hover);
         }
 
         .error-msg {
-            color: #dc2626;
+            color: var(--error);
             font-size: 0.85rem;
             margin-bottom: 12px;
             display: none;
@@ -247,17 +280,17 @@
             <span class="icon">♞</span>
             <span>Chess Coach<span class="ai">AI</span></span>
         </a>
-        <a href="#form" class="header-btn">Start Analyzing</a>
+        {% include "partials/controls.html" %}
     </header>
 
     <main>
         <section class="hero">
-            <span class="badge">⚡ Powered by Stockfish 16</span>
+            <span class="badge">⚡ <span data-i18n="badge">Powered by Stockfish 16</span></span>
             <h1>
-                Find your opening weaknesses.<br>
-                <span class="blue">Fix your endgame habits.</span>
+                <span data-i18n="hero_line1">Find your opening weaknesses.</span><br>
+                <span class="blue" data-i18n="hero_line2">Fix your endgame habits.</span>
             </h1>
-            <p class="subtitle">
+            <p class="subtitle" data-i18n="subtitle">
                 Connect your accounts to run deep engine analysis.
                 Pinpoint exactly where you leave book theory and discover the best moves.
             </p>
@@ -266,22 +299,22 @@
                 <form action="/analyze" method="POST" id="analyze-form" novalidate>
                     <div class="input-row">
                         <div class="input-group">
-                            <label for="chesscom_username">Chess.com Username</label>
+                            <label for="chesscom_username" data-i18n="label_chesscom">Chess.com Username</label>
                             <div class="input-wrapper">
                                 <span class="prefix-icon green">♟</span>
                                 <input type="text" id="chesscom_username" name="chesscom_username" placeholder="e.g., Hikaru">
                             </div>
                         </div>
                         <div class="input-group">
-                            <label for="lichess_username">Lichess Username</label>
+                            <label for="lichess_username" data-i18n="label_lichess">Lichess Username</label>
                             <div class="input-wrapper">
                                 <span class="prefix-icon dark">♞</span>
                                 <input type="text" id="lichess_username" name="lichess_username" placeholder="e.g., DrNykterstein">
                             </div>
                         </div>
                     </div>
-                    <p class="error-msg" id="error-msg">Please enter at least one username.</p>
-                    <button type="submit" class="submit-btn">Analyze My Games →</button>
+                    <p class="error-msg" id="error-msg" data-i18n="error_msg">Please enter at least one username.</p>
+                    <button type="submit" class="submit-btn" data-i18n="submit_btn">Analyze My Games →</button>
                 </form>
             </div>
         </section>

@@ -6,11 +6,14 @@ instead of in-memory data.  The original module is NOT modified.
 """
 
 import json
+import logging
 
 import chess
 import chess.svg
 
 import db.queries as dbq
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +197,7 @@ def get_opening_groups(deviations):
 def load_openings_data(chesscom_user, lichess_user):
     """Load all opening evaluation data for a user from PostgreSQL."""
     username = chesscom_user or lichess_user
+    logger.debug("Loading openings data for user=%s", username)
     evaluations = dbq.get_all_evaluations_for_user(username, depth=14)
 
     # Filter to player deviations that have coaching data
@@ -249,6 +253,9 @@ def load_openings_data(chesscom_user, lichess_user):
     ]
     groups = get_opening_groups(deviations)
 
+    logger.info("Openings loaded for %s: %d evaluations, %d deviations, %d groups",
+                username, total_games_analyzed, len(deviations), len(groups))
+
     return {
         "username": username,
         "chesscom_user": chesscom_user,
@@ -270,12 +277,14 @@ def load_endgames_data(chesscom_user, lichess_user):
     computes from EndgameClassifier.aggregate_all().
     """
     username = chesscom_user or lichess_user
+    logger.debug("Loading endgames data for user=%s", username)
 
     # Get all game URLs for this user (from evaluations table)
     evaluations = dbq.get_all_evaluations_for_user(username, depth=14)
     game_urls = list({ev.game_url for ev in evaluations if ev.game_url})
 
     if not game_urls:
+        logger.info("No game URLs found for endgame data (user=%s)", username)
         return {
             "username": username,
             "chesscom_user": chesscom_user,
@@ -361,6 +370,9 @@ def load_endgames_data(chesscom_user, lichess_user):
         round(100 * eg_total_wins / eg_total_games)
         if eg_total_games else 0
     )
+
+    logger.info("Endgames loaded for %s: %d game_urls, %d endgame_count, %d types",
+                username, len(game_urls), endgame_count, eg_types_count)
 
     return {
         "username": username,
