@@ -116,6 +116,25 @@ def _set_checkboxes(page, selector, values_to_check):
     page.wait_for_timeout(200)
 
 
+def _set_tc_filter(page, active_tcs):
+    """Set the TC toggle buttons: activate only those in active_tcs list.
+
+    Sets classes directly, then triggers applyFilters via min-games-range input event.
+    """
+    page.evaluate("""(vals) => {
+        var tcs = new Set(vals);
+        document.querySelectorAll('.tc-btn').forEach(function(btn) {
+            var tc = btn.getAttribute('data-tc-filter');
+            if (tcs.has(tc)) { btn.classList.add('active'); }
+            else { btn.classList.remove('active'); }
+        });
+        // Trigger applyFilters via the range slider (fires input event)
+        var r = document.getElementById('min-games-range');
+        if (r) r.dispatchEvent(new Event('input'));
+    }""", list(active_tcs))
+    page.wait_for_timeout(200)
+
+
 def _select_option(page, select_id, value):
     """Set a <select> value and dispatch change, even if hidden."""
     page.evaluate("""(args) => {
@@ -327,23 +346,6 @@ class TestBoardLoading:
         assert _visible_spinners(page) == 0
         page.close()
 
-    def test_endgames_boards_load_after_definition_switch(self, playwright_ctx,
-                                                           server_url):
-        page = playwright_ctx.new_page()
-        page.goto(f"{server_url}/endgames")
-        page.wait_for_selector(".eg-board svg", timeout=10000)
-
-        _select_option(page, "eg-def-select", "material")
-        page.wait_for_selector(
-            ".eg-card[data-definition='material'] .eg-board svg", timeout=10000)
-        assert _visible_spinners(page) == 0
-
-        _select_option(page, "eg-def-select", "minor-or-queen")
-        page.wait_for_selector(
-            ".eg-card[data-definition='minor-or-queen'] .eg-board svg", timeout=10000)
-        assert _visible_spinners(page) == 0
-        page.close()
-
     def test_no_js_errors_openings(self, playwright_ctx, server_url):
         page = playwright_ctx.new_page()
         errors = []
@@ -359,9 +361,6 @@ class TestBoardLoading:
         page.on("pageerror", lambda err: errors.append(str(err)))
         page.goto(f"{server_url}/endgames")
         page.wait_for_selector(".eg-board svg", timeout=10000)
-        _select_option(page, "eg-def-select", "material")
-        page.wait_for_selector(
-            ".eg-card[data-definition='material'] .eg-board svg", timeout=10000)
         assert errors == [], f"JS errors: {errors}"
         page.close()
 
@@ -396,10 +395,10 @@ class TestOpeningsFilters:
 
     # -- Default state --
 
-    def test_default_shows_all(self, playwright_ctx, server_url):
-        """With min-games=1, all 4 cards show."""
+    def test_default_shows_blitz_rapid(self, playwright_ctx, server_url):
+        """Default TC is blitz+rapid only: Sicilian (blitz) + French (rapid) = 2."""
         page = self._goto_openings(playwright_ctx, server_url)
-        assert _filtered_count(page, ".card") == 4
+        assert _filtered_count(page, ".card") == 2
         page.close()
 
     # -- Platform filter (dropdown) --
@@ -407,6 +406,7 @@ class TestOpeningsFilters:
     def test_platform_chesscom_only(self, playwright_ctx, server_url):
         """Sicilian + Italian (chess.com)."""
         page = self._goto_openings(playwright_ctx, server_url)
+        _set_tc_filter(page, ["bullet", "blitz", "rapid", "daily"])
         _select_option(page, "platform-select", "chesscom")
         assert _filtered_count(page, ".card") == 2
         page.close()
@@ -414,6 +414,7 @@ class TestOpeningsFilters:
     def test_platform_lichess_only(self, playwright_ctx, server_url):
         """French + Caro-Kann (lichess)."""
         page = self._goto_openings(playwright_ctx, server_url)
+        _set_tc_filter(page, ["bullet", "blitz", "rapid", "daily"])
         _select_option(page, "platform-select", "lichess")
         assert _filtered_count(page, ".card") == 2
         page.close()
@@ -421,6 +422,7 @@ class TestOpeningsFilters:
     def test_platform_all_shows_all(self, playwright_ctx, server_url):
         """Selecting 'all' platforms shows all cards."""
         page = self._goto_openings(playwright_ctx, server_url)
+        _set_tc_filter(page, ["bullet", "blitz", "rapid", "daily"])
         _select_option(page, "platform-select", "chesscom")
         assert _filtered_count(page, ".card") == 2
         _select_option(page, "platform-select", "all")
@@ -430,8 +432,9 @@ class TestOpeningsFilters:
     # -- Min games filter (range slider) --
 
     def test_min_games_1(self, playwright_ctx, server_url):
-        """All 4 cards pass min=1."""
+        """All 4 cards pass min=1 (with all TCs enabled)."""
         page = self._goto_openings(playwright_ctx, server_url)
+        _set_tc_filter(page, ["bullet", "blitz", "rapid", "daily"])
         _set_range(page, "min-games-range", 1)
         assert _filtered_count(page, ".card") == 4
         page.close()
@@ -473,9 +476,48 @@ class TestOpeningsFilters:
     def test_filter_then_reset(self, playwright_ctx, server_url):
         """Filtering down by platform then resetting restores full list."""
         page = self._goto_openings(playwright_ctx, server_url)
+        _set_tc_filter(page, ["bullet", "blitz", "rapid", "daily"])
         _select_option(page, "platform-select", "chesscom")
         assert _filtered_count(page, ".card") == 2
         _select_option(page, "platform-select", "all")
+        assert _filtered_count(page, ".card") == 4
+        page.close()
+
+    # -- Time control filter --
+
+    def test_tc_blitz_only(self, playwright_ctx, server_url):
+        """Blitz only: Sicilian (blitz, 3x) = 1 card."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        _set_tc_filter(page, ["blitz"])
+        assert _filtered_count(page, ".card") == 1
+        page.close()
+
+    def test_tc_rapid_only(self, playwright_ctx, server_url):
+        """Rapid only: French (rapid) = 1 card."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        _set_tc_filter(page, ["rapid"])
+        assert _filtered_count(page, ".card") == 1
+        page.close()
+
+    def test_tc_blitz_bullet(self, playwright_ctx, server_url):
+        """Blitz + bullet: Sicilian + Italian = 2 cards."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        _set_tc_filter(page, ["blitz", "bullet"])
+        assert _filtered_count(page, ".card") == 2
+        page.close()
+
+    def test_tc_none_shows_empty(self, playwright_ctx, server_url):
+        """No TC selected = 0 cards."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        _set_tc_filter(page, [])
+        assert _filtered_count(page, ".card") == 0
+        assert _no_results_visible(page, "no-results")
+        page.close()
+
+    def test_tc_all_shows_all(self, playwright_ctx, server_url):
+        """All TCs selected shows all 4 cards."""
+        page = self._goto_openings(playwright_ctx, server_url)
+        _set_tc_filter(page, ["bullet", "blitz", "rapid", "daily"])
         assert _filtered_count(page, ".card") == 4
         page.close()
 
@@ -498,6 +540,7 @@ class TestDateFilter:
         page = playwright_ctx.new_page()
         page.goto(server_url)
         page.wait_for_selector(".board-best svg", timeout=10000)
+        _set_tc_filter(page, ["bullet", "blitz", "rapid", "daily"])
         _set_range(page, "min-games-range", 1)
         page.evaluate("""() => {
             var btn = document.querySelector('.color-btn[data-color-filter="black"]');
@@ -594,18 +637,13 @@ class TestDateFilter:
 # ---------------------------------------------------------------------------
 
 class TestEndgamesFilters:
-    """Test all filter combinations on the endgames page.
+    """Test remaining filters on the endgames page (definition/balance/TC removed).
 
-    minor-or-queen (4 entries):
+    minor-or-queen (4 entries, shown by default):
       R vs R | equal | blitz-only         | 5 games
       Q vs Q | equal | rapid-only         | 5 games
       R vs B | up    | blitz+rapid        | 10 games
       N vs N | down  | bullet-only        | 3 games
-
-    material (3 entries):
-      RB vs RN | equal | blitz-only       | 5 games
-      RR vs RR | equal | daily-only       | 5 games
-      QR vs QR | up    | blitz+bullet     | 8 games
     """
 
     def _goto_endgames(self, playwright_ctx, server_url):
@@ -614,107 +652,21 @@ class TestEndgamesFilters:
         page.wait_for_selector(".eg-board svg", timeout=10000)
         return page
 
-    # -- Definition filter --
+    # -- Default view --
 
-    def test_default_definition(self, playwright_ctx, server_url):
-        """Default is minor-or-queen, min games 3+, so cards with >=3 games show."""
+    def test_default_shows_blitz_rapid(self, playwright_ctx, server_url):
+        """Default TC is blitz+rapid: R vs R (blitz), Q vs Q (rapid), R vs B (blitz+rapid) = 3."""
         page = self._goto_endgames(playwright_ctx, server_url)
-        # With default min=3: R vs R (5), Q vs Q (5), R vs B (10), N vs N (3) = 4
-        count = _filtered_count(page, ".eg-card")
-        assert count == 4
-        page.close()
-
-    def test_switch_to_material(self, playwright_ctx, server_url):
-        """Switching to material shows its 3 entries (all >=3 games)."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _select_option(page, "eg-def-select", "material")
-        page.wait_for_timeout(300)
         count = _filtered_count(page, ".eg-card")
         assert count == 3
-        page.close()
-
-    def test_switch_back_to_minor_or_queen(self, playwright_ctx, server_url):
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _select_option(page, "eg-def-select", "material")
-        page.wait_for_timeout(300)
-        _select_option(page, "eg-def-select", "minor-or-queen")
-        page.wait_for_timeout(300)
-        assert _filtered_count(page, ".eg-card") == 4
-        page.close()
-
-    # -- Balance filter --
-
-    def test_balance_equal_only(self, playwright_ctx, server_url):
-        """minor-or-queen equal: R vs R (5) + Q vs Q (5) = 2 cards."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _set_checkboxes(page, ".balance-filter", ["equal"])
-        assert _filtered_count(page, ".eg-card") == 2
-        page.close()
-
-    def test_balance_up_only(self, playwright_ctx, server_url):
-        """minor-or-queen up: R vs B (10) = 1 card."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _set_checkboxes(page, ".balance-filter", ["up"])
-        assert _filtered_count(page, ".eg-card") == 1
-        page.close()
-
-    def test_balance_down_only(self, playwright_ctx, server_url):
-        """minor-or-queen down: N vs N (3) = 1 card."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _set_checkboxes(page, ".balance-filter", ["down"])
-        assert _filtered_count(page, ".eg-card") == 1
-        page.close()
-
-    def test_balance_none_shows_empty(self, playwright_ctx, server_url):
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _set_checkboxes(page, ".balance-filter", [])
-        assert _filtered_count(page, ".eg-card") == 0
-        assert _no_results_visible(page, "eg-no-results")
-        page.close()
-
-    # -- Time class filter --
-
-    def test_tc_blitz_only(self, playwright_ctx, server_url):
-        """minor-or-queen, blitz: R vs R (5 blitz) + R vs B (5 blitz) = 2."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _set_checkboxes(page, ".eg-tc-filter", ["blitz"])
-        assert _filtered_count(page, ".eg-card") == 2
-        page.close()
-
-    def test_tc_rapid_only(self, playwright_ctx, server_url):
-        """minor-or-queen, rapid: Q vs Q (5 rapid) + R vs B (5 rapid) = 2."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _set_checkboxes(page, ".eg-tc-filter", ["rapid"])
-        assert _filtered_count(page, ".eg-card") == 2
-        page.close()
-
-    def test_tc_bullet_only(self, playwright_ctx, server_url):
-        """minor-or-queen, bullet: N vs N (3 bullet) = 1."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _set_checkboxes(page, ".eg-tc-filter", ["bullet"])
-        assert _filtered_count(page, ".eg-card") == 1
-        page.close()
-
-    def test_tc_daily_only(self, playwright_ctx, server_url):
-        """minor-or-queen has no daily games = 0."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _set_checkboxes(page, ".eg-tc-filter", ["daily"])
-        assert _filtered_count(page, ".eg-card") == 0
-        assert _no_results_visible(page, "eg-no-results")
-        page.close()
-
-    def test_tc_none_shows_empty(self, playwright_ctx, server_url):
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _set_checkboxes(page, ".eg-tc-filter", [])
-        assert _filtered_count(page, ".eg-card") == 0
-        assert _no_results_visible(page, "eg-no-results")
         page.close()
 
     # -- Min games filter --
 
     def test_min_games_1(self, playwright_ctx, server_url):
-        """All 4 minor-or-queen entries have >=1 game."""
+        """All 4 minor-or-queen entries have >=1 game (with all TCs)."""
         page = self._goto_endgames(playwright_ctx, server_url)
+        _set_tc_filter(page, ["bullet", "blitz", "rapid", "daily"])
         _set_range(page, "min-games-range", 1)
         assert _filtered_count(page, ".eg-card") == 4
         page.close()
@@ -733,235 +685,71 @@ class TestEndgamesFilters:
         assert _filtered_count(page, ".eg-card") == 1
         page.close()
 
-    # -- Stats recalculation on TC filter --
-
-    def test_tc_filter_recalculates_stats(self, playwright_ctx, server_url):
-        """R vs B has 10 total (5 blitz + 5 rapid). Filtering to blitz shows 5."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _set_checkboxes(page, ".eg-tc-filter", ["blitz"])
-        # R vs B card should show 5 games (blitz portion)
-        games_text = page.evaluate("""() => {
-            var cards = document.querySelectorAll('.eg-card[data-filtered="yes"]');
-            var texts = [];
-            cards.forEach(c => {
-                var el = c.querySelector('.eg-games');
-                if (el) texts.push(el.textContent.trim());
-            });
-            return texts;
-        }""")
-        # R vs R has 5, R vs B has 5 blitz games
-        assert "5 games" in games_text
-        page.close()
-
-    # -- Combined: definition + balance --
-
-    def test_material_equal(self, playwright_ctx, server_url):
-        """material + equal: RB vs RN (5) + RR vs RR (5) = 2."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _select_option(page, "eg-def-select", "material")
-        _set_checkboxes(page, ".balance-filter", ["equal"])
-        page.wait_for_timeout(200)
-        assert _filtered_count(page, ".eg-card") == 2
-        page.close()
-
-    def test_material_up(self, playwright_ctx, server_url):
-        """material + up: QR vs QR (8) = 1."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _select_option(page, "eg-def-select", "material")
-        _set_checkboxes(page, ".balance-filter", ["up"])
-        page.wait_for_timeout(200)
-        assert _filtered_count(page, ".eg-card") == 1
-        page.close()
-
-    def test_material_down(self, playwright_ctx, server_url):
-        """material has no 'down' entries = 0."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _select_option(page, "eg-def-select", "material")
-        _set_checkboxes(page, ".balance-filter", ["down"])
-        page.wait_for_timeout(200)
-        assert _filtered_count(page, ".eg-card") == 0
-        assert _no_results_visible(page, "eg-no-results")
-        page.close()
-
-    # -- Combined: definition + TC --
-
-    def test_material_blitz(self, playwright_ctx, server_url):
-        """material + blitz: RB vs RN (5 blitz) + QR vs QR (4 blitz) = 2."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _select_option(page, "eg-def-select", "material")
-        _set_checkboxes(page, ".eg-tc-filter", ["blitz"])
-        page.wait_for_timeout(200)
-        assert _filtered_count(page, ".eg-card") == 2
-        page.close()
-
-    def test_material_daily(self, playwright_ctx, server_url):
-        """material + daily: RR vs RR (5 daily) = 1."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _select_option(page, "eg-def-select", "material")
-        _set_checkboxes(page, ".eg-tc-filter", ["daily"])
-        page.wait_for_timeout(200)
-        assert _filtered_count(page, ".eg-card") == 1
-        page.close()
-
-    def test_material_rapid(self, playwright_ctx, server_url):
-        """material has no rapid games = 0."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _select_option(page, "eg-def-select", "material")
-        _set_checkboxes(page, ".eg-tc-filter", ["rapid"])
-        page.wait_for_timeout(200)
-        assert _filtered_count(page, ".eg-card") == 0
-        assert _no_results_visible(page, "eg-no-results")
-        page.close()
-
-    # -- Combined: balance + TC --
-
-    def test_equal_blitz(self, playwright_ctx, server_url):
-        """minor-or-queen, equal + blitz: R vs R (5 blitz) = 1."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _set_checkboxes(page, ".balance-filter", ["equal"])
-        _set_checkboxes(page, ".eg-tc-filter", ["blitz"])
-        assert _filtered_count(page, ".eg-card") == 1
-        page.close()
-
-    def test_equal_rapid(self, playwright_ctx, server_url):
-        """minor-or-queen, equal + rapid: Q vs Q (5 rapid) = 1."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _set_checkboxes(page, ".balance-filter", ["equal"])
-        _set_checkboxes(page, ".eg-tc-filter", ["rapid"])
-        assert _filtered_count(page, ".eg-card") == 1
-        page.close()
-
-    def test_up_bullet(self, playwright_ctx, server_url):
-        """minor-or-queen, up + bullet: R vs B has no bullet = 0."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _set_checkboxes(page, ".balance-filter", ["up"])
-        _set_checkboxes(page, ".eg-tc-filter", ["bullet"])
-        assert _filtered_count(page, ".eg-card") == 0
-        page.close()
-
-    def test_down_bullet(self, playwright_ctx, server_url):
-        """minor-or-queen, down + bullet: N vs N (3 bullet) = 1."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _set_checkboxes(page, ".balance-filter", ["down"])
-        _set_checkboxes(page, ".eg-tc-filter", ["bullet"])
-        assert _filtered_count(page, ".eg-card") == 1
-        page.close()
-
-    # -- Combined: TC + min games --
-
-    def test_blitz_min_5(self, playwright_ctx, server_url):
-        """minor-or-queen, blitz + min 5: R vs R (5 blitz), R vs B (5 blitz) = 2."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _set_checkboxes(page, ".eg-tc-filter", ["blitz"])
-        _set_range(page, "min-games-range", 5)
-        assert _filtered_count(page, ".eg-card") == 2
-        page.close()
-
-    def test_blitz_min_10(self, playwright_ctx, server_url):
-        """minor-or-queen, blitz + min 10: no entry has 10 blitz games = 0."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _set_checkboxes(page, ".eg-tc-filter", ["blitz"])
-        _set_range(page, "min-games-range", 10)
-        assert _filtered_count(page, ".eg-card") == 0
-        assert _no_results_visible(page, "eg-no-results")
-        page.close()
-
-    # -- Triple combo: definition + balance + TC --
-
-    def test_material_equal_blitz(self, playwright_ctx, server_url):
-        """material + equal + blitz: RB vs RN (5 blitz) = 1."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _select_option(page, "eg-def-select", "material")
-        _set_checkboxes(page, ".balance-filter", ["equal"])
-        _set_checkboxes(page, ".eg-tc-filter", ["blitz"])
-        page.wait_for_timeout(200)
-        assert _filtered_count(page, ".eg-card") == 1
-        page.close()
-
-    def test_material_equal_daily(self, playwright_ctx, server_url):
-        """material + equal + daily: RR vs RR (5 daily) = 1."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _select_option(page, "eg-def-select", "material")
-        _set_checkboxes(page, ".balance-filter", ["equal"])
-        _set_checkboxes(page, ".eg-tc-filter", ["daily"])
-        page.wait_for_timeout(200)
-        assert _filtered_count(page, ".eg-card") == 1
-        page.close()
-
-    def test_material_up_bullet(self, playwright_ctx, server_url):
-        """material + up + bullet: QR vs QR has 4 bullet games = 1."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _select_option(page, "eg-def-select", "material")
-        _set_checkboxes(page, ".balance-filter", ["up"])
-        _set_checkboxes(page, ".eg-tc-filter", ["bullet"])
-        page.wait_for_timeout(200)
-        assert _filtered_count(page, ".eg-card") == 1
-        page.close()
-
-    def test_material_equal_bullet(self, playwright_ctx, server_url):
-        """material + equal + bullet: no equal entry has bullet = 0."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _select_option(page, "eg-def-select", "material")
-        _set_checkboxes(page, ".balance-filter", ["equal"])
-        _set_checkboxes(page, ".eg-tc-filter", ["bullet"])
-        page.wait_for_timeout(200)
-        assert _filtered_count(page, ".eg-card") == 0
-        assert _no_results_visible(page, "eg-no-results")
-        page.close()
-
-    # -- Quad combo: definition + balance + TC + min games --
-
-    def test_material_up_blitz_min_3(self, playwright_ctx, server_url):
-        """material + up + blitz + min 3: QR vs QR has 4 blitz = 1."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _select_option(page, "eg-def-select", "material")
-        _set_checkboxes(page, ".balance-filter", ["up"])
-        _set_checkboxes(page, ".eg-tc-filter", ["blitz"])
-        _set_range(page, "min-games-range", 3)
-        page.wait_for_timeout(200)
-        assert _filtered_count(page, ".eg-card") == 1
-        page.close()
-
-    def test_material_up_blitz_min_5(self, playwright_ctx, server_url):
-        """material + up + blitz + min 5: QR vs QR has only 4 blitz = 0."""
-        page = self._goto_endgames(playwright_ctx, server_url)
-        _select_option(page, "eg-def-select", "material")
-        _set_checkboxes(page, ".balance-filter", ["up"])
-        _set_checkboxes(page, ".eg-tc-filter", ["blitz"])
-        _set_range(page, "min-games-range", 5)
-        page.wait_for_timeout(200)
-        assert _filtered_count(page, ".eg-card") == 0
-        assert _no_results_visible(page, "eg-no-results")
-        page.close()
-
-    # -- Filter reset --
+    # -- Filter reset via min games --
 
     def test_filter_reset_restores_all(self, playwright_ctx, server_url):
-        """Narrowing filters then resetting restores original count."""
+        """Narrowing min games then resetting restores original count."""
         page = self._goto_endgames(playwright_ctx, server_url)
+        _set_tc_filter(page, ["bullet", "blitz", "rapid", "daily"])
         original = _filtered_count(page, ".eg-card")
         assert original == 4
 
-        # Narrow down
-        _set_checkboxes(page, ".eg-tc-filter", ["bullet"])
+        _set_range(page, "min-games-range", 10)
         assert _filtered_count(page, ".eg-card") == 1
 
-        # Reset all
-        _set_checkboxes(page, ".eg-tc-filter",
-                        ["bullet", "blitz", "rapid", "daily"])
+        _set_range(page, "min-games-range", 3)
         assert _filtered_count(page, ".eg-card") == original
         page.close()
 
-    # -- Empty state hides when filters restore matches --
+    # -- Empty state --
 
-    def test_empty_state_hides_on_restore(self, playwright_ctx, server_url):
+    def test_empty_state_on_high_min(self, playwright_ctx, server_url):
+        """Setting min games above all totals shows empty state."""
         page = self._goto_endgames(playwright_ctx, server_url)
-        _set_checkboxes(page, ".eg-tc-filter", [])
+        _set_range(page, "min-games-range", 20)
+        assert _filtered_count(page, ".eg-card") == 0
         assert _no_results_visible(page, "eg-no-results")
+        page.close()
 
-        _set_checkboxes(page, ".eg-tc-filter", ["blitz"])
-        assert not _no_results_visible(page, "eg-no-results")
-        assert _filtered_count(page, ".eg-card") > 0
+    # -- Time control filter (cross-filters per-game details) --
+
+    def test_tc_blitz_only(self, playwright_ctx, server_url):
+        """Blitz only: R vs R (5 blitz) + R vs B (5 blitz) = 2 cards."""
+        page = self._goto_endgames(playwright_ctx, server_url)
+        _set_tc_filter(page, ["blitz"])
+        _set_range(page, "min-games-range", 1)
+        assert _filtered_count(page, ".eg-card") == 2
+        page.close()
+
+    def test_tc_rapid_only(self, playwright_ctx, server_url):
+        """Rapid only: Q vs Q (5 rapid) + R vs B (5 rapid) = 2 cards."""
+        page = self._goto_endgames(playwright_ctx, server_url)
+        _set_tc_filter(page, ["rapid"])
+        _set_range(page, "min-games-range", 1)
+        assert _filtered_count(page, ".eg-card") == 2
+        page.close()
+
+    def test_tc_bullet_only(self, playwright_ctx, server_url):
+        """Bullet only: N vs N (3 bullet) = 1 card."""
+        page = self._goto_endgames(playwright_ctx, server_url)
+        _set_tc_filter(page, ["bullet"])
+        _set_range(page, "min-games-range", 1)
+        assert _filtered_count(page, ".eg-card") == 1
+        page.close()
+
+    def test_tc_none_shows_empty(self, playwright_ctx, server_url):
+        """No TC selected = 0 cards."""
+        page = self._goto_endgames(playwright_ctx, server_url)
+        _set_tc_filter(page, [])
+        assert _filtered_count(page, ".eg-card") == 0
+        assert _no_results_visible(page, "eg-no-results")
+        page.close()
+
+    def test_tc_all_shows_all(self, playwright_ctx, server_url):
+        """All TCs selected shows all 4 cards."""
+        page = self._goto_endgames(playwright_ctx, server_url)
+        _set_tc_filter(page, ["bullet", "blitz", "rapid", "daily"])
+        assert _filtered_count(page, ".eg-card") == 4
         page.close()
 
 
@@ -983,6 +771,7 @@ class TestColorFilter:
         page = playwright_ctx.new_page()
         page.goto(server_url)
         page.wait_for_selector(".board-best svg", timeout=10000)
+        _set_tc_filter(page, ["bullet", "blitz", "rapid", "daily"])
         _set_range(page, "min-games-range", 1)
         # Enable both colors
         page.evaluate("""() => {
@@ -1190,4 +979,184 @@ class TestOpeningsStats:
         assert titles[1] != ""
         assert titles[2] != ""
         assert titles[3] != ""
+        page.close()
+
+
+# ---------------------------------------------------------------------------
+# TC auto-escalation tests
+# ---------------------------------------------------------------------------
+
+def _tc_active_set(page):
+    """Return the set of currently active TC button values."""
+    return set(page.evaluate("""() => {
+        var active = [];
+        document.querySelectorAll('.tc-btn.active').forEach(function(btn) {
+            active.push(btn.getAttribute('data-tc-filter'));
+        });
+        return active;
+    }"""))
+
+
+def _make_escalation_server(evals, endgame_stats, port):
+    """Build and start a Flask server for escalation tests."""
+    gen = CoachingReportGenerator(
+        evals, chesscom_user="testplayer", lichess_user="testplayer_li",
+        endgame_stats=endgame_stats,
+    )
+    _start_server(gen, port)
+    time.sleep(1)  # Give Flask time to bind
+    return f"http://127.0.0.1:{port}"
+
+
+def _repeat_eval(base_eval, n, url_prefix):
+    """Duplicate an eval n times with distinct game URLs (same fen+move = one card)."""
+    import copy
+    result = []
+    for i in range(n):
+        ev = copy.deepcopy(base_eval)
+        ev.game_url = f"{url_prefix}/{i}"
+        result.append(ev)
+    return result
+
+
+@pytest.fixture(scope="module")
+def blitz_rapid_server():
+    """Server with only blitz+rapid games — no escalation needed.
+
+    Each opening appears 3x so it passes the default min-games=3 filter.
+    """
+    fen1 = chess.Board().fen()  # starting pos, white to move
+    b2 = chess.Board()
+    b2.push_san("e4")
+    fen2 = b2.fen()  # after 1.e4, black to move
+    blitz_ev = _make_eval(eco_code="B90", eco_name="Sicilian", my_color="white",
+                          time_class="blitz", fen=fen1, played_move="g1f3",
+                          best_move="d2d4",
+                          game_url="https://www.chess.com/game/live/100")
+    rapid_ev = _make_eval(eco_code="C00", eco_name="French", my_color="white",
+                          time_class="rapid", fen=fen2, played_move="d7d6",
+                          best_move="d7d5",
+                          game_url="https://www.chess.com/game/live/101")
+    evals = _repeat_eval(blitz_ev, 3, "https://www.chess.com/game/live/1") + \
+            _repeat_eval(rapid_ev, 3, "https://www.chess.com/game/live/2")
+    endgame_stats = {
+        "minor-or-queen": [
+            _make_endgame_entry("R vs R", total=5,
+                                tc_breakdown={"blitz": {"wins": 3, "losses": 1, "draws": 1}}),
+            _make_endgame_entry("Q vs Q", total=5,
+                                tc_breakdown={"rapid": {"wins": 2, "losses": 2, "draws": 1}}),
+        ],
+    }
+    return _make_escalation_server(evals, endgame_stats, 5990)
+
+
+@pytest.fixture(scope="module")
+def bullet_only_server():
+    """Server with only bullet games — escalation adds bullet once.
+
+    Opening appears 3x so it passes default min-games=3.
+    """
+    fen1 = chess.Board().fen()
+    bullet_ev = _make_eval(eco_code="B90", eco_name="Sicilian", my_color="white",
+                           time_class="bullet", fen=fen1, played_move="g1f3",
+                           best_move="d2d4",
+                           game_url="https://www.chess.com/game/live/200")
+    evals = _repeat_eval(bullet_ev, 3, "https://www.chess.com/game/live/3")
+    endgame_stats = {
+        "minor-or-queen": [
+            _make_endgame_entry("R vs R", total=5,
+                                tc_breakdown={"bullet": {"wins": 3, "losses": 1, "draws": 1}}),
+        ],
+    }
+    return _make_escalation_server(evals, endgame_stats, 5991)
+
+
+@pytest.fixture(scope="module")
+def daily_only_server():
+    """Server with only daily games — escalation adds bullet then daily.
+
+    Opening appears 3x so it passes default min-games=3.
+    """
+    fen1 = chess.Board().fen()
+    daily_ev = _make_eval(eco_code="B90", eco_name="Sicilian", my_color="white",
+                          time_class="daily", fen=fen1, played_move="g1f3",
+                          best_move="d2d4",
+                          game_url="https://www.chess.com/game/live/300")
+    evals = _repeat_eval(daily_ev, 3, "https://www.chess.com/game/live/4")
+    endgame_stats = {
+        "minor-or-queen": [
+            _make_endgame_entry("R vs R", total=5,
+                                tc_breakdown={"daily": {"wins": 3, "losses": 1, "draws": 1}}),
+        ],
+    }
+    return _make_escalation_server(evals, endgame_stats, 5992)
+
+
+class TestTCAutoEscalation:
+    """Test that TC buttons auto-escalate on page load when defaults yield no results.
+
+    Escalation order:
+      1. Default: blitz + rapid
+      2. If no results: also activate bullet
+      3. If still no results: also activate daily (all 4)
+    """
+
+    # -- No escalation (blitz+rapid data) --
+
+    def test_openings_blitz_rapid_no_escalation(self, playwright_ctx, blitz_rapid_server):
+        """Blitz+rapid data: default selection shows all, no escalation."""
+        page = playwright_ctx.new_page()
+        page.goto(blitz_rapid_server)
+        page.wait_for_selector(".board-best svg", timeout=10000)
+        assert _filtered_count(page, ".card") == 2
+        assert _tc_active_set(page) == {"blitz", "rapid"}
+        page.close()
+
+    def test_endgames_blitz_rapid_no_escalation(self, playwright_ctx, blitz_rapid_server):
+        """Blitz+rapid data: default selection shows all endgames, no escalation."""
+        page = playwright_ctx.new_page()
+        page.goto(f"{blitz_rapid_server}/endgames")
+        page.wait_for_selector(".eg-board svg", timeout=10000)
+        assert _filtered_count(page, ".eg-card") == 2
+        assert _tc_active_set(page) == {"blitz", "rapid"}
+        page.close()
+
+    # -- One escalation (bullet-only data) --
+
+    def test_openings_bullet_escalates_once(self, playwright_ctx, bullet_only_server):
+        """Bullet-only data: escalates to blitz+rapid+bullet, shows card."""
+        page = playwright_ctx.new_page()
+        page.goto(bullet_only_server)
+        page.wait_for_selector(".board-best svg", timeout=10000)
+        assert _filtered_count(page, ".card") == 1
+        assert _tc_active_set(page) == {"blitz", "rapid", "bullet"}
+        page.close()
+
+    def test_endgames_bullet_escalates_once(self, playwright_ctx, bullet_only_server):
+        """Bullet-only data: escalates to blitz+rapid+bullet, shows card."""
+        page = playwright_ctx.new_page()
+        page.goto(f"{bullet_only_server}/endgames")
+        page.wait_for_selector(".eg-board svg", timeout=10000)
+        assert _filtered_count(page, ".eg-card") == 1
+        assert _tc_active_set(page) == {"blitz", "rapid", "bullet"}
+        page.close()
+
+    # -- Two escalations (daily-only data) --
+
+    def test_openings_daily_escalates_twice(self, playwright_ctx, daily_only_server):
+        """Daily-only data: escalates to all 4 TCs, shows card."""
+        page = playwright_ctx.new_page()
+        page.goto(daily_only_server)
+        page.wait_for_selector(".board-best svg", timeout=10000)
+        assert _filtered_count(page, ".card") == 1
+        assert _tc_active_set(page) == {"blitz", "rapid", "bullet", "daily"}
+        page.close()
+
+    def test_endgames_daily_escalates_twice(self, playwright_ctx, daily_only_server):
+        """Daily-only data: escalates to all 4 TCs, shows card."""
+        page = playwright_ctx.new_page()
+        page.goto(f"{daily_only_server}/endgames")
+        page.wait_for_selector(".eg-board svg", timeout=10000)
+        assert _filtered_count(page, ".eg-card") == 1
+        assert _tc_active_set(page) == {"blitz", "rapid", "bullet", "daily"}
         page.close()

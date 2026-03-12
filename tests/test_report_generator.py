@@ -417,20 +417,18 @@ class TestSortDropdown:
 class TestTimeControlFilter:
     """Tests for the time control filter dropdown."""
 
-    def test_filter_checkboxes_present(self):
-        """Time control filter checkboxes appear in the endgame report."""
+    def test_tc_toggle_present(self):
+        """Time control toggle buttons appear in the sidebar."""
         evals = [_make_eval()]
         gen = CoachingReportGenerator(evals, chesscom_user="player")
         app = gen._build_app()
         app.config["TESTING"] = True
-        # Time control filters were removed from the openings page;
-        # verify they still exist on the endgames page.
         resp = app.test_client().get("/endgames")
-        assert b'class="eg-tc-filter"' in resp.data
-        assert b"Bullet" in resp.data
-        assert b"Blitz" in resp.data
-        assert b"Rapid" in resp.data
-        assert b"Daily" in resp.data
+        assert b'class="tc-btn active"' in resp.data
+        assert b'data-tc-filter="blitz"' in resp.data
+        assert b'data-tc-filter="bullet"' in resp.data
+        assert b'data-tc-filter="rapid"' in resp.data
+        assert b'data-tc-filter="daily"' in resp.data
 
     def test_data_time_class_attribute(self):
         """Cards have data-time-class attribute."""
@@ -754,19 +752,15 @@ class TestEndgamePage:
         assert 'min="1"' in html
         assert 'max="20"' in html
 
-    def test_balance_filter_checkboxes_present(self):
-        """Balance filter checkboxes appear on endgames page."""
+    def test_balance_filter_not_present(self):
+        """Balance filter should NOT be on the endgames page (removed)."""
         evals = [_make_eval()]
         gen = CoachingReportGenerator(evals, chesscom_user="player",
                                       endgame_stats=self._SAMPLE_STATS)
         app = gen._build_app()
         app.config["TESTING"] = True
         resp = app.test_client().get("/endgames")
-        assert b'class="balance-filter"' in resp.data
-        assert b"Balance" in resp.data
-        assert b'value="up"' in resp.data
-        assert b'value="equal"' in resp.data
-        assert b'value="down"' in resp.data
+        assert b'class="balance-filter"' not in resp.data
 
     def test_data_balance_attribute_on_rows(self):
         """Cards have data-balance attribute."""

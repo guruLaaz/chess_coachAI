@@ -545,7 +545,25 @@ _SIDEBAR_CSS = r"""
             cursor: pointer;
         }
         .sidebar-select:focus { outline: none; border-color: #94a3b8; }
-        .color-toggle { display: flex; border: 1px solid #d1d5db; border-radius: 6px; overflow: hidden; }
+        .color-toggle, .tc-toggle { display: flex; border: 1px solid #d1d5db; border-radius: 6px; overflow: hidden; }
+        .tc-toggle { flex-wrap: wrap; }
+        .tc-btn {
+            flex: 1 1 45%;
+            padding: 7px 8px;
+            border: none;
+            border-right: 1px solid #d1d5db;
+            border-bottom: 1px solid #d1d5db;
+            background: #ffffff;
+            color: #64748b;
+            font-size: 0.78rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .tc-btn:nth-child(2n) { border-right: none; }
+        .tc-btn:nth-child(n+3) { border-bottom: none; }
+        .tc-btn:hover { background: #f8fafc; color: #1e293b; }
+        .tc-btn.active { background: #e2e8f0; color: #1e293b; }
         .color-btn {
             flex: 1;
             padding: 7px 12px;
@@ -679,6 +697,15 @@ _SIDEBAR_HTML = r"""
                     <option value="chesscom">Chess.com</option>
                     <option value="lichess">Lichess</option>
                 </select>
+            </div>
+            <div class="sidebar-filter-group">
+                <label class="sidebar-filter-label">Time Control</label>
+                <div class="tc-toggle">
+                    <button class="tc-btn" data-tc-filter="bullet">Bullet</button>
+                    <button class="tc-btn active" data-tc-filter="blitz">Blitz</button>
+                    <button class="tc-btn active" data-tc-filter="rapid">Rapid</button>
+                    <button class="tc-btn" data-tc-filter="daily">Daily</button>
+                </div>
             </div>
             <div class="sidebar-filter-group">
                 <label class="sidebar-filter-label">Playing As</label>
@@ -1042,6 +1069,15 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             });
         });
 
+        /* Time control multi-select toggle */
+        var tcBtns = document.querySelectorAll('.tc-btn');
+        tcBtns.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                btn.classList.toggle('active');
+                applyFilters();
+            });
+        });
+
         /* Platform dropdown */
         var platformSelect = document.getElementById('platform-select');
 
@@ -1095,18 +1131,22 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             var minGames = minGamesRange ? parseInt(minGamesRange.value, 10) : 1;
             var activeColors = new Set();
             colorBtns.forEach(function(b) { if (b.classList.contains('active')) activeColors.add(b.getAttribute('data-color-filter')); });
+            var enabledTC = new Set();
+            tcBtns.forEach(function(b) { if (b.classList.contains('active')) enabledTC.add(b.getAttribute('data-tc-filter')); });
             var fromDate = dateFrom ? dateFrom.value : '';
 
             document.querySelectorAll('.card').forEach(function(card) {
                 var pl = card.getAttribute('data-platform');
                 var times = parseInt(card.getAttribute('data-times'), 10) || 0;
                 var color = card.getAttribute('data-color');
+                var tc = card.getAttribute('data-time-class');
                 var cardDate = card.getAttribute('data-date') || '';
                 var plOk = selectedPlat === 'all' || !pl || pl === selectedPlat;
                 var minOk = times >= minGames;
                 var colorOk = activeColors.size === 0 || activeColors.has(color);
+                var tcOk = tcBtns.length === 0 || enabledTC.has(tc);
                 var dateOk = !fromDate || !cardDate || cardDate >= fromDate;
-                card.setAttribute('data-filtered', (plOk && minOk && colorOk && dateOk) ? 'yes' : 'no');
+                card.setAttribute('data-filtered', (plOk && minOk && colorOk && tcOk && dateOk) ? 'yes' : 'no');
                 card.style.display = 'none';
             });
             shownCount = 0;
@@ -1169,7 +1209,24 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
         }
 
         if (platformSelect) { platformSelect.addEventListener('change', applyFilters); }
+
+        /* Auto-escalate TC selection if no results */
+        function hasResults() { return !!document.querySelector('.card[data-filtered="yes"]'); }
         applyFilters();
+        if (!hasResults() && tcBtns.length > 0) {
+            var bullet = document.querySelector('.tc-btn[data-tc-filter="bullet"]');
+            if (bullet && !bullet.classList.contains('active')) {
+                bullet.classList.add('active');
+                applyFilters();
+            }
+            if (!hasResults()) {
+                var daily = document.querySelector('.tc-btn[data-tc-filter="daily"]');
+                if (daily && !daily.classList.contains('active')) {
+                    daily.classList.add('active');
+                    applyFilters();
+                }
+            }
+        }
 
         window.addEventListener('scroll', function() {
             if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 200) {
@@ -1344,45 +1401,6 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
             cursor: pointer;
         }
         .sort-select:hover { border-color: #3b82f6; }
-        .inline-filters {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            flex-wrap: wrap;
-            margin: 12px 0 4px;
-        }
-        .inline-filter-group {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 0.85rem;
-            color: #475569;
-        }
-        .inline-filter-group label {
-            font-weight: 600;
-            white-space: nowrap;
-        }
-        .inline-filter-group select {
-            background: #ffffff;
-            color: #334155;
-            border: 1px solid #d1d5db;
-            border-radius: 6px;
-            padding: 4px 8px;
-            font-size: 0.85rem;
-            cursor: pointer;
-        }
-        .inline-filter-group select:hover { border-color: #3b82f6; }
-        .inline-check-group {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-        .inline-check-group label {
-            font-weight: 400;
-            display: flex;
-            align-items: center;
-            gap: 3px;
-        }
         .empty-state { text-align: center; padding: 80px 20px; color: #94a3b8; }
         .empty-state h2 { color: #64748b; margin-bottom: 12px; }
         @media (max-width: 768px) {
@@ -1410,34 +1428,6 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                     <option value="data-loss-pct">Loss %</option>
                     <option value="data-draw-pct">Draw %</option>
                 </select></div>
-
-            <div class="inline-filters">
-                <div class="inline-filter-group">
-                    <label>Definition</label>
-                    <select id="eg-def-select">
-                        {% for d in definitions %}
-                        <option value="{{ d }}" {{ 'selected' if d == default_definition else '' }}>{{ d }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="inline-filter-group">
-                    <label>Balance</label>
-                    <div class="inline-check-group">
-                        <label><input type="checkbox" class="balance-filter" value="up" checked> Up</label>
-                        <label><input type="checkbox" class="balance-filter" value="equal" checked> Equal</label>
-                        <label><input type="checkbox" class="balance-filter" value="down" checked> Down</label>
-                    </div>
-                </div>
-                <div class="inline-filter-group">
-                    <label>Time Class</label>
-                    <div class="inline-check-group">
-                        <label><input type="checkbox" class="eg-tc-filter" value="bullet" checked> Bullet</label>
-                        <label><input type="checkbox" class="eg-tc-filter" value="blitz" checked> Blitz</label>
-                        <label><input type="checkbox" class="eg-tc-filter" value="rapid" checked> Rapid</label>
-                        <label><input type="checkbox" class="eg-tc-filter" value="daily" checked> Daily</label>
-                    </div>
-                </div>
-            </div>
 
             <div class="stats-bar">
                 <div class="stat-card" title="Total endgame games across all types in the default definition.">
@@ -1522,6 +1512,15 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
         var platformSelect = document.getElementById('platform-select');
         if (platformSelect) { platformSelect.addEventListener('change', applyFilters); }
 
+        /* Time control multi-select toggle */
+        var tcBtns = document.querySelectorAll('.tc-btn');
+        tcBtns.forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                btn.classList.toggle('active');
+                applyFilters();
+            });
+        });
+
         /* Playing As color filter */
         var colorBtns = document.querySelectorAll('.color-btn');
         colorBtns.forEach(function(btn) {
@@ -1566,8 +1565,6 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
         }
 
         /* Combined filter: definition + balance + tc + min games + platform + color + date */
-        var balanceChecks = document.querySelectorAll('.balance-filter');
-        var tcChecks = document.querySelectorAll('.eg-tc-filter');
         var minGamesRange = document.getElementById('min-games-range');
         var minGamesValue = document.getElementById('min-games-value');
         if (minGamesRange && minGamesValue) {
@@ -1577,6 +1574,7 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
             });
         }
         var defSelect = document.getElementById('eg-def-select');
+        var defaultDef = '{{ default_definition }}';
 
         /* Infinite scroll state */
         var PAGE_SIZE = 10;
@@ -1584,11 +1582,10 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
         var fetchingBoards = false;
 
         function applyFilters() {
-            var selectedDef = defSelect ? defSelect.value : '';
+            var selectedDef = defSelect ? defSelect.value : defaultDef;
             var enabledBalance = new Set();
-            balanceChecks.forEach(function(c) { if (c.checked) enabledBalance.add(c.value); });
             var enabledTC = new Set();
-            tcChecks.forEach(function(c) { if (c.checked) enabledTC.add(c.value); });
+            tcBtns.forEach(function(b) { if (b.classList.contains('active')) enabledTC.add(b.getAttribute('data-tc-filter')); });
             var min = minGamesRange ? parseInt(minGamesRange.value, 10) : 1;
             var selectedPlat = platformSelect ? platformSelect.value : 'all';
             var activeColors = new Set();
@@ -1599,7 +1596,7 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                 var balance = card.getAttribute('data-balance');
                 var defn = card.getAttribute('data-definition');
                 var defOk = !selectedDef || defn === selectedDef;
-                var balOk = !balance || enabledBalance.has(balance);
+                var balOk = enabledBalance.size === 0 || !balance || enabledBalance.has(balance);
 
                 /* Cross-filter from per-game details */
                 var details = [];
@@ -1607,7 +1604,7 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                 var fWins = 0, fLosses = 0, fDraws = 0;
                 for (var i = 0; i < details.length; i++) {
                     var g = details[i];
-                    if (g.tc && !enabledTC.has(g.tc)) continue;
+                    if (tcBtns.length > 0 && g.tc && !enabledTC.has(g.tc)) continue;
                     if (selectedPlat !== 'all' && g.p !== selectedPlat) continue;
                     if (activeColors.size > 0 && !activeColors.has(g.c)) continue;
                     if (fromDate && g.d && g.d < fromDate) continue;
@@ -1616,9 +1613,8 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                     else fDraws++;
                 }
                 var fTotal = fWins + fLosses + fDraws;
-                /* If no per-game details exist, fall back to card totals
-                   (unless an explicit filter would exclude everything) */
-                if (details.length === 0 && enabledTC.size > 0) {
+                /* If no per-game details exist, fall back to card totals */
+                if (details.length === 0) {
                     fTotal = parseInt(card.getAttribute('data-total'), 10) || 0;
                 }
                 var gamesOk = fTotal > 0;
@@ -1631,7 +1627,7 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                 var exBody = card.querySelector('.eg-card-body');
                 if (exBody) {
                     var exTc = exBody.getAttribute('data-example-tc');
-                    exBody.style.display = (exTc && !enabledTC.has(exTc)) ? 'none' : '';
+                    exBody.style.display = (tcBtns.length > 0 && exTc && !enabledTC.has(exTc)) ? 'none' : '';
                 }
 
                 /* Update displayed stats to reflect filtered counts */
@@ -1715,10 +1711,25 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
             });
         }
 
-        balanceChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
-        tcChecks.forEach(function(cb) { cb.addEventListener('change', applyFilters); });
         if (defSelect) { defSelect.addEventListener('change', applyFilters); }
+
+        /* Auto-escalate TC selection if no results */
+        function hasResults() { return !!document.querySelector('.eg-card[data-filtered="yes"]'); }
         applyFilters();
+        if (!hasResults() && tcBtns.length > 0) {
+            var bullet = document.querySelector('.tc-btn[data-tc-filter="bullet"]');
+            if (bullet && !bullet.classList.contains('active')) {
+                bullet.classList.add('active');
+                applyFilters();
+            }
+            if (!hasResults()) {
+                var daily = document.querySelector('.tc-btn[data-tc-filter="daily"]');
+                if (daily && !daily.classList.contains('active')) {
+                    daily.classList.add('active');
+                    applyFilters();
+                }
+            }
+        }
 
         window.addEventListener('scroll', function() {
             if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 200) {
