@@ -738,6 +738,69 @@ _SIDEBAR_HTML = r"""
                 </button>
             </div>
         </nav>
+        <script>
+        /* Persist sidebar filter state across page navigation */
+        function saveFilterState() {
+            var state = {};
+            var plat = document.getElementById('platform-select');
+            if (plat) state.platform = plat.value;
+            var tc = [];
+            document.querySelectorAll('.tc-btn').forEach(function(b) {
+                if (b.classList.contains('active')) tc.push(b.getAttribute('data-tc-filter'));
+            });
+            state.tc = tc;
+            var colors = [];
+            document.querySelectorAll('.color-btn').forEach(function(b) {
+                if (b.classList.contains('active')) colors.push(b.getAttribute('data-color-filter'));
+            });
+            state.colors = colors;
+            var range = document.getElementById('min-games-range');
+            if (range) state.minGames = range.value;
+            var dateFrom = document.getElementById('date-from');
+            if (dateFrom) state.dateFrom = dateFrom.value;
+            var activePreset = document.querySelector('.date-preset.active');
+            state.dateDays = activePreset ? (activePreset.getAttribute('data-days') || '') : '';
+            try { sessionStorage.setItem('_filters', JSON.stringify(state)); } catch(e) {}
+        }
+        function restoreFilterState() {
+            var raw;
+            try { raw = sessionStorage.getItem('_filters'); } catch(e) {}
+            if (!raw) return false;
+            var state;
+            try { state = JSON.parse(raw); } catch(e) { return false; }
+            var plat = document.getElementById('platform-select');
+            if (plat && state.platform) plat.value = state.platform;
+            if (state.tc) {
+                var tcSet = new Set(state.tc);
+                document.querySelectorAll('.tc-btn').forEach(function(b) {
+                    var v = b.getAttribute('data-tc-filter');
+                    if (tcSet.has(v)) b.classList.add('active');
+                    else b.classList.remove('active');
+                });
+            }
+            if (state.colors) {
+                var cSet = new Set(state.colors);
+                document.querySelectorAll('.color-btn').forEach(function(b) {
+                    var v = b.getAttribute('data-color-filter');
+                    if (cSet.has(v)) b.classList.add('active');
+                    else b.classList.remove('active');
+                });
+            }
+            var range = document.getElementById('min-games-range');
+            var rangeLabel = document.getElementById('min-games-value');
+            if (range && state.minGames) { range.value = state.minGames; if (rangeLabel) rangeLabel.textContent = state.minGames; }
+            var dateFrom = document.getElementById('date-from');
+            if (dateFrom && state.dateFrom !== undefined) dateFrom.value = state.dateFrom;
+            if (state.dateDays !== undefined) {
+                document.querySelectorAll('.date-preset').forEach(function(b) {
+                    var d = b.getAttribute('data-days') || '';
+                    if (d === state.dateDays) b.classList.add('active');
+                    else b.classList.remove('active');
+                });
+            }
+            return true;
+        }
+        </script>
 """
 
 _MAIN_TEMPLATE = r"""<!DOCTYPE html>
@@ -1156,6 +1219,7 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                 var anyVisible = document.querySelector('.card[data-filtered="yes"]');
                 noResults.style.display = anyVisible ? 'none' : '';
             }
+            saveFilterState();
         }
 
         function showNextBatch() {
@@ -1210,10 +1274,11 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
 
         if (platformSelect) { platformSelect.addEventListener('change', applyFilters); }
 
-        /* Auto-escalate TC selection if no results */
+        /* Restore saved filter state or auto-escalate TC on first visit */
+        var restored = restoreFilterState();
         function hasResults() { return !!document.querySelector('.card[data-filtered="yes"]'); }
         applyFilters();
-        if (!hasResults() && tcBtns.length > 0) {
+        if (!restored && !hasResults() && tcBtns.length > 0) {
             var bullet = document.querySelector('.tc-btn[data-tc-filter="bullet"]');
             if (bullet && !bullet.classList.contains('active')) {
                 bullet.classList.add('active');
@@ -1659,6 +1724,7 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
                 var anyVisible = document.querySelector('.eg-card[data-filtered="yes"]');
                 noResults.style.display = anyVisible ? 'none' : '';
             }
+            saveFilterState();
         }
 
         function showNextBatch() {
@@ -1713,10 +1779,11 @@ _ENDGAME_TEMPLATE = r"""<!DOCTYPE html>
 
         if (defSelect) { defSelect.addEventListener('change', applyFilters); }
 
-        /* Auto-escalate TC selection if no results */
+        /* Restore saved filter state or auto-escalate TC on first visit */
+        var restored = restoreFilterState();
         function hasResults() { return !!document.querySelector('.eg-card[data-filtered="yes"]'); }
         applyFilters();
-        if (!hasResults() && tcBtns.length > 0) {
+        if (!restored && !hasResults() && tcBtns.length > 0) {
             var bullet = document.querySelector('.tc-btn[data-tc-filter="bullet"]');
             if (bullet && !bullet.classList.contains('active')) {
                 bullet.classList.add('active');
