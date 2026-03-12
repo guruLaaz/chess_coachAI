@@ -922,7 +922,6 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
         }
         .stat-value { font-size: 1.8rem; font-weight: 700; color: #1e293b; }
         .stat-label { font-size: 0.8rem; color: #64748b; margin-top: 4px; }
-        .stat-sub { font-size: 0.75rem; color: #94a3b8; margin-top: 2px; }
         .donut-card { display: flex; flex-direction: column; align-items: center; justify-content: center; }
         .donut-chart { display: block; }
         .empty-state { text-align: center; padding: 80px 20px; color: #94a3b8; }
@@ -964,7 +963,6 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
                 <div class="stat-card">
                     <div class="stat-value">{{ "{:,}".format(total_games_analyzed) }}</div>
                     <div class="stat-label">Total Games Analyzed</div>
-                    <div class="stat-sub" id="games-displayed"></div>
                 </div>
                 <div class="stat-card" title="Average centipawn loss across all your opening deviations. Lower is better.">
                     <div class="stat-value">{{ avg_eval_loss }}</div>
@@ -1154,15 +1152,9 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             shownCount = 0;
             showNextBatch();
             var noResults = document.getElementById('no-results');
-            var passingCards = document.querySelectorAll('.card[data-filtered="yes"]');
             if (noResults) {
-                noResults.style.display = passingCards.length ? 'none' : '';
-            }
-            var gamesDisp = document.getElementById('games-displayed');
-            if (gamesDisp) {
-                var totalDisplayed = 0;
-                passingCards.forEach(function(c) { totalDisplayed += parseInt(c.getAttribute('data-times'), 10) || 0; });
-                gamesDisp.textContent = totalDisplayed.toLocaleString() + ' displayed';
+                var anyVisible = document.querySelector('.card[data-filtered="yes"]');
+                noResults.style.display = anyVisible ? 'none' : '';
             }
         }
 
