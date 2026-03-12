@@ -452,6 +452,51 @@ class TestTimeControlFilter:
         assert b'data-time-class="unknown"' in resp.data
 
 
+class TestNewGamesIndicator:
+    """Tests for the new-games-analyzed indicator on the stat card."""
+
+    def test_new_games_shows_arrow_and_count(self):
+        """When new_games_analyzed > 0, shows green arrow + count."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
+                                      new_games_analyzed=5)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b"5 new games analyzed" in resp.data
+        assert b'stat-delta positive' in resp.data
+
+    def test_new_games_singular(self):
+        """When new_games_analyzed == 1, uses singular 'game'."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
+                                      new_games_analyzed=1)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b"1 new game analyzed" in resp.data
+
+    def test_no_new_games_shows_neutral_message(self):
+        """When new_games_analyzed == 0, shows neutral 'No new games' text."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator(evals, chesscom_user="player",
+                                      new_games_analyzed=0)
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b"No new games to analyze" in resp.data
+        assert b'stat-delta neutral' in resp.data
+
+    def test_default_new_games_is_zero(self):
+        """When new_games_analyzed not passed, defaults to 0."""
+        evals = [_make_eval()]
+        gen = CoachingReportGenerator(evals, chesscom_user="player")
+        app = gen._build_app()
+        app.config["TESTING"] = True
+        resp = app.test_client().get("/")
+        assert b"No new games to analyze" in resp.data
+
+
 class TestPlatformFilter:
     """Tests for the platform filter dropdown (Chess.com / Lichess)."""
 

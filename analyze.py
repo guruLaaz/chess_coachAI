@@ -218,9 +218,11 @@ def run_analysis(games, username, stockfish_path, book_path, depth,
             cache.save_evaluations_batch(username, depth, batch)
             print(f"  Cached {len(batch)} new evaluations.")
 
+    new_games_count = len(new_evals)
+
     if not opening_stats:
         print("  No openings detected (games may be too short or missing PGN data).")
-        return [] if report else None
+        return ([], new_games_count) if report else None
 
     # Summary with min 2 games
     lines = RepertoireAnalyzer.format_summary(opening_stats, min_games=2)
@@ -253,7 +255,7 @@ def run_analysis(games, username, stockfish_path, book_path, depth,
         for ev in all_evals:
             if not ev.end_time and ev.game_url in game_dates:
                 ev.end_time = game_dates[ev.game_url]
-        return all_evals
+        return all_evals, new_games_count
 
 
 def main():
@@ -376,19 +378,22 @@ def main():
             if len(endgame_stats) > 10:
                 print(f"  ... and {len(endgame_stats) - 10} more types")
 
-        all_evals = run_analysis(games, display_username, args.stockfish, args.book,
-                                 args.depth, args.workers, cache=cache,
-                                 report=args.report,
-                                 force_refresh=force_refresh)
+        result = run_analysis(games, display_username, args.stockfish, args.book,
+                              args.depth, args.workers, cache=cache,
+                              report=args.report,
+                              force_refresh=force_refresh)
 
-        if args.report and all_evals:
-            from report_generator import CoachingReportGenerator
-            generator = CoachingReportGenerator(
-                all_evals,
-                chesscom_user=chesscom_user,
-                lichess_user=lichess_user,
-                endgame_stats=all_endgame_stats)
-            generator.run()
+        if args.report and result:
+            all_evals, new_games_count = result
+            if all_evals:
+                from report_generator import CoachingReportGenerator
+                generator = CoachingReportGenerator(
+                    all_evals,
+                    chesscom_user=chesscom_user,
+                    lichess_user=lichess_user,
+                    endgame_stats=all_endgame_stats,
+                    new_games_analyzed=new_games_count)
+                generator.run()
     finally:
         cache.close()
 

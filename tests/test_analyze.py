@@ -366,7 +366,7 @@ class TestRunAnalysis:
         MockRep.return_value.analyze_repertoire.return_value = ({}, [])
 
         result = run_analysis([self._make_game()], "bob", "sf", "book", 18, report=True)
-        assert result == []
+        assert result == ([], 0)
 
     @patch("analyze.RepertoireAnalyzer")
     @patch("analyze.StockfishEvaluator")
@@ -387,9 +387,37 @@ class TestRunAnalysis:
         MockRep.return_value.analyze_repertoire.return_value = (
             opening_stats, [(game, ev)])
 
-        result = run_analysis([game], "bob", "sf", "book", 18, report=True)
+        result, new_count = run_analysis([game], "bob", "sf", "book", 18, report=True)
         assert len(result) == 1
         assert result[0] is ev
+        assert new_count == 1
+
+    @patch("analyze.RepertoireAnalyzer")
+    @patch("analyze.StockfishEvaluator")
+    @patch("analyze.OpeningDetector")
+    @patch("analyze.ChessGameAnalyzer")
+    def test_new_games_count_uses_evals_not_uncached(self, MockAnalyzer,
+                                                      MockDetector,
+                                                      MockEvaluator, MockRep):
+        """new_games_count counts actual new evaluations, not uncached games.
+
+        Games that don't produce evaluations (too short, opponent deviated)
+        should not be counted as 'new games analyzed'.
+        """
+        MockAnalyzer.return_value.summarize.return_value = None
+        evaluator_ctx = MagicMock()
+        MockEvaluator.return_value.__enter__ = MagicMock(return_value=evaluator_ctx)
+        MockEvaluator.return_value.__exit__ = MagicMock(return_value=False)
+
+        # 3 uncached games but only 1 produces an evaluation
+        games = [self._make_game(), self._make_game(), self._make_game()]
+        ev = _make_mock_eval()
+        opening_stats = {"Sicilian_white": _make_opening_stats()}
+        MockRep.return_value.analyze_repertoire.return_value = (
+            opening_stats, [(games[0], ev)])
+
+        result, new_count = run_analysis(games, "bob", "sf", "book", 18, report=True)
+        assert new_count == 1  # not 3
 
     @patch("analyze.RepertoireAnalyzer")
     @patch("analyze.StockfishEvaluator")
@@ -638,7 +666,7 @@ class TestMain:
         # Actually, the import is local: "from report_generator import CoachingReportGenerator"
         # We need to patch it differently. Let's use a mock module.
         with patch("analyze.run_analysis") as mock_ra:
-            mock_ra.return_value = [ev]
+            mock_ra.return_value = ([ev], 1)
             with patch.dict("sys.modules", {
                 "report_generator": MagicMock(
                     CoachingReportGenerator=MagicMock()

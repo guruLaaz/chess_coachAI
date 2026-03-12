@@ -12,7 +12,7 @@ class CoachingReportGenerator:
     """Flask web app that displays coaching recommendations with static SVG boards."""
 
     def __init__(self, evaluations, chesscom_user="", lichess_user="",
-                 endgame_stats=None):
+                 endgame_stats=None, new_games_analyzed=0):
         self.chesscom_user = chesscom_user
         self.lichess_user = lichess_user
         self.username = chesscom_user or lichess_user
@@ -56,6 +56,7 @@ class CoachingReportGenerator:
                   / len(self.deviations))
             if self.deviations else 0
         )
+        self.new_games_analyzed = new_games_analyzed
         # Pre-compute item dicts (no SVGs — those are rendered lazily via API)
         self._cached_items = [self._prepare_deviation(ev) for ev in self.deviations]
 
@@ -243,6 +244,7 @@ class CoachingReportGenerator:
                 avg_eval_loss=round(self.avg_eval_loss_cp / 100, 2),
                 theory_knowledge_pct=self.theory_knowledge_pct,
                 accuracy_pct=self.accuracy_pct,
+                new_games_analyzed=self.new_games_analyzed,
             )
 
         @app.route("/opening/<eco_code>/<color>")
@@ -268,6 +270,7 @@ class CoachingReportGenerator:
                 avg_eval_loss=round(self.avg_eval_loss_cp / 100, 2),
                 theory_knowledge_pct=self.theory_knowledge_pct,
                 accuracy_pct=self.accuracy_pct,
+                new_games_analyzed=self.new_games_analyzed,
             )
 
         @app.route("/endgames")
@@ -983,6 +986,27 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             padding: 16px 20px;
             text-align: center;
         }
+        .stat-card.stat-card-games {
+            text-align: left;
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+        }
+        .stat-card-games .stat-icon {
+            width: 40px; height: 40px;
+            background: #eff6ff;
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+            margin-right: -4px;
+        }
+        .stat-card-games .stat-icon svg { width: 22px; height: 22px; }
+        .stat-card-games .stat-delta {
+            display: flex; align-items: center; gap: 4px;
+            font-size: 0.75rem; margin-top: 4px;
+        }
+        .stat-card-games .stat-delta.positive { color: #16a34a; }
+        .stat-card-games .stat-delta.neutral { color: #94a3b8; }
         .stat-value { font-size: 1.8rem; font-weight: 700; color: #1e293b; }
         .stat-label { font-size: 0.8rem; color: #64748b; margin-top: 4px; }
         .donut-card { display: flex; flex-direction: column; align-items: center; justify-content: center; }
@@ -1023,9 +1047,26 @@ _MAIN_TEMPLATE = r"""<!DOCTYPE html>
             {% endif %}
 
             <div class="stats-bar">
-                <div class="stat-card">
-                    <div class="stat-value">{{ "{:,}".format(total_games_analyzed) }}</div>
-                    <div class="stat-label">Total Games Analyzed</div>
+                <div class="stat-card stat-card-games">
+                    <div>
+                        <div class="stat-label">Total Games Analyzed</div>
+                        <div class="stat-value">{{ "{:,}".format(total_games_analyzed) }}</div>
+                        {% if new_games_analyzed > 0 %}
+                        <div class="stat-delta positive">
+                            <svg viewBox="0 0 12 12" width="12" height="12"><path d="M6 2 L10 7 H7 V10 H5 V7 H2 Z" fill="currentColor"/></svg>
+                            {{ new_games_analyzed }} new {{ "game" if new_games_analyzed == 1 else "games" }} analyzed
+                        </div>
+                        {% else %}
+                        <div class="stat-delta neutral">No new games to analyze</div>
+                        {% endif %}
+                    </div>
+                    <div class="stat-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+                            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+                        </svg>
+                    </div>
                 </div>
                 <div class="stat-card" title="Average centipawn loss across all your opening deviations. Lower is better.">
                     <div class="stat-value">{{ avg_eval_loss }}</div>
