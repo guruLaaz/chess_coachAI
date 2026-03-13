@@ -171,6 +171,9 @@ def analyze_user(self, job_id, chesscom_user=None, lichess_user=None):
     Updates job progress in the database throughout.
     """
     try:
+        import time as _time
+        job_start = _time.monotonic()
+
         # ------------------------------------------------------------------
         # Phase 1: Fetch games
         # ------------------------------------------------------------------
@@ -178,7 +181,9 @@ def analyze_user(self, job_id, chesscom_user=None, lichess_user=None):
         logger.info("Job %s: fetching games (chesscom=%s, lichess=%s)",
                      job_id, chesscom_user, lichess_user)
 
+        fetch_start = _time.monotonic()
         games = asyncio.run(_fetch_all(chesscom_user, lichess_user, job_id))
+        logger.info("Job %s: fetch phase took %.1fs", job_id, _time.monotonic() - fetch_start)
 
         if not games:
             logger.warning("Job %s: no games found for chesscom=%s, lichess=%s",
@@ -221,6 +226,8 @@ def analyze_user(self, job_id, chesscom_user=None, lichess_user=None):
             dbq.save_endgames_batch(new_rows)
             logger.info("Job %s: saved %d endgame rows", job_id, len(new_rows))
 
+        logger.info("Job %s: endgame phase took %.1fs", job_id, _time.monotonic() - fetch_start)
+
         try:
             dbq.update_job(job_id, progress_pct=40,
                            message=f"Endgame analysis complete, starting openings")
@@ -230,6 +237,7 @@ def analyze_user(self, job_id, chesscom_user=None, lichess_user=None):
         # ------------------------------------------------------------------
         # Phase 3: Opening analysis (Stockfish, slow)
         # ------------------------------------------------------------------
+        opening_start = _time.monotonic()
         depth = ANALYSIS_DEPTH
         workers = STOCKFISH_WORKERS
 
@@ -282,9 +290,11 @@ def analyze_user(self, job_id, chesscom_user=None, lichess_user=None):
         # ------------------------------------------------------------------
         # Done
         # ------------------------------------------------------------------
+        logger.info("Job %s: opening phase took %.1fs", job_id, _time.monotonic() - opening_start)
+        total_elapsed = _time.monotonic() - job_start
         dbq.update_job(job_id, status="complete", progress_pct=100,
-                       message=f"Analysis complete: {total} games")
-        logger.info("Job %s: complete (%d games)", job_id, total)
+                       message=f"Analysis complete: {total} games in {total_elapsed:.0f}s")
+        logger.info("Job %s: complete (%d games, %.1fs total)", job_id, total, total_elapsed)
         return {"job_id": job_id, "total_games": total}
 
     except Exception as exc:

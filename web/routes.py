@@ -222,6 +222,19 @@ def register_routes(app):
             data['queue_position'] = position
             data['queue_total'] = total
 
+        # Include elapsed/total duration
+        created = job.get('created_at')
+        completed = job.get('completed_at')
+        if created:
+            from datetime import datetime, timezone
+            now = completed or datetime.now(timezone.utc)
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            if now.tzinfo is None:
+                now = now.replace(tzinfo=timezone.utc)
+            elapsed = int((now - created).total_seconds())
+            data['elapsed_seconds'] = elapsed
+
         return jsonify(data)
 
     @app.route('/u/<path:user_path>/status/cancel', methods=['POST'])

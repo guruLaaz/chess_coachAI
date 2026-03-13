@@ -216,6 +216,13 @@
             display: none;
         }
 
+        .elapsed-time {
+            font-size: 0.8rem;
+            color: var(--progress-text);
+            opacity: 0.7;
+            margin-top: 4px;
+        }
+
         .queue-position {
             font-size: 0.9rem;
             color: var(--text-secondary);
@@ -315,6 +322,7 @@
                 <div class="progress-fill" id="progress-fill"></div>
             </div>
             <p class="progress-text" id="progress-text"></p>
+            <p class="elapsed-time hidden" id="elapsed-time"></p>
 
             <!-- Error detail -->
             <div class="error-detail hidden" id="error-detail"></div>
@@ -355,6 +363,17 @@
         var queuePosition = document.getElementById('queue-position');
         var viewReport = document.getElementById('view-report');
         var retryForm = document.getElementById('retry-form');
+        var elapsedTime = document.getElementById('elapsed-time');
+
+        function formatElapsed(seconds) {
+            if (seconds < 60) return seconds + 's';
+            var m = Math.floor(seconds / 60);
+            var s = seconds % 60;
+            if (m < 60) return m + 'm ' + s + 's';
+            var h = Math.floor(m / 60);
+            m = m % 60;
+            return h + 'h ' + m + 'm';
+        }
 
         function updateUI(data) {
             currentStatus = data.status;
@@ -370,6 +389,7 @@
             viewReport.classList.add('hidden');
             retryForm.classList.add('hidden');
             queuePosition.classList.add('hidden');
+            elapsedTime.classList.add('hidden');
             card.classList.remove('pulsing');
 
             switch (data.status) {
@@ -393,6 +413,10 @@
                     var fetchPct = Math.min(data.progress_pct || 0, 30);
                     progressFill.style.width = fetchPct + '%';
                     progressText.textContent = tFetchMsg + ' (' + fetchPct + '%)';
+                    if (data.elapsed_seconds != null) {
+                        elapsedTime.textContent = 'Elapsed: ' + formatElapsed(data.elapsed_seconds);
+                        elapsedTime.classList.remove('hidden');
+                    }
                     break;
 
                 case 'analyzing':
@@ -404,13 +428,21 @@
                     var pct = data.progress_pct || 0;
                     progressFill.style.width = pct + '%';
                     progressText.textContent = tAnalyzeMsg + ' (' + pct + '%)';
+                    if (data.elapsed_seconds != null) {
+                        elapsedTime.textContent = 'Elapsed: ' + formatElapsed(data.elapsed_seconds);
+                        elapsedTime.classList.remove('hidden');
+                    }
                     break;
 
                 case 'complete':
                     spinner.classList.add('hidden');
                     iconSuccess.classList.remove('hidden');
                     title.textContent = _t('status_complete_title') || 'Analysis complete!';
-                    message.textContent = _t('status_complete_msg') || 'Redirecting to your report...';
+                    var completeMsg = (_t('status_complete_msg') || 'Redirecting to your report...');
+                    if (data.elapsed_seconds != null) {
+                        completeMsg += ' (' + formatElapsed(data.elapsed_seconds) + ')';
+                    }
+                    message.textContent = completeMsg;
                     viewReport.classList.remove('hidden');
                     break;
 
