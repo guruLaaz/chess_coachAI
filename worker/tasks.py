@@ -7,7 +7,7 @@ import re
 import sys
 from datetime import datetime, timezone
 
-# Add fetchers/ to import path (matching analyze.py's approach)
+# Add fetchers/ to import path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "fetchers"))
 
 from worker.celery_app import app

@@ -5,6 +5,7 @@ Read [README.md](README.md) for project overview, architecture, setup, and envir
 - Always add or update tests when changing code.
 - When fixing broken tests, verify the test's scenario is still valid before changing assertions. If unclear whether the test or the code is wrong, ask the user.
 - Never commit or push without explicit user approval.
+- Never redeploy or change the database without explicit and specific user instruction.
 
 ## Code Patterns
 - Raw SQL via psycopg2 (no ORM) — queries live in `db/queries.py`

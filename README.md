@@ -33,17 +33,12 @@ Chess CoachAI analyzes your Chess.com and Lichess games using Stockfish to find 
    ```bash
    docker-compose up -d
    ```
+   After code changes, rebuild before restarting:
+   ```bash
+   docker-compose up -d --build
+   ```
 
 4. Visit http://localhost:8000
-
-## CLI Usage (Local Development)
-
-The original CLI still works for local analysis:
-
-```bash
-pip install -r requirements.txt
-python analyze.py --chesscom Hikaru --lichess DrNykterstein --days 30 --depth 14 --report
-```
 
 ## Architecture
 
