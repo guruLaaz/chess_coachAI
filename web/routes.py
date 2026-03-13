@@ -2,6 +2,8 @@
 
 import logging
 import re
+import urllib.request
+import urllib.error
 from datetime import datetime, timezone
 
 from flask import redirect, render_template, request, jsonify, url_for
@@ -26,6 +28,34 @@ def validate_username(username):
         return True
     return (len(username) <= MAX_USERNAME_LEN
             and USERNAME_PATTERN.match(username) is not None)
+
+
+def check_username_exists(platform, username):
+    """Check if a username exists on the given platform.
+
+    Returns True if the account exists, False if it doesn't (404),
+    or True on network errors (fail open to avoid blocking users).
+    """
+    if platform == 'chesscom':
+        url = f"https://api.chess.com/pub/player/{username}"
+    elif platform == 'lichess':
+        url = f"https://lichess.org/api/user/{username}"
+    else:
+        return True
+
+    req = urllib.request.Request(url, headers={'User-Agent': 'chess_coachAI/1.0'})
+    try:
+        urllib.request.urlopen(req, timeout=5)
+        return True
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return False
+        # Other HTTP errors — fail open
+        logger.warning("Unexpected HTTP %d checking %s user '%s'", e.code, platform, username)
+        return True
+    except Exception:
+        logger.warning("Network error checking %s user '%s'", platform, username, exc_info=True)
+        return True
 
 
 def register_routes(app):
@@ -56,6 +86,17 @@ def register_routes(app):
         if not validate_username(lichess):
             logger.warning("Invalid Lichess username: %s", lichess)
             return f'Invalid Lichess username: {lichess}', 400
+
+        # Verify accounts actually exist before queueing
+        errors = []
+        if chesscom and not check_username_exists('chesscom', chesscom):
+            errors.append(f'Chess.com account "{chesscom}" was not found.')
+        if lichess and not check_username_exists('lichess', lichess):
+            errors.append(f'Lichess account "{lichess}" was not found.')
+        if errors:
+            logger.warning("Account validation failed: %s", '; '.join(errors))
+            return render_template('landing.html', error=' '.join(errors),
+                                   chesscom_value=chesscom, lichess_value=lichess)
 
         chesscom_lower = chesscom.lower() if chesscom else None
         lichess_lower = lichess.lower() if lichess else None

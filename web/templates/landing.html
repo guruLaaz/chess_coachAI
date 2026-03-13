@@ -302,17 +302,20 @@
                             <label for="chesscom_username" data-i18n="label_chesscom">Chess.com Username</label>
                             <div class="input-wrapper">
                                 <span class="prefix-icon green">♟</span>
-                                <input type="text" id="chesscom_username" name="chesscom_username" placeholder="e.g., Hikaru">
+                                <input type="text" id="chesscom_username" name="chesscom_username" placeholder="e.g., Hikaru" value="{{ chesscom_value or '' }}">
                             </div>
                         </div>
                         <div class="input-group">
                             <label for="lichess_username" data-i18n="label_lichess">Lichess Username</label>
                             <div class="input-wrapper">
                                 <span class="prefix-icon dark">♞</span>
-                                <input type="text" id="lichess_username" name="lichess_username" placeholder="e.g., DrNykterstein">
+                                <input type="text" id="lichess_username" name="lichess_username" placeholder="e.g., DrNykterstein" value="{{ lichess_value or '' }}">
                             </div>
                         </div>
                     </div>
+                    {% if error %}
+                    <p class="error-msg" style="display:block">{{ error }}</p>
+                    {% endif %}
                     <p class="error-msg" id="error-msg" data-i18n="error_msg">Please enter at least one username.</p>
                     <button type="submit" class="submit-btn" data-i18n="submit_btn">Analyze My Games →</button>
                 </form>

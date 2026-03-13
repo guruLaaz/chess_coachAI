@@ -72,6 +72,40 @@ class TestRoundTrip:
         assert parse_user_path(path) == ("hikaru", "drnykterstein")
 
 
+# ── check_username_exists unit tests ─────────────────────────────
+
+from web.routes import check_username_exists
+
+
+class TestCheckUsernameExists:
+    @patch('web.routes.urllib.request.urlopen')
+    def test_returns_true_when_account_exists(self, mock_urlopen):
+        mock_urlopen.return_value = MagicMock()
+        assert check_username_exists('lichess', 'DrNykterstein') is True
+
+    @patch('web.routes.urllib.request.urlopen')
+    def test_returns_false_on_404(self, mock_urlopen):
+        import urllib.error
+        mock_urlopen.side_effect = urllib.error.HTTPError(
+            url='', code=404, msg='Not Found', hdrs=None, fp=None)
+        assert check_username_exists('lichess', 'hansmoke') is False
+
+    @patch('web.routes.urllib.request.urlopen')
+    def test_fails_open_on_network_error(self, mock_urlopen):
+        mock_urlopen.side_effect = ConnectionError("timeout")
+        assert check_username_exists('chesscom', 'someuser') is True
+
+    @patch('web.routes.urllib.request.urlopen')
+    def test_fails_open_on_500(self, mock_urlopen):
+        import urllib.error
+        mock_urlopen.side_effect = urllib.error.HTTPError(
+            url='', code=500, msg='Server Error', hdrs=None, fp=None)
+        assert check_username_exists('lichess', 'someuser') is True
+
+    def test_unknown_platform_returns_true(self):
+        assert check_username_exists('unknown', 'user') is True
+
+
 # ── Flask app fixture ─────────────────────────────────────────────
 
 
@@ -81,6 +115,13 @@ def _mock_worker():
     with patch('worker.tasks.analyze_user') as mock_task:
         mock_task.apply_async.return_value = MagicMock()
         yield mock_task
+
+
+@pytest.fixture(autouse=True)
+def _mock_username_check():
+    """Default: assume all usernames exist (skip real API calls)."""
+    with patch('web.routes.check_username_exists', return_value=True):
+        yield
 
 
 @pytest.fixture
@@ -145,6 +186,44 @@ class TestAnalyzeValidation:
                 'chesscom_username': 'valid-user_123',
             })
             assert resp.status_code == 302
+
+
+# ── POST /analyze account existence checks ───────────────────────
+
+
+class TestAnalyzeAccountExists:
+    @patch('web.routes.check_username_exists', return_value=False)
+    def test_invalid_lichess_shows_error(self, mock_check, client):
+        resp = client.post('/analyze', data={
+            'lichess_username': 'hansmoke',
+        })
+        assert resp.status_code == 200
+        assert b'not found' in resp.data
+        assert b'hansmoke' in resp.data
+
+    @patch('web.routes.check_username_exists', return_value=False)
+    def test_invalid_chesscom_shows_error(self, mock_check, client):
+        resp = client.post('/analyze', data={
+            'chesscom_username': 'totallynotauser999',
+        })
+        assert resp.status_code == 200
+        assert b'not found' in resp.data
+
+    @patch('web.routes.check_username_exists', return_value=False)
+    def test_invalid_username_preserves_input(self, mock_check, client):
+        resp = client.post('/analyze', data={
+            'lichess_username': 'hansmoke',
+        })
+        assert resp.status_code == 200
+        assert b'hansmoke' in resp.data
+
+    @patch('web.routes.check_username_exists', return_value=False)
+    def test_invalid_username_does_not_create_job(self, mock_check, client):
+        with patch('web.routes.queries') as mock_q:
+            resp = client.post('/analyze', data={
+                'lichess_username': 'hansmoke',
+            })
+            mock_q.create_job.assert_not_called()
 
 
 # ── POST /analyze redirect logic ─────────────────────────────────
