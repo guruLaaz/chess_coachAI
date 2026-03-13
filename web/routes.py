@@ -40,7 +40,9 @@ def register_routes(app):
         chesscom = (request.form.get('chesscom_username') or '').strip()
         lichess = (request.form.get('lichess_username') or '').strip()
 
-        logger.info("Analysis requested: chesscom=%s lichess=%s", chesscom or '-', lichess or '-')
+        logger.info("Analysis requested: chesscom=%s lichess=%s (ip=%s ua=%s)",
+                     chesscom or '-', lichess or '-',
+                     request.remote_addr, request.headers.get('User-Agent', '-'))
 
         # Validate: at least one must be non-empty
         if not chesscom and not lichess:
