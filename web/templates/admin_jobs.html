@@ -87,7 +87,10 @@
             <h1>Jobs Dashboard</h1>
             <p class="subtitle">Chess CoachAI &mdash; Analysis Pipeline Monitor</p>
         </div>
-        <button class="refresh-btn" onclick="location.reload()">Refresh</button>
+        <div style="display:flex;gap:8px">
+            <a class="refresh-btn" href="http://localhost:5555" target="_blank" style="text-decoration:none">Flower (Workers)</a>
+            <button class="refresh-btn" onclick="location.reload()">Refresh</button>
+        </div>
     </div>
 
     {% set active_jobs = jobs | selectattr('status', 'in', ['fetching', 'analyzing']) | list %}
