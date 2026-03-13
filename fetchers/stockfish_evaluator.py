@@ -58,10 +58,15 @@ class StockfishEvaluator:
         if self._engine is None:
             raise RuntimeError("Engine not started. Use StockfishEvaluator as a context manager.")
 
+        if not board.is_valid():
+            logger.warning("Skipping invalid board position: %s", board.fen())
+            return None
+
         try:
             info = self._engine.analyse(board, chess.engine.Limit(depth=self.depth))
         except (chess.engine.EngineError, BrokenPipeError, TimeoutError, OSError) as e:
             logger.warning("Stockfish EngineError for FEN %s: %s", board.fen(), e)
+            self._try_restart_engine()
             return None
 
         score = info["score"].white()
@@ -75,9 +80,30 @@ class StockfishEvaluator:
 
         best_move = info.get("pv", [None])[0] if info.get("pv") else None
 
+        # Validate the best move is actually legal for this position
+        if best_move and best_move not in board.legal_moves:
+            logger.warning("Engine returned illegal best move %s for FEN %s, discarding",
+                           best_move.uci(), board.fen())
+            self._try_restart_engine()
+            return None
+
         return EvalResult(
             score_cp=score_cp,
             score_mate=mate_in,
             depth=info.get("depth", self.depth),
             best_move=best_move,
         )
+
+    def _try_restart_engine(self):
+        """Attempt to restart the engine after an error."""
+        try:
+            if self._engine:
+                self._engine.quit()
+        except Exception:
+            pass
+        try:
+            self._engine = chess.engine.SimpleEngine.popen_uci(self.stockfish_path)
+            logger.info("Stockfish engine restarted successfully")
+        except Exception:
+            logger.error("Failed to restart Stockfish engine", exc_info=True)
+            self._engine = None

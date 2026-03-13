@@ -173,6 +173,21 @@ class TestFromJson:
         assert "rules" not in data
         assert ChessGame.from_json(data, "PlayerA") is not None
 
+    def test_from_position_game_returns_none(self):
+        data = make_game_json()
+        data["initial_setup"] = "rnbq1bnK/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b - - 0 1"
+        assert ChessGame.from_json(data, "PlayerA") is None
+
+    def test_standard_initial_setup_accepted(self):
+        data = make_game_json()
+        data["initial_setup"] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+        assert ChessGame.from_json(data, "PlayerA") is not None
+
+    def test_missing_initial_setup_accepted(self):
+        data = make_game_json()
+        assert "initial_setup" not in data
+        assert ChessGame.from_json(data, "PlayerA") is not None
+
 
 class TestFromLichessJson:
     def test_parse_as_white(self):

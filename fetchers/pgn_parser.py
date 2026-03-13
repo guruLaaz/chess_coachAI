@@ -12,7 +12,8 @@ class PGNParser:
     def parse_moves(pgn_string):
         """Parse a PGN string and return a list of chess.Move objects.
 
-        Returns None if the PGN is invalid or empty.
+        Returns None if the PGN is invalid, empty, or uses a non-standard
+        starting position (SetUp/FEN headers).
         """
         if not pgn_string or not pgn_string.strip():
             return None
@@ -22,6 +23,15 @@ class PGNParser:
         except Exception:
             return None
         if game is None:
+            return None
+
+        # Skip games with custom starting positions — our opening detector
+        # replays moves on a standard board so non-standard FENs produce
+        # corrupt positions that crash Stockfish.
+        if game.headers.get("SetUp") == "1" or (
+            game.headers.get("FEN") and
+            game.headers["FEN"] != chess.STARTING_FEN
+        ):
             return None
 
         moves = list(game.mainline_moves())

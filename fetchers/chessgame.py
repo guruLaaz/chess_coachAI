@@ -32,6 +32,10 @@ class ChessGame:
         if data.get("rules", "chess") != "chess":
             return None
 
+        # Skip games with custom starting positions ("From Position" games)
+        if data.get("initial_setup") and data["initial_setup"] != "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1":
+            return None
+
         # Determine my color
         white_user = data.get('white', {}).get('username', '').lower()
         black_user = data.get('black', {}).get('username', '').lower()

@@ -78,7 +78,7 @@ class TestStockfishEvaluator:
         mock_engine.analyse.return_value = {
             "score": _make_score(mate=3),
             "depth": 18,
-            "pv": [chess.Move.from_uci("d1h5")],
+            "pv": [chess.Move.from_uci("e2e4")],
         }
 
         evaluator = StockfishEvaluator("dummy_path", depth=18)
@@ -141,3 +141,51 @@ class TestStockfishEvaluator:
                 raise ValueError("test error")
 
         mock_engine.quit.assert_called_once()
+
+    def test_evaluate_invalid_board_returns_none(self):
+        """Invalid positions (e.g. from custom FEN games) should be skipped."""
+        evaluator = StockfishEvaluator("dummy_path", depth=14)
+        evaluator._engine = MagicMock()
+
+        # Board with white king on h8 and no black king — invalid
+        board = chess.Board("rnbq1bnK/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b - - 0 1")
+        result = evaluator.evaluate(board)
+        assert result is None
+        evaluator._engine.analyse.assert_not_called()
+
+    def test_evaluate_illegal_best_move_returns_none(self):
+        """If engine returns a move illegal for the position, discard result."""
+        mock_engine = MagicMock()
+        # Return e2e4 (a white move) for a position where it's black to move
+        mock_engine.analyse.return_value = {
+            "score": _make_score(cp=30),
+            "depth": 14,
+            "pv": [chess.Move.from_uci("e2e4")],
+        }
+
+        evaluator = StockfishEvaluator("dummy_path", depth=14)
+        evaluator._engine = mock_engine
+
+        # Standard position after 1. e4 — it's black's turn
+        board = chess.Board()
+        board.push(chess.Move.from_uci("e2e4"))
+        result = evaluator.evaluate(board)
+        # e2e4 is not legal for black, so result should be None
+        assert result is None
+
+    @patch("stockfish_evaluator.chess.engine.SimpleEngine.popen_uci")
+    def test_engine_restart_on_error(self, mock_popen):
+        """Engine should be restarted after an EngineError."""
+        mock_engine = MagicMock()
+        mock_engine.analyse.side_effect = chess.engine.EngineError("broken")
+        mock_new_engine = MagicMock()
+        mock_popen.return_value = mock_new_engine
+
+        evaluator = StockfishEvaluator("dummy_path", depth=14)
+        evaluator._engine = mock_engine
+
+        result = evaluator.evaluate(chess.Board())
+        assert result is None
+        mock_engine.quit.assert_called_once()
+        mock_popen.assert_called_once_with("dummy_path")
+        assert evaluator._engine is mock_new_engine

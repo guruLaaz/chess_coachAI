@@ -63,6 +63,24 @@ class TestParseMoves:
         with patch("pgn_parser.chess.pgn.read_game", return_value=None):
             assert PGNParser.parse_moves("some pgn text") is None
 
+    def test_custom_fen_position_returns_none(self):
+        pgn = '[SetUp "1"]\n[FEN "rnbq1bnK/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b - - 0 1"]\n\n1. e4 e5 1-0'
+        assert PGNParser.parse_moves(pgn) is None
+
+    def test_setup_header_without_fen_returns_none(self):
+        pgn = '[SetUp "1"]\n\n1. e4 e5 1-0'
+        assert PGNParser.parse_moves(pgn) is None
+
+    def test_standard_fen_header_accepted(self):
+        pgn = '[FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"]\n\n1. e4 e5 1-0'
+        result = PGNParser.parse_moves(pgn)
+        assert result is not None
+
+    def test_no_setup_header_accepted(self):
+        pgn = '[Event "Test"]\n\n1. e4 e5 1-0'
+        result = PGNParser.parse_moves(pgn)
+        assert result is not None
+
 
 CLOCKS_PGN = """[Event "Live Chess"]
 [Result "1-0"]

@@ -132,12 +132,14 @@ class TestStatusJson:
     @patch('web.routes.queries')
     def test_pending_status(self, mock_q, client):
         mock_q.get_latest_job.return_value = {
+            'id': 1,
             'status': 'pending',
             'progress_pct': 0,
             'total_games': 0,
             'message': None,
             'error_message': None,
         }
+        mock_q.get_queue_position.return_value = (1, 1)
         resp = client.get('/u/hikaru/status/json')
         assert resp.status_code == 200
         data = resp.get_json()
@@ -208,12 +210,14 @@ class TestStatusJson:
     def test_null_fields_become_empty_strings(self, mock_q, client):
         """message and error_message should be '' when None in DB."""
         mock_q.get_latest_job.return_value = {
+            'id': 2,
             'status': 'pending',
             'progress_pct': 0,
             'total_games': 0,
             'message': None,
             'error_message': None,
         }
+        mock_q.get_queue_position.return_value = (1, 1)
         resp = client.get('/u/hikaru/status/json')
         data = resp.get_json()
         assert data['message'] == ''
@@ -222,12 +226,14 @@ class TestStatusJson:
     @patch('web.routes.queries')
     def test_lichess_user_path_parsing(self, mock_q, client):
         mock_q.get_latest_job.return_value = {
+            'id': 3,
             'status': 'pending',
             'progress_pct': 0,
             'total_games': 0,
             'message': '',
             'error_message': '',
         }
+        mock_q.get_queue_position.return_value = (1, 1)
         resp = client.get('/u/-/drnykterstein/status/json')
         assert resp.status_code == 200
         mock_q.get_latest_job.assert_called_with(
