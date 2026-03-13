@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>No Games Found | Chess CoachAI</title>
+    <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script>try{var t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.setAttribute('data-theme','dark')}catch(e){}</script>
+    <style>
+        :root {
+            --bg-primary: #fff;
+            --bg-secondary: #f0f4f8;
+            --text-primary: #111;
+            --text-secondary: #6b7280;
+            --card-bg: #fff;
+            --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            --blue: #2563eb;
+            --blue-hover: #1d4ed8;
+        }
+        [data-theme="dark"] {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --card-bg: #1e293b;
+            --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Ubuntu', -apple-system, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .card {
+            background: var(--card-bg);
+            box-shadow: var(--card-shadow);
+            border-radius: 16px;
+            padding: 48px;
+            max-width: 480px;
+            text-align: center;
+        }
+        .icon { font-size: 3rem; margin-bottom: 16px; }
+        h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 12px; }
+        p { color: var(--text-secondary); line-height: 1.6; margin-bottom: 8px; }
+        .username { color: var(--blue); font-weight: 500; }
+        .actions { margin-top: 24px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+        .btn {
+            display: inline-block; padding: 10px 24px; border-radius: 8px;
+            font-size: 0.9rem; font-weight: 500; text-decoration: none;
+            cursor: pointer; border: none;
+        }
+        .btn-primary { background: var(--blue); color: #fff; }
+        .btn-primary:hover { background: var(--blue-hover); }
+        .btn-secondary { background: var(--bg-secondary); color: var(--text-primary); }
+        .btn-secondary:hover { opacity: 0.8; }
+        .hint { color: var(--text-secondary); font-size: 0.85rem; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon">&#9822;</div>
+        <h1>No games found</h1>
+        <p>
+            We couldn't find any games for
+            {% if chesscom_user %}<span class="username">{{ chesscom_user }}</span>{% endif %}
+            {% if chesscom_user and lichess_user %} / {% endif %}
+            {% if lichess_user %}<span class="username">{{ lichess_user }}</span>{% endif %}.
+        </p>
+        <p>This could mean the username doesn't exist, or the account has no public games.</p>
+        <div class="actions">
+            <a class="btn btn-primary" href="/">Try another username</a>
+        </div>
+        <p class="hint">Make sure the username matches exactly as it appears on Chess.com or Lichess.</p>
+    </div>
+</body>
+</html>

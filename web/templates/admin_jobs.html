@@ -66,14 +66,34 @@
         .mini-progress { background: var(--border); border-radius: 3px; height: 6px; width: 80px; display: inline-block; vertical-align: middle; }
         .mini-progress-fill { background: var(--accent); height: 100%; border-radius: 3px; }
 
-        .refresh-btn {
+        .refresh-btn, .log-link {
             background: var(--card-bg); color: var(--text); border: 1px solid var(--border);
             border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 0.85rem;
-            float: right;
+            text-decoration: none;
         }
-        .refresh-btn:hover { border-color: var(--accent); }
+        .refresh-btn:hover, .log-link:hover { border-color: var(--accent); color: var(--accent); }
 
         .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+
+        /* Job ID clickable */
+        .job-id-btn { color: var(--accent); cursor: pointer; font-weight: 600; }
+        .job-id-btn:hover { text-decoration: underline; }
+
+        /* Log row */
+        .log-row td { padding: 0; }
+        .log-content {
+            background: #0c0f1a; color: #a5b4c8; font-family: 'Cascadia Code', 'Fira Code', monospace;
+            font-size: 0.78rem; line-height: 1.5; padding: 12px 16px; margin: 0;
+            max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+            border-left: 3px solid var(--accent);
+        }
+        .log-content .log-level-ERROR { color: #f87171; }
+        .log-content .log-level-WARNING { color: #fbbf24; }
+        .log-content .log-level-INFO { color: #94a3b8; }
+
+        /* Service logs section */
+        .service-logs { margin-top: 24px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+        .service-logs-label { color: var(--text-dim); font-size: 0.85rem; margin-right: 8px; }
 
         @media (max-width: 768px) {
             body { padding: 12px; }
@@ -147,7 +167,7 @@
                 {% for job in jobs %}
                 {% set is_active = job.status in ('fetching', 'analyzing') %}
                 <tr data-status="{{ 'active' if is_active else job.status }}">
-                    <td>{{ job.id }}</td>
+                    <td><span class="job-id-btn" onclick="toggleLogs({{ job.id }})">{{ job.id }}</span></td>
                     <td>
                         {% if job.chesscom_user %}
                             <a class="user-link" href="/u/{{ job.chesscom_user }}{% if job.lichess_user %}/{{ job.lichess_user }}{% endif %}">{{ job.chesscom_user }}</a>
@@ -184,12 +204,74 @@
                         {% endif %}
                     </td>
                 </tr>
+                <tr class="log-row" id="logs-{{ job.id }}" style="display:none" data-status="{{ 'active' if is_active else job.status }}">
+                    <td colspan="8">
+                        <pre class="log-content">Loading logs...</pre>
+                    </td>
+                </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
 
+    <div class="service-logs">
+        <span class="service-logs-label">Service Logs (run from host):</span>
+        <button class="log-link" onclick="copyCmd('worker')">Worker</button>
+        <button class="log-link" onclick="copyCmd('web')">Web</button>
+        <button class="log-link" onclick="copyCmd('postgres')">Postgres</button>
+        <button class="log-link" onclick="copyCmd('redis')">Redis</button>
+        <button class="log-link" onclick="copyCmd('flower')">Flower</button>
+        <span id="copy-msg" style="color:#34d399;font-size:0.8rem;margin-left:8px;display:none">Copied!</span>
+    </div>
+
     <script>
+        function toggleLogs(jobId) {
+            var row = document.getElementById('logs-' + jobId);
+            if (row.style.display === 'none') {
+                row.style.display = '';
+                var pre = row.querySelector('.log-content');
+                if (pre.dataset.loaded !== 'true') {
+                    fetch('/admin/jobs/' + jobId + '/logs')
+                        .then(function(r) { return r.json(); })
+                        .then(function(logs) {
+                            if (!logs.length) {
+                                pre.textContent = '(no logs recorded for this job)';
+                            } else {
+                                pre.innerHTML = logs.map(function(l) {
+                                    var cls = 'log-level-' + l.level;
+                                    var ts = l.logged_at || '';
+                                    return '<span class="' + cls + '">' +
+                                        ts + ' [' + l.level + '] ' +
+                                        escapeHtml(l.message) + '</span>';
+                                }).join('\n');
+                            }
+                            pre.dataset.loaded = 'true';
+                        })
+                        .catch(function(err) {
+                            pre.textContent = 'Failed to load logs: ' + err;
+                        });
+                }
+            } else {
+                row.style.display = 'none';
+            }
+        }
+
+        function copyCmd(service) {
+            var cmd = 'docker compose logs --tail 500 -f ' + service;
+            navigator.clipboard.writeText(cmd).then(function() {
+                var msg = document.getElementById('copy-msg');
+                msg.textContent = 'Copied: ' + cmd;
+                msg.style.display = 'inline';
+                setTimeout(function() { msg.style.display = 'none'; }, 2500);
+            });
+        }
+
+        function escapeHtml(str) {
+            var div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
         document.querySelectorAll('.filter-btn').forEach(function(btn) {
             btn.addEventListener('click', function() {
                 document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });

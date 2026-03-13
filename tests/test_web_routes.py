@@ -75,6 +75,14 @@ class TestRoundTrip:
 # ── Flask app fixture ─────────────────────────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def _mock_worker():
+    """Prevent tests from hitting the real Celery/Redis broker."""
+    with patch('worker.tasks.analyze_user') as mock_task:
+        mock_task.apply_async.return_value = MagicMock()
+        yield mock_task
+
+
 @pytest.fixture
 def client():
     app = create_app()
@@ -157,6 +165,7 @@ class TestAnalyzeRedirects:
     @patch('web.routes.queries')
     def test_completed_recent_redirects_to_report(self, mock_q, client):
         mock_q.get_latest_job.return_value = {
+            'id': 10,
             'status': 'complete',
             'completed_at': datetime.now(timezone.utc) - timedelta(minutes=30),
         }
@@ -186,7 +195,7 @@ class TestAnalyzeRedirects:
     @patch('web.routes.queries')
     def test_in_progress_redirects_to_status(self, mock_q, client):
         for status in ('pending', 'fetching', 'analyzing'):
-            mock_q.get_latest_job.return_value = {'status': status}
+            mock_q.get_latest_job.return_value = {'id': 1, 'status': status}
             resp = client.post('/analyze', data={
                 'chesscom_username': 'hikaru',
             })
@@ -258,6 +267,25 @@ class TestUserReport:
         assert resp.status_code == 302
         assert '/u/hikaru/status' in resp.headers['Location']
 
+    @patch('web.routes.queries')
+    def test_zero_games_shows_no_games_page(self, mock_q, client):
+        """Complete job with 0 games should render no_games.html."""
+        mock_q.get_latest_job.return_value = {
+            'status': 'complete',
+            'total_games': 0,
+        }
+        resp = client.get('/u/hikaru')
+        assert resp.status_code == 200
+        assert b'No games found' in resp.data
+
+    @patch('web.routes.queries')
+    def test_failed_redirects_to_status(self, mock_q, client):
+        """Failed jobs should redirect to status page (not landing)."""
+        mock_q.get_latest_job.return_value = {'status': 'failed'}
+        resp = client.get('/u/hikaru')
+        assert resp.status_code == 302
+        assert '/u/hikaru/status' in resp.headers['Location']
+
 
 # ── GET /u/{path}/status/json ────────────────────────────────────
 
@@ -289,14 +317,97 @@ class TestStatusJson:
     @patch('web.routes.queries')
     def test_lichess_user_status(self, mock_q, client):
         mock_q.get_latest_job.return_value = {
+            'id': 5,
             'status': 'pending',
             'progress_pct': 0,
             'total_games': 0,
             'message': '',
         }
+        mock_q.get_queue_position.return_value = (1, 1)
         resp = client.get('/u/-/drnykterstein/status/json')
         assert resp.status_code == 200
         mock_q.get_latest_job.assert_called_with(
             chesscom_user=None,
             lichess_user='drnykterstein',
         )
+
+
+# ── POST /u/{path}/status/cancel ─────────────────────────────────
+
+
+class TestStatusCancel:
+    @patch('web.routes.queries')
+    def test_cancel_pending_job(self, mock_q, client):
+        """Cancel should mark pending job as failed and revoke Celery task."""
+        mock_q.get_latest_job.return_value = {
+            'id': 42,
+            'status': 'pending',
+        }
+        mock_q.cancel_job.return_value = True
+
+        with patch('web.routes.queries.cancel_job', return_value=True) as mock_cancel:
+            resp = client.post('/u/hikaru/status/cancel')
+
+        assert resp.status_code == 204
+
+    @patch('web.routes.queries')
+    def test_cancel_nonpending_is_noop(self, mock_q, client):
+        """Cancel should not affect non-pending jobs."""
+        mock_q.get_latest_job.return_value = {
+            'id': 42,
+            'status': 'analyzing',
+        }
+        resp = client.post('/u/hikaru/status/cancel')
+        assert resp.status_code == 204
+        mock_q.cancel_job.assert_not_called()
+
+    @patch('web.routes.queries')
+    def test_cancel_no_job(self, mock_q, client):
+        mock_q.get_latest_job.return_value = None
+        resp = client.post('/u/hikaru/status/cancel')
+        assert resp.status_code == 204
+
+
+# ── POST /analyze task dispatch ──────────────────────────────────
+
+
+class TestAnalyzeDispatch:
+    @patch('web.routes.queries')
+    def test_uses_apply_async_with_task_id(self, mock_q, _mock_worker, client):
+        """Task should be dispatched with deterministic task_id."""
+        mock_q.get_latest_job.return_value = None
+        mock_q.create_job.return_value = 77
+
+        resp = client.post('/analyze', data={
+            'chesscom_username': 'hikaru',
+        })
+
+        _mock_worker.apply_async.assert_called_once_with(
+            args=[77, 'hikaru', None],
+            task_id='job-77',
+        )
+
+
+# ── Admin endpoints ──────────────────────────────────────────────
+
+
+class TestAdminJobLogs:
+    @patch('web.routes.queries')
+    def test_returns_logs_json(self, mock_q, client):
+        mock_q.get_job_logs.return_value = [
+            {'logged_at': None, 'level': 'INFO', 'message': 'Starting'},
+            {'logged_at': None, 'level': 'ERROR', 'message': 'Boom'},
+        ]
+        resp = client.get('/admin/jobs/42/logs')
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert len(data) == 2
+        assert data[0]['level'] == 'INFO'
+        assert data[1]['message'] == 'Boom'
+
+    @patch('web.routes.queries')
+    def test_empty_logs(self, mock_q, client):
+        mock_q.get_job_logs.return_value = []
+        resp = client.get('/admin/jobs/99/logs')
+        assert resp.status_code == 200
+        assert resp.get_json() == []

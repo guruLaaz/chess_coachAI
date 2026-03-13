@@ -37,6 +37,11 @@ def cleanup_orphaned_jobs(**kwargs):
                     "WHERE status IN ('pending', 'fetching', 'analyzing')"
                 )
                 count = cur.rowcount
+                # Clear stale error messages on completed jobs
+                cur.execute(
+                    "UPDATE analysis_jobs SET error_message = NULL "
+                    "WHERE status = 'complete' AND error_message IS NOT NULL"
+                )
             conn.commit()
         if count:
             logger.info("Cleaned up %d orphaned job(s) on startup", count)

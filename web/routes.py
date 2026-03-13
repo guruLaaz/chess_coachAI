@@ -89,10 +89,13 @@ def register_routes(app):
 
         try:
             from worker.tasks import analyze_user
-            analyze_user.delay(job_id, chesscom_lower, lichess_lower)
+            analyze_user.apply_async(
+                args=[job_id, chesscom_lower, lichess_lower],
+                task_id=f"job-{job_id}",
+            )
             logger.info("Dispatched Celery task for job %s", job_id)
-        except ImportError:
-            logger.error("Worker module not available — job %s created but not dispatched", job_id)
+        except Exception:
+            logger.error("Failed to dispatch task for job %s", job_id, exc_info=True)
 
         return redirect(f'/u/{user_path}/status')
 
@@ -110,6 +113,11 @@ def register_routes(app):
             return redirect('/')
 
         if job['status'] == 'complete':
+            if job.get('total_games', 0) == 0:
+                return render_template('no_games.html',
+                                       user_path=user_path,
+                                       chesscom_user=chesscom or '',
+                                       lichess_user=lichess or '')
             logger.info("Loading report for %s (job %s)", user_path, job['id'])
             data = load_openings_data(chesscom, lichess)
             data['user_path'] = user_path
@@ -124,7 +132,11 @@ def register_routes(app):
         if job['status'] in ('pending', 'fetching', 'analyzing'):
             return redirect(f'/u/{user_path}/status')
 
-        # Failed or unknown status
+        # Failed — show the status page with error + retry
+        if job['status'] == 'failed':
+            return redirect(f'/u/{user_path}/status')
+
+        # Unknown status
         logger.warning("Job %s has status '%s' for %s, redirecting to landing",
                         job['id'], job['status'], user_path)
         return redirect('/')
@@ -248,9 +260,15 @@ def register_routes(app):
             lichess_user=lichess,
         )
         if job and job['status'] == 'pending':
-            queries.cancel_job(job['id'])
-            logger.info("User left status page, cancelled pending job %s for %s",
-                        job['id'], user_path)
+            if queries.cancel_job(job['id']):
+                # Revoke the Celery task so it doesn't run as a ghost
+                try:
+                    from worker.celery_app import app as celery_app
+                    celery_app.control.revoke(f"job-{job['id']}", terminate=False)
+                except Exception:
+                    logger.warning("Could not revoke Celery task for job %s", job['id'])
+                logger.info("User left status page, cancelled pending job %s for %s",
+                            job['id'], user_path)
         return '', 204
 
     # ── Admin ────────────────────────────────────────────────────────
@@ -260,3 +278,13 @@ def register_routes(app):
         """Admin dashboard showing all analysis jobs."""
         jobs = queries.get_all_jobs(limit=200)
         return render_template('admin_jobs.html', jobs=jobs)
+
+    @app.route('/admin/jobs/<int:job_id>/logs')
+    def admin_job_logs(job_id):
+        """Return log lines for a specific job as JSON."""
+        logs = queries.get_job_logs(job_id)
+        for log in logs:
+            if log.get('logged_at'):
+                log['logged_at'] = log['logged_at'].strftime('%Y-%m-%d %H:%M:%S')
+        return jsonify(logs)
+

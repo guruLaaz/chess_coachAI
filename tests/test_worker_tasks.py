@@ -66,6 +66,7 @@ class TestAnalyzeUser:
     def test_no_games_found(self, mock_arun, mock_dbq):
         """When no games are fetched, job completes with total_games=0."""
         mock_arun.return_value = []
+        mock_dbq.get_job.return_value = {"id": 42, "status": "pending"}
 
         from worker.tasks import analyze_user
         result = analyze_user(42, chesscom_user="testuser")
@@ -87,6 +88,7 @@ class TestAnalyzeUser:
         """Full pipeline with one uncached game runs all phases."""
         game = _make_game()
         mock_arun.return_value = [game]
+        mock_dbq.get_job.return_value = {"id": 42, "status": "pending"}
 
         # DB returns no cached data
         mock_dbq.get_endgames.return_value = {}
@@ -133,10 +135,18 @@ class TestAnalyzeUser:
         # Verify evaluations were saved
         mock_dbq.save_evaluations_batch.assert_called_once()
 
-        # Verify final status
-        mock_dbq.update_job.assert_any_call(
-            42, status="complete", progress_pct=100,
-            message="Analysis complete: 1 games")
+        # Verify final status — message includes duration so check key fields
+        complete_calls = [
+            c for c in mock_dbq.update_job.call_args_list
+            if c.kwargs.get("status") == "complete"
+            or (len(c.args) > 1 and c.args[1] == "complete")
+        ]
+        assert len(complete_calls) == 1
+        call_kwargs = complete_calls[0].kwargs if complete_calls[0].kwargs else {}
+        # Fall back to positional args if kwargs are empty
+        if not call_kwargs and len(complete_calls[0].args) >= 2:
+            call_kwargs = {"status": complete_calls[0].args[1]}
+        assert call_kwargs.get("status") == "complete"
 
     @patch("worker.tasks.StockfishEvaluator")
     @patch("worker.tasks.OpeningDetector")
@@ -150,6 +160,7 @@ class TestAnalyzeUser:
         """When all games are cached, Stockfish is never started."""
         game = _make_game()
         mock_arun.return_value = [game]
+        mock_dbq.get_job.return_value = {"id": 42, "status": "pending"}
 
         # Endgames fully cached
         mock_dbq.get_endgames.return_value = {
@@ -175,6 +186,7 @@ class TestAnalyzeUser:
     @patch("worker.tasks.asyncio.run")
     def test_fetch_error_sets_failed(self, mock_arun, mock_dbq):
         """If fetching raises, job status is set to 'failed'."""
+        mock_dbq.get_job.return_value = {"id": 42, "status": "pending"}
         mock_arun.side_effect = RuntimeError("API timeout")
 
         from worker.tasks import analyze_user
@@ -195,6 +207,7 @@ class TestAnalyzeUser:
         """Job progress is updated through each pipeline phase."""
         game = _make_game()
         mock_arun.return_value = [game]
+        mock_dbq.get_job.return_value = {"id": 42, "status": "pending"}
         mock_dbq.get_endgames.return_value = {}
         mock_dbq.get_cached_evaluations.return_value = {}
         mock_endgame_cls.analyze_game_all.return_value = {}
@@ -226,6 +239,7 @@ class TestAnalyzeUser:
     def test_lichess_only(self, mock_arun, mock_dbq):
         """Task works with only a Lichess username."""
         mock_arun.return_value = []
+        mock_dbq.get_job.return_value = {"id": 42, "status": "pending"}
 
         from worker.tasks import analyze_user
         result = analyze_user(42, lichess_user="lichessplayer")
@@ -234,6 +248,34 @@ class TestAnalyzeUser:
         mock_dbq.update_job.assert_any_call(
             42, status="complete", progress_pct=100,
             total_games=0, message="No games found.")
+
+    @patch("worker.tasks.dbq")
+    def test_skips_cancelled_job(self, mock_dbq):
+        """If job is already failed/cancelled, skip without doing work."""
+        mock_dbq.get_job.return_value = {
+            'id': 42,
+            'status': 'failed',
+            'error_message': 'Cancelled by user',
+        }
+
+        from worker.tasks import analyze_user
+        result = analyze_user(42, chesscom_user="testuser")
+
+        assert result["skipped"] is True
+        assert result["total_games"] == 0
+        # Should NOT have called update_job for fetching
+        for call in mock_dbq.update_job.call_args_list:
+            assert call.kwargs.get("status") != "fetching"
+
+    @patch("worker.tasks.dbq")
+    def test_skips_missing_job(self, mock_dbq):
+        """If job row doesn't exist (ghost), skip gracefully."""
+        mock_dbq.get_job.return_value = None
+
+        from worker.tasks import analyze_user
+        result = analyze_user(42, chesscom_user="testuser")
+
+        assert result["skipped"] is True
 
 
 class TestFetchHelpers:

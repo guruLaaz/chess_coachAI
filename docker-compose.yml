@@ -31,7 +31,7 @@ services:
     volumes:
       - ./db/migrations:/migrations:ro
     entrypoint: >
-      sh -c "PGPASSWORD=$$POSTGRES_PASSWORD psql -h postgres -U $$POSTGRES_USER -d $$POSTGRES_DB -f /migrations/001_initial.sql"
+      sh -c "for f in /migrations/*.sql; do PGPASSWORD=$$POSTGRES_PASSWORD psql -h postgres -U $$POSTGRES_USER -d $$POSTGRES_DB -f $$f; done"
     restart: "no"
 
   web:

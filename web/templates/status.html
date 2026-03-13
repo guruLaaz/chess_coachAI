@@ -458,6 +458,14 @@
                     retryForm.classList.remove('hidden');
                     break;
 
+                case 'not_found':
+                    spinner.classList.add('hidden');
+                    iconError.classList.remove('hidden');
+                    title.textContent = 'No analysis found';
+                    message.textContent = 'This analysis may have been cancelled or expired.';
+                    retryForm.classList.remove('hidden');
+                    break;
+
                 default:
                     title.textContent = _t('status_checking_title') || 'Checking status...';
                     message.textContent = _t('status_checking_msg') || 'Please wait.';
@@ -471,7 +479,7 @@
                     updateUI(data);
                     if (data.status === 'complete') {
                         setTimeout(function() { window.location.href = REPORT_URL; }, 1000);
-                    } else if (data.status !== 'failed') {
+                    } else if (data.status !== 'failed' && data.status !== 'not_found') {
                         setTimeout(poll, 3000);
                     }
                 })

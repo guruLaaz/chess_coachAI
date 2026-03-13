@@ -27,6 +27,20 @@ from endgame_detector import EndgameClassifier, ENDGAME_DEFINITIONS
 logger = logging.getLogger(__name__)
 
 
+class JobLogHandler(logging.Handler):
+    """Logging handler that writes log lines to the job_logs DB table."""
+
+    def __init__(self, job_id):
+        super().__init__()
+        self.job_id = job_id
+
+    def emit(self, record):
+        try:
+            dbq.append_job_log(self.job_id, record.levelname, self.format(record))
+        except Exception:
+            pass  # Never let logging failures disrupt the task
+
+
 def _is_current_month(archive_url):
     """Check if an archive URL is for the current year/month."""
     match = re.search(r"/(\d{4})/(\d{2})$", archive_url)
@@ -170,7 +184,16 @@ def analyze_user(self, job_id, chesscom_user=None, lichess_user=None):
     Steps: fetch games -> endgame analysis -> opening analysis (Stockfish).
     Updates job progress in the database throughout.
     """
+    db_handler = JobLogHandler(job_id)
+    db_handler.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(db_handler)
     try:
+        # Check if job was cancelled before we start
+        job = dbq.get_job(job_id)
+        if not job or job['status'] == 'failed':
+            logger.info("Job %s: already cancelled/failed, skipping", job_id)
+            return {"job_id": job_id, "total_games": 0, "skipped": True}
+
         import time as _time
         job_start = _time.monotonic()
 
@@ -302,3 +325,5 @@ def analyze_user(self, job_id, chesscom_user=None, lichess_user=None):
         dbq.update_job(job_id, status="failed",
                        error_message=str(exc)[:500])
         raise
+    finally:
+        logger.removeHandler(db_handler)

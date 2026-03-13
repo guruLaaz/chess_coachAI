@@ -52,13 +52,26 @@ Browser → nginx → Flask (gunicorn) → PostgreSQL
                        ↓
                   Celery Worker → Stockfish
                        ↑
-                     Redis
+                     Redis ← Flower (monitoring)
 ```
 
-- **Flask** serves the landing page and reports
+- **Flask** serves the landing page, reports, and admin dashboard (`/admin/jobs`)
 - **Celery** runs CPU-heavy Stockfish analysis in the background
 - **PostgreSQL** stores game data, evaluations, and job status
 - **Redis** is the Celery message broker
+- **Flower** monitors Celery workers and tasks (port 5555)
+
+## Project Structure
+
+```
+web/        Flask routes, templates, reports
+worker/     Celery tasks (analysis pipeline)
+fetchers/   Game fetching, PGN parsing, Stockfish eval, opening/endgame detection
+db/         PostgreSQL connection pooling, queries, migrations
+data/       Polyglot opening book (gm2001.bin)
+tests/      Test suite (mirrors source structure)
+deploy/     Deployment scripts/configs
+```
 
 ## Environment Variables
 
@@ -89,6 +102,7 @@ celery -A worker.celery_app worker --loglevel=info
 
 # Run tests
 pytest
+pytest -m "not network"  # skip live API tests
 ```
 
 ## License

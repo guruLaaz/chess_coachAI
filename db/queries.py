@@ -350,7 +350,11 @@ def update_job(job_id, status=None, progress_pct=None, total_games=None,
     if status is not None:
         sets.append("status = %s")
         params.append(status)
-        if status == "complete" or status == "failed":
+        if status == "complete":
+            sets.append("completed_at = NOW()")
+            if error_message is None:
+                sets.append("error_message = NULL")
+        elif status == "failed":
             sets.append("completed_at = NOW()")
     if progress_pct is not None:
         sets.append("progress_pct = %s")
@@ -434,19 +438,49 @@ def get_queue_position(job_id):
 
 
 def cancel_job(job_id):
-    """Cancel a pending job. Only cancels if still pending."""
+    """Cancel a pending job. Marks as failed instead of deleting so the
+    Celery task (if any) can detect it and stop early."""
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                """DELETE FROM analysis_jobs
+                """UPDATE analysis_jobs
+                   SET status = 'failed',
+                       error_message = 'Cancelled by user',
+                       completed_at = NOW()
                    WHERE id = %s AND status = 'pending'""",
                 (job_id,),
             )
-            deleted = cur.rowcount
+            updated = cur.rowcount
         conn.commit()
-    if deleted:
+    if updated:
         logger.info("Cancelled pending job %s", job_id)
-    return deleted > 0
+    return updated > 0
+
+
+def append_job_log(job_id, level, message):
+    """Append a log line for a job."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO job_logs (job_id, level, message) VALUES (%s, %s, %s)",
+                (job_id, level, message[:2000]),
+            )
+        conn.commit()
+
+
+def get_job_logs(job_id):
+    """Return all log lines for a job, oldest first."""
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """SELECT logged_at, level, message
+                   FROM job_logs
+                   WHERE job_id = %s
+                   ORDER BY logged_at ASC, id ASC""",
+                (job_id,),
+            )
+            rows = cur.fetchall()
+    return [dict(r) for r in rows]
 
 
 def get_all_jobs(limit=100):

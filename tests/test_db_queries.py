@@ -287,3 +287,69 @@ class TestJobs:
 
     def test_get_latest_job_no_match(self):
         assert queries.get_latest_job(chesscom_user="nobody") is None
+
+    def test_cancel_job_marks_failed(self):
+        """cancel_job should mark job as failed, not delete it."""
+        job_id = queries.create_job(chesscom_user="canceller")
+        result = queries.cancel_job(job_id)
+        assert result is True
+        job = queries.get_job(job_id)
+        assert job is not None  # Row still exists
+        assert job["status"] == "failed"
+        assert job["error_message"] == "Cancelled by user"
+        assert job["completed_at"] is not None
+
+    def test_cancel_job_only_pending(self):
+        """cancel_job should only affect pending jobs."""
+        job_id = queries.create_job(chesscom_user="running")
+        queries.update_job(job_id, status="analyzing", progress_pct=50)
+        result = queries.cancel_job(job_id)
+        assert result is False
+        job = queries.get_job(job_id)
+        assert job["status"] == "analyzing"
+
+    def test_complete_clears_error_message(self):
+        """Setting status=complete should clear any stale error_message."""
+        job_id = queries.create_job(chesscom_user="stale")
+        queries.update_job(job_id, status="failed",
+                           error_message="Worker restarted")
+        job = queries.get_job(job_id)
+        assert job["error_message"] == "Worker restarted"
+
+        queries.update_job(job_id, status="complete", progress_pct=100)
+        job = queries.get_job(job_id)
+        assert job["status"] == "complete"
+        assert job["error_message"] is None
+
+    def test_complete_with_explicit_error_keeps_it(self):
+        """If error_message is explicitly passed with complete, keep it."""
+        job_id = queries.create_job(chesscom_user="explicit")
+        queries.update_job(job_id, status="complete", progress_pct=100,
+                           error_message="Partial failure")
+        job = queries.get_job(job_id)
+        assert job["error_message"] == "Partial failure"
+
+
+class TestJobLogs:
+    def test_append_and_get_logs(self):
+        job_id = queries.create_job(chesscom_user="logger")
+        queries.append_job_log(job_id, "INFO", "Starting analysis")
+        queries.append_job_log(job_id, "ERROR", "Something went wrong")
+        logs = queries.get_job_logs(job_id)
+        assert len(logs) == 2
+        assert logs[0]["level"] == "INFO"
+        assert logs[0]["message"] == "Starting analysis"
+        assert logs[1]["level"] == "ERROR"
+        assert logs[1]["message"] == "Something went wrong"
+
+    def test_get_logs_empty(self):
+        job_id = queries.create_job(chesscom_user="silent")
+        logs = queries.get_job_logs(job_id)
+        assert logs == []
+
+    def test_message_truncation(self):
+        job_id = queries.create_job(chesscom_user="verbose")
+        long_msg = "x" * 3000
+        queries.append_job_log(job_id, "INFO", long_msg)
+        logs = queries.get_job_logs(job_id)
+        assert len(logs[0]["message"]) == 2000
