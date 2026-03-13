@@ -1,8 +1,7 @@
 """Report rendering logic for the web app.
 
-Extracts helper functions and data-loading logic from
-fetchers/report_generator.py so the web routes can read from PostgreSQL
-instead of in-memory data.  The original module is NOT modified.
+Helper functions and data-loading logic for the web routes to read
+analysis results from PostgreSQL.
 """
 
 import json
@@ -17,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Pure helper functions (extracted from CoachingReportGenerator)
+# Pure helper functions
 # ---------------------------------------------------------------------------
 
 def group_deviations(candidates):
@@ -273,8 +272,7 @@ def load_openings_data(chesscom_user, lichess_user):
 def load_endgames_data(chesscom_user, lichess_user):
     """Load endgame data for a user from PostgreSQL.
 
-    Returns template-ready data mirroring what CoachingReportGenerator
-    computes from EndgameClassifier.aggregate_all().
+    Returns template-ready endgame data for the templates.
     """
     username = chesscom_user or lichess_user
     logger.debug("Loading endgames data for user=%s", username)
