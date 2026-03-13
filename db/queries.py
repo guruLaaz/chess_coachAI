@@ -407,7 +407,7 @@ def get_latest_job(chesscom_user=None, lichess_user=None):
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
-                f"SELECT * FROM analysis_jobs WHERE {where} ORDER BY created_at DESC LIMIT 1",
+                f"SELECT * FROM analysis_jobs WHERE {where} ORDER BY id DESC LIMIT 1",
                 params,
             )
             row = cur.fetchone()

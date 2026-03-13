@@ -1,6 +1,7 @@
 """Tests for db.queries against a real PostgreSQL database.
 
-Requires TEST_DATABASE_URL env var (default: postgresql://localhost/chesscoach_test).
+Uses testcontainers to spin up an ephemeral PostgreSQL container automatically.
+Falls back to TEST_DATABASE_URL env var if set (e.g. for CI with a service container).
 Each test runs inside a transaction that is rolled back, so the DB stays clean.
 """
 
@@ -9,10 +10,11 @@ import sys
 import pytest
 
 # Ensure project root is on the path so `from db...` and `from fetchers...` work.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "fetchers"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "fetchers"))
 
 import psycopg2
+import psycopg2.errors
 from psycopg2.extras import RealDictCursor
 
 from fetchers.repertoire_analyzer import OpeningEvaluation
@@ -27,44 +29,86 @@ import db.queries as queries
 # Fixtures
 # ---------------------------------------------------------------------------
 
-TEST_DATABASE_URL = os.environ.get(
-    "TEST_DATABASE_URL",
-    "postgresql://localhost/chesscoach_test",
+_MIGRATIONS_DIR = os.path.join(
+    os.path.dirname(__file__), "..", "..", "db", "migrations"
 )
 
-_SCHEMA_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "db", "migrations", "001_initial.sql"
-)
+
+def _collect_migration_sql():
+    """Read all migration .sql files in order."""
+    sql_files = sorted(
+        f for f in os.listdir(_MIGRATIONS_DIR) if f.endswith(".sql")
+    )
+    parts = []
+    for fname in sql_files:
+        with open(os.path.join(_MIGRATIONS_DIR, fname)) as f:
+            parts.append(f.read())
+    return "\n".join(parts)
+
+
+@pytest.fixture(scope="session")
+def _database_url():
+    """Return a database URL, spinning up a container if needed."""
+    explicit = os.environ.get("TEST_DATABASE_URL")
+    if explicit:
+        yield explicit
+        return
+
+    try:
+        from testcontainers.postgres import PostgresContainer
+    except ImportError:
+        pytest.skip(
+            "testcontainers[postgres] not installed and TEST_DATABASE_URL not set"
+        )
+
+    with PostgresContainer("postgres:16") as pg:
+        yield pg.get_connection_url().replace("+psycopg2", "")
+
+
+class _NoCommitConnection:
+    """Proxy that wraps a real psycopg2 connection but suppresses commit().
+
+    psycopg2's C-extension marks `commit` as read-only, so we can't
+    monkeypatch it directly.  This proxy delegates everything except
+    commit() to the underlying connection.
+    """
+
+    def __init__(self, real_conn):
+        self._conn = real_conn
+
+    def commit(self):  # no-op
+        pass
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
 
 
 @pytest.fixture(autouse=True)
-def _transactional_db(monkeypatch):
+def _transactional_db(monkeypatch, _database_url):
     """Wrap every test in a transaction that gets rolled back.
 
     We replace db.connection.get_connection with a context manager that
     always returns the same connection (with autocommit off), and we
     ignore commits so the rollback at the end actually undoes everything.
     """
-    conn = psycopg2.connect(TEST_DATABASE_URL)
+    conn = psycopg2.connect(_database_url)
     conn.autocommit = False
 
-    # Apply schema inside the transaction so tables exist.
-    with open(_SCHEMA_PATH) as f:
-        schema_sql = f.read()
+    # Apply all migrations inside the transaction so tables exist.
+    schema_sql = _collect_migration_sql()
     with conn.cursor() as cur:
         cur.execute(schema_sql)
 
-    # Make conn.commit() a no-op so queries don't persist.
-    real_commit = conn.commit
-    monkeypatch.setattr(conn, "commit", lambda: None)
+    wrapper = _NoCommitConnection(conn)
 
     from contextlib import contextmanager
 
     @contextmanager
     def fake_get_connection():
-        yield conn
+        yield wrapper
 
     monkeypatch.setattr(_db_conn, "get_connection", fake_get_connection)
+    monkeypatch.setattr(queries, "get_connection", fake_get_connection)
 
     yield conn
 
@@ -353,3 +397,67 @@ class TestJobLogs:
         queries.append_job_log(job_id, "INFO", long_msg)
         logs = queries.get_job_logs(job_id)
         assert len(logs[0]["message"]) == 2000
+
+
+class TestConnectionPool:
+    """Exercise the real connection pool in db.connection.
+
+    These tests use the pool directly, so we override the autouse
+    _transactional_db fixture to be a no-op for this class.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _transactional_db(self, _database_url):
+        """Override the module-level autouse fixture — no-op here."""
+        self.db_url = _database_url
+        _db_conn.close_pool()
+        yield
+        _db_conn.close_pool()
+
+    def test_init_get_close_lifecycle(self):
+        """init_pool → get_connection → close_pool full lifecycle."""
+        _db_conn.init_pool(self.db_url)
+        with _db_conn.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 AS ping")
+                assert cur.fetchone()[0] == 1
+
+    def test_get_connection_returns_to_pool(self):
+        """Connection is returned to pool after context manager exits."""
+        _db_conn.init_pool(self.db_url)
+
+        # Get and release a connection twice — should reuse pooled conn
+        for _ in range(2):
+            with _db_conn.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1")
+
+    def test_get_connection_rolls_back_on_error(self):
+        """On exception, the connection is rolled back and returned."""
+        _db_conn.init_pool(self.db_url)
+
+        with pytest.raises(psycopg2.ProgrammingError):
+            with _db_conn.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT * FROM nonexistent_table_xyz")
+
+        # Pool should still be usable — rollback cleared the failed txn
+        with _db_conn.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                assert cur.fetchone()[0] == 1
+
+    def test_close_pool_idempotent(self):
+        """Calling close_pool when no pool exists should not raise."""
+        _db_conn.close_pool()
+        _db_conn.close_pool()  # second call should be a no-op
+
+    def test_init_pool_replaces_existing(self):
+        """Calling init_pool again closes old pool and creates new one."""
+        _db_conn.init_pool(self.db_url)
+        _db_conn.init_pool(self.db_url)  # should close old, create new
+
+        with _db_conn.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                assert cur.fetchone()[0] == 1

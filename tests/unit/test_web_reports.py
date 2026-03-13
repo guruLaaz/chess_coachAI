@@ -252,7 +252,7 @@ class TestOpeningsRoute:
     @patch('web.routes.queries')
     def test_returns_200_with_items(self, mock_q, mock_openings,
                                     mock_endgames, client):
-        mock_q.get_latest_job.return_value = {'status': 'complete'}
+        mock_q.get_latest_job.return_value = {'id': 1, 'status': 'complete', 'total_games': 10}
         mock_openings.return_value = {
             'username': 'hikaru',
             'chesscom_user': 'hikaru',
@@ -440,7 +440,7 @@ class TestSyncButton:
     def test_sync_button_is_form(self, mock_q, mock_openings, mock_endgames,
                                   client):
         """Sync button should be a form POST to /analyze, not a JS reload."""
-        mock_q.get_latest_job.return_value = {'status': 'complete'}
+        mock_q.get_latest_job.return_value = {'id': 1, 'status': 'complete', 'total_games': 1}
         mock_openings.return_value = {
             'username': 'hikaru',
             'chesscom_user': 'hikaru',
@@ -468,7 +468,7 @@ class TestUbuntuFont:
     @patch('web.routes.queries')
     def test_ubuntu_font_link(self, mock_q, mock_openings, mock_endgames,
                                client):
-        mock_q.get_latest_job.return_value = {'status': 'complete'}
+        mock_q.get_latest_job.return_value = {'id': 1, 'status': 'complete', 'total_games': 1}
         mock_openings.return_value = {
             'username': 'hikaru',
             'chesscom_user': 'hikaru',
