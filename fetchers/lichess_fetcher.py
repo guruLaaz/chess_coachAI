@@ -43,12 +43,18 @@ class LichessFetcher:
 
         logger.info("Fetching Lichess games for '%s'", username)
         games = []
-        async with aiohttp.ClientSession(headers=self.headers) as session:
-            async with session.get(url, params=params) as resp:
-                resp.raise_for_status()
-                async for line in resp.content:
-                    line = line.strip()
-                    if line:
-                        games.append(json.loads(line))
+        try:
+            async with aiohttp.ClientSession(headers=self.headers) as session:
+                async with session.get(url, params=params) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.content:
+                        line = line.strip()
+                        if line:
+                            try:
+                                games.append(json.loads(line))
+                            except (json.JSONDecodeError, ValueError):
+                                logger.warning("Bad NDJSON line from Lichess for '%s', skipping", username)
+        except Exception:
+            logger.error("Failed to fetch Lichess games for '%s'", username, exc_info=True)
         logger.info("Fetched %d Lichess games for '%s'", len(games), username)
         return games

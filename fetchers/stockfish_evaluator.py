@@ -60,7 +60,7 @@ class StockfishEvaluator:
 
         try:
             info = self._engine.analyse(board, chess.engine.Limit(depth=self.depth))
-        except chess.engine.EngineError as e:
+        except (chess.engine.EngineError, BrokenPipeError, TimeoutError, OSError) as e:
             logger.warning("Stockfish EngineError for FEN %s: %s", board.fen(), e)
             return None
 

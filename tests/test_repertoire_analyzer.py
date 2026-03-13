@@ -771,7 +771,7 @@ class TestTimeClass:
 
         assert result.time_class == "rapid"
 
-    def test_time_class_none_skips_with_warning(self):
+    def test_time_class_none_skips_with_warning(self, caplog):
         game = _make_game_with_pgn(my_color="white")
         game.time_class = None
 
@@ -779,13 +779,10 @@ class TestTimeClass:
         mock_evaluator = MagicMock()
 
         analyzer = RepertoireAnalyzer("player", mock_detector, mock_evaluator)
-        import warnings
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
+        with caplog.at_level("WARNING"):
             result = analyzer.analyze_game(game)
-            assert result is None
-            assert len(w) == 1
-            assert "missing time_class" in str(w[0].message)
+        assert result is None
+        assert "missing time_class" in caplog.text
 
     def test_time_class_in_repertoire(self):
         game = _make_game_with_pgn(my_color="white", game_url="https://game/1")

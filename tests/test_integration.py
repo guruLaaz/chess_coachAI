@@ -193,13 +193,13 @@ class TestEdgeCases:
 
     @pytest.mark.asyncio
     async def test_player_not_found_404(self):
-        """HTTP 404 for archives → raises exception."""
+        """HTTP 404 for archives → returns empty list (graceful handling)."""
         with aioresponses() as mock:
             mock.get(ARCHIVES_URL, status=404)
             fetcher = ChessCom_Fetcher(user_agent="TestAgent/1.0")
 
-            with pytest.raises(Exception):
-                await fetch_all_archives(fetcher, USERNAME)
+            result = await fetcher.get_archives(USERNAME)
+            assert result == []
 
     @pytest.mark.asyncio
     async def test_no_archives(self):

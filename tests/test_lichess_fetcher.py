@@ -67,12 +67,12 @@ class TestFetchGames:
         assert games[0]["opening"]["eco"] == "C20"
 
     @pytest.mark.asyncio
-    async def test_404_raises(self):
+    async def test_404_returns_empty(self):
         with aioresponses() as mock:
             mock.get(GAMES_URL_PATTERN, status=404)
             fetcher = LichessFetcher()
-            with pytest.raises(Exception):
-                await fetcher.fetch_games(USERNAME)
+            games = await fetcher.fetch_games(USERNAME)
+            assert games == []
 
     @pytest.mark.asyncio
     async def test_since_param_passed(self):
@@ -97,19 +97,19 @@ class TestFetchGames:
         assert games[0]["id"] == "abc1"
 
     @pytest.mark.asyncio
-    async def test_500_server_error_raises(self):
-        """HTTP 500 raises an exception (not just 404)."""
+    async def test_500_server_error_returns_empty(self):
+        """HTTP 500 returns empty list (error caught gracefully)."""
         with aioresponses() as mock:
             mock.get(GAMES_URL_PATTERN, status=500)
             fetcher = LichessFetcher()
-            with pytest.raises(Exception):
-                await fetcher.fetch_games(USERNAME)
+            games = await fetcher.fetch_games(USERNAME)
+            assert games == []
 
     @pytest.mark.asyncio
-    async def test_429_rate_limit_raises(self):
-        """HTTP 429 (rate limited) raises an exception."""
+    async def test_429_rate_limit_returns_empty(self):
+        """HTTP 429 (rate limited) returns empty list (error caught gracefully)."""
         with aioresponses() as mock:
             mock.get(GAMES_URL_PATTERN, status=429)
             fetcher = LichessFetcher()
-            with pytest.raises(Exception):
-                await fetcher.fetch_games(USERNAME)
+            games = await fetcher.fetch_games(USERNAME)
+            assert games == []

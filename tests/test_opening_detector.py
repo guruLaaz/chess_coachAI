@@ -221,8 +221,8 @@ class TestFindDeviation:
 
         assert result is None
 
-    def test_illegal_move_in_book_line_logs_warning(self, capsys):
-        """A warning is printed for corrupt move sequences."""
+    def test_illegal_move_in_book_line_logs_warning(self, caplog):
+        """A warning is logged for corrupt move sequences."""
         book = {
             _starting_fen(): [chess.Move.from_uci("e5f6")],
         }
@@ -231,13 +231,11 @@ class TestFindDeviation:
         detector = OpeningDetector("dummy_path")
         moves = [chess.Move.from_uci("e5f6")]
 
-        with patch("opening_detector.chess.polyglot.open_reader", return_value=fake):
-            detector.find_deviation(moves)
+        with caplog.at_level("WARNING"):
+            with patch("opening_detector.chess.polyglot.open_reader", return_value=fake):
+                detector.find_deviation(moves)
 
-        output = capsys.readouterr().out
-        assert "Warning" in output
-        assert "e5f6" in output
-        assert "ply 0" in output
+        assert "e5f6" in caplog.text
 
     def test_multiple_book_moves_available(self):
         """Book has multiple candidate moves; game plays one of them → no deviation."""

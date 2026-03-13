@@ -280,44 +280,59 @@ class RepertoireAnalyzer:
             """Worker: evaluate a batch sequentially on one engine, report per-game."""
             batch_evals = []
             for game, deviation, moves in batch:
-                eval_result = engine.evaluate(deviation.board_at_deviation)
-                if eval_result is None:
-                    logger.warning("Skipping game %s: engine error", getattr(game, 'game_url', 'unknown'))
+                try:
+                    eval_result = engine.evaluate(deviation.board_at_deviation)
+                    if eval_result is None:
+                        logger.warning("Skipping game %s: engine error", getattr(game, 'game_url', 'unknown'))
+                        with lock:
+                            completed[0] += 1
+                            if progress_callback:
+                                progress_callback(completed[0], total)
+                        continue
+                    eval_cp = eval_result.score_for_color(game.my_color)
+                    eval_loss_cp = self._compute_eval_loss(
+                        deviation, eval_cp, engine, game.my_color)
+                    evaluation = self._make_evaluation(
+                        game, deviation, eval_result, eval_loss_cp, moves)
+                    with lock:
+                        self._aggregate(stats, evaluation)
+                        new_evals.append((game, evaluation))
+                        completed[0] += 1
+                        if progress_callback:
+                            progress_callback(completed[0], total)
+                except Exception:
+                    logger.error("Error analyzing game %s", getattr(game, 'game_url', 'unknown'), exc_info=True)
                     with lock:
                         completed[0] += 1
                         if progress_callback:
                             progress_callback(completed[0], total)
-                    continue
-                eval_cp = eval_result.score_for_color(game.my_color)
-                eval_loss_cp = self._compute_eval_loss(
-                    deviation, eval_cp, engine, game.my_color)
-                evaluation = self._make_evaluation(
-                    game, deviation, eval_result, eval_loss_cp, moves)
-                with lock:
-                    self._aggregate(stats, evaluation)
-                    new_evals.append((game, evaluation))
-                    completed[0] += 1
-                    if progress_callback:
-                        progress_callback(completed[0], total)
             return batch_evals
-
-        # Split work into chunks, one per worker (round-robin)
-        chunks = [[] for _ in range(workers)]
-        for i, item in enumerate(prepared):
-            chunks[i % workers].append(item)
 
         # Spawn one engine per worker thread
         engines = []
         try:
             for _ in range(workers):
-                eng = StockfishEvaluator(
-                    self.stockfish_evaluator.stockfish_path,
-                    depth=self.stockfish_evaluator.depth,
-                )
-                eng.__enter__()
-                engines.append(eng)
+                try:
+                    eng = StockfishEvaluator(
+                        self.stockfish_evaluator.stockfish_path,
+                        depth=self.stockfish_evaluator.depth,
+                    )
+                    eng.__enter__()
+                    engines.append(eng)
+                except Exception:
+                    logger.warning("Failed to start parallel Stockfish engine", exc_info=True)
 
-            with ThreadPoolExecutor(max_workers=workers) as pool:
+            if not engines:
+                logger.warning("No parallel engines started, falling back to sequential")
+                return self._analyze_sequential(prepared, total, progress_callback, stats)
+
+            # Split work into chunks based on actual engine count (round-robin)
+            actual_workers = len(engines)
+            chunks = [[] for _ in range(actual_workers)]
+            for i, item in enumerate(prepared):
+                chunks[i % actual_workers].append(item)
+
+            with ThreadPoolExecutor(max_workers=actual_workers) as pool:
                 futures = [
                     pool.submit(evaluate_batch, chunk, engine)
                     for chunk, engine in zip(chunks, engines)
@@ -325,7 +340,10 @@ class RepertoireAnalyzer:
                 ]
 
                 for future in as_completed(futures):
-                    future.result()  # raise any exceptions
+                    try:
+                        future.result()
+                    except Exception:
+                        logger.error("Parallel analysis worker failed", exc_info=True)
 
         finally:
             for eng in engines:

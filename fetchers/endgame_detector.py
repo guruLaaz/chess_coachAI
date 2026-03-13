@@ -168,7 +168,12 @@ class EndgameClassifier:
         if not game.pgn:
             return
 
-        moves_with_clocks = PGNParser.parse_moves_with_clocks(game.pgn)
+        try:
+            moves_with_clocks = PGNParser.parse_moves_with_clocks(game.pgn)
+        except Exception:
+            logger.warning("Failed to parse PGN for endgame analysis: %s",
+                           getattr(game, 'game_url', 'unknown'))
+            return
         if not moves_with_clocks:
             return
 

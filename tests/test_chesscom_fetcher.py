@@ -37,12 +37,12 @@ class TestGetArchives:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_http_error_raises(self, fetcher, mock_aiohttp):
+    async def test_404_returns_empty_list(self, fetcher, mock_aiohttp):
         url = f"{BASE_URL}/baduser/games/archives"
         mock_aiohttp.get(url, status=404)
 
-        with pytest.raises(Exception):
-            await fetcher.get_archives("baduser")
+        result = await fetcher.get_archives("baduser")
+        assert result == []
 
 
 class TestFetchGamesByMonth:

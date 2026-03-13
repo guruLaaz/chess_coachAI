@@ -332,20 +332,19 @@ class TestAnalyzeGame:
             info = EndgameClassifier.analyze_game(game)
         assert info is None
 
-    def test_illegal_move_sequence_logs_warning(self, capsys):
-        """A warning with the game URL is printed for corrupt move sequences."""
+    def test_illegal_move_sequence_logs_warning(self, caplog):
+        """A warning with the game URL is logged for corrupt move sequences."""
         game = make_chess_game(
             pgn="dummy", my_color="white",
             white_result="win", black_result="resigned",
             game_url="https://www.chess.com/game/live/999",
         )
         illegal_moves = [(chess.Move.from_uci("e5f6"), None)]
-        with patch("endgame_detector.PGNParser.parse_moves_with_clocks", return_value=illegal_moves):
-            EndgameClassifier.analyze_game(game)
-        output = capsys.readouterr().out
-        assert "Warning" in output
-        assert "e5f6" in output
-        assert "https://www.chess.com/game/live/999" in output
+        with caplog.at_level("WARNING"):
+            with patch("endgame_detector.PGNParser.parse_moves_with_clocks", return_value=illegal_moves):
+                EndgameClassifier.analyze_game(game)
+        assert "e5f6" in caplog.text
+        assert "https://www.chess.com/game/live/999" in caplog.text
 
     def test_loss_result(self):
         game = make_chess_game(

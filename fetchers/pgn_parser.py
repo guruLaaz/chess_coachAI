@@ -17,7 +17,10 @@ class PGNParser:
         if not pgn_string or not pgn_string.strip():
             return None
 
-        game = chess.pgn.read_game(io.StringIO(pgn_string))
+        try:
+            game = chess.pgn.read_game(io.StringIO(pgn_string))
+        except Exception:
+            return None
         if game is None:
             return None
 
@@ -34,7 +37,10 @@ class PGNParser:
         if not pgn_string or not pgn_string.strip():
             return None
 
-        game = chess.pgn.read_game(io.StringIO(pgn_string))
+        try:
+            game = chess.pgn.read_game(io.StringIO(pgn_string))
+        except Exception:
+            return None
         if game is None:
             return None
 
@@ -56,7 +62,10 @@ class PGNParser:
         if not pgn_string or not pgn_string.strip():
             return None
 
-        game = chess.pgn.read_game(io.StringIO(pgn_string))
+        try:
+            game = chess.pgn.read_game(io.StringIO(pgn_string))
+        except Exception:
+            return None
         if game is None:
             return None
 

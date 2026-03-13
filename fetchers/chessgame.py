@@ -45,7 +45,13 @@ class ChessGame:
 
         # Parse end_time
         end_time_unix = data.get('end_time')
-        end_time = datetime.datetime.fromtimestamp(end_time_unix) if end_time_unix else datetime.datetime.now()
+        if end_time_unix:
+            try:
+                end_time = datetime.datetime.fromtimestamp(end_time_unix)
+            except (ValueError, OSError, OverflowError):
+                end_time = datetime.datetime.now()
+        else:
+            end_time = datetime.datetime.now()
 
         # Clock info (default to 0 if not present)
         my_clock = 0
@@ -121,7 +127,10 @@ class ChessGame:
         # Parse end_time from lastMoveAt (milliseconds)
         last_move_ms = data.get("lastMoveAt") or data.get("createdAt")
         if last_move_ms:
-            end_time = datetime.datetime.fromtimestamp(last_move_ms / 1000)
+            try:
+                end_time = datetime.datetime.fromtimestamp(last_move_ms / 1000)
+            except (ValueError, OSError, OverflowError):
+                end_time = datetime.datetime.now()
         else:
             end_time = datetime.datetime.now()
 

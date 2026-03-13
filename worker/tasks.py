@@ -46,20 +46,32 @@ async def _fetch_chesscom_games(username, job_id=None):
 
     raw_games = []
     for i, url in enumerate(archive_urls, 1):
-        cached_data = dbq.get_archive(url)
-        if cached_data and not _is_current_month(url):
-            raw_games.extend(cached_data.get("games", []))
-        else:
-            month_data = await fetcher.fetch_games_by_month(url)
-            raw_games.extend(month_data.get("games", []))
-            dbq.save_archive(url, username, month_data)
-        if job_id and (i % 3 == 0 or i == total_archives):
-            pct = 5 + int(20 * i / total_archives)
-            dbq.update_job(job_id, progress_pct=pct,
-                           message=f"Fetching Chess.com archive {i}/{total_archives} ({len(raw_games)} games)")
+        try:
+            cached_data = dbq.get_archive(url)
+            if cached_data and not _is_current_month(url):
+                raw_games.extend(cached_data.get("games", []))
+            else:
+                month_data = await fetcher.fetch_games_by_month(url)
+                raw_games.extend(month_data.get("games", []))
+                dbq.save_archive(url, username, month_data)
+        except Exception:
+            logger.error("Failed to fetch/cache Chess.com archive %s", url, exc_info=True)
+        try:
+            if job_id and (i % 3 == 0 or i == total_archives):
+                pct = 5 + int(20 * i / total_archives)
+                dbq.update_job(job_id, progress_pct=pct,
+                               message=f"Fetching Chess.com archive {i}/{total_archives} ({len(raw_games)} games)")
+        except Exception:
+            logger.warning("Failed to update job progress for archive %d", i)
 
-    games = [g for g in (ChessGame.from_json(g, username) for g in raw_games)
-             if g is not None]
+    games = []
+    for g in raw_games:
+        try:
+            game = ChessGame.from_json(g, username)
+            if game is not None:
+                games.append(game)
+        except Exception:
+            logger.warning("Failed to parse Chess.com game JSON", exc_info=True)
     logger.info("Chess.com: fetched %d raw, %d valid games for '%s'",
                 len(raw_games), len(games), username)
     return games
@@ -95,21 +107,41 @@ async def _fetch_lichess_games(username, job_id=None):
     url = f"https://lichess.org/api/games/user/{username}"
     params = {"pgnInJson": "true", "opening": "true"}
     raw_games = []
-    async with aiohttp.ClientSession(headers={"User-Agent": "chess_coachAI/1.0", "Accept": "application/x-ndjson"}) as session:
-        async with session.get(url, params=params) as resp:
-            resp.raise_for_status()
-            async for line in resp.content:
-                line = line.strip()
-                if line:
-                    raw_games.append(_json.loads(line))
-                    if job_id and len(raw_games) % 50 == 0:
-                        msg = f"Fetching Lichess games... ({len(raw_games)}/{total_estimate})" if total_estimate else f"Fetching Lichess games... ({len(raw_games)} so far)"
-                        dbq.update_job(job_id, message=msg)
+    try:
+        async with aiohttp.ClientSession(headers={"User-Agent": "chess_coachAI/1.0", "Accept": "application/x-ndjson"}) as session:
+            async with session.get(url, params=params) as resp:
+                resp.raise_for_status()
+                async for line in resp.content:
+                    line = line.strip()
+                    if line:
+                        try:
+                            raw_games.append(_json.loads(line))
+                        except (ValueError, _json.JSONDecodeError):
+                            logger.warning("Bad NDJSON line from Lichess for '%s', skipping", username)
+                        if job_id and len(raw_games) % 50 == 0:
+                            try:
+                                msg = f"Fetching Lichess games... ({len(raw_games)}/{total_estimate})" if total_estimate else f"Fetching Lichess games... ({len(raw_games)} so far)"
+                                dbq.update_job(job_id, message=msg)
+                            except Exception:
+                                pass
+    except Exception:
+        logger.error("Failed to fetch Lichess games for '%s'", username, exc_info=True)
 
-    if job_id:
-        dbq.update_job(job_id, message=f"Fetched {len(raw_games)} Lichess games")
-    return [g for g in (ChessGame.from_lichess_json(g, username)
-                        for g in raw_games) if g is not None]
+    try:
+        if job_id:
+            dbq.update_job(job_id, message=f"Fetched {len(raw_games)} Lichess games")
+    except Exception:
+        pass
+
+    games = []
+    for g in raw_games:
+        try:
+            game = ChessGame.from_lichess_json(g, username)
+            if game is not None:
+                games.append(game)
+        except Exception:
+            logger.warning("Failed to parse Lichess game JSON", exc_info=True)
+    return games
 
 
 async def _fetch_all(chesscom_user, lichess_user, job_id=None):
@@ -117,11 +149,17 @@ async def _fetch_all(chesscom_user, lichess_user, job_id=None):
     all_games = []
     # Fetch sequentially so progress messages don't interleave
     if chesscom_user:
-        games = await _fetch_chesscom_games(chesscom_user, job_id)
-        all_games.extend(games)
+        try:
+            games = await _fetch_chesscom_games(chesscom_user, job_id)
+            all_games.extend(games)
+        except Exception:
+            logger.error("Chess.com fetch failed for '%s'", chesscom_user, exc_info=True)
     if lichess_user:
-        games = await _fetch_lichess_games(lichess_user, job_id)
-        all_games.extend(games)
+        try:
+            games = await _fetch_lichess_games(lichess_user, job_id)
+            all_games.extend(games)
+        except Exception:
+            logger.error("Lichess fetch failed for '%s'", lichess_user, exc_info=True)
     return all_games
 
 
@@ -171,16 +209,23 @@ def analyze_user(self, job_id, chesscom_user=None, lichess_user=None):
 
         new_rows = []
         for game in uncached_endgame_games:
-            all_results = EndgameClassifier.analyze_game_all(game)
-            for defn, info in all_results.items():
-                new_rows.append((game.game_url, defn, info))
+            try:
+                all_results = EndgameClassifier.analyze_game_all(game)
+                for defn, info in all_results.items():
+                    new_rows.append((game.game_url, defn, info))
+            except Exception:
+                logger.error("Endgame analysis failed for game %s",
+                             getattr(game, 'game_url', 'unknown'), exc_info=True)
 
         if new_rows:
             dbq.save_endgames_batch(new_rows)
             logger.info("Job %s: saved %d endgame rows", job_id, len(new_rows))
 
-        dbq.update_job(job_id, progress_pct=40,
-                       message=f"Endgame analysis complete, starting openings")
+        try:
+            dbq.update_job(job_id, progress_pct=40,
+                           message=f"Endgame analysis complete, starting openings")
+        except Exception:
+            logger.warning("Failed to update job progress after endgame phase")
 
         # ------------------------------------------------------------------
         # Phase 3: Opening analysis (Stockfish, slow)
@@ -211,9 +256,12 @@ def analyze_user(self, job_id, chesscom_user=None, lichess_user=None):
                 pct = 40 + int(55 * current / max(batch_total, 1))
                 pct = min(pct, 95)
                 if current % 5 == 0 or current == batch_total:
-                    dbq.update_job(
-                        job_id, progress_pct=pct,
-                        message=f"Analyzing game {current}/{batch_total}")
+                    try:
+                        dbq.update_job(
+                            job_id, progress_pct=pct,
+                            message=f"Analyzing game {current}/{batch_total}")
+                    except Exception:
+                        pass
 
             with StockfishEvaluator(STOCKFISH_PATH, depth=depth) as evaluator:
                 rep_analyzer = RepertoireAnalyzer(username, detector, evaluator)
