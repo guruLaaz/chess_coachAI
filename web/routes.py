@@ -252,3 +252,11 @@ def register_routes(app):
             logger.info("User left status page, cancelled pending job %s for %s",
                         job['id'], user_path)
         return '', 204
+
+    # ── Admin ────────────────────────────────────────────────────────
+
+    @app.route('/admin/jobs')
+    def admin_jobs():
+        """Admin dashboard showing all analysis jobs."""
+        jobs = queries.get_all_jobs(limit=200)
+        return render_template('admin_jobs.html', jobs=jobs)

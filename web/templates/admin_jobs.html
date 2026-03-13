@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - Jobs | Chess CoachAI</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card-bg: #1e293b;
+            --border: #334155;
+            --text: #e2e8f0;
+            --text-dim: #94a3b8;
+            --accent: #818cf8;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 24px; }
+        h1 { font-size: 1.5rem; margin-bottom: 8px; }
+        .subtitle { color: var(--text-dim); font-size: 0.9rem; margin-bottom: 24px; }
+
+        /* Summary cards */
+        .summary { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+        .stat-card {
+            background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: 10px; padding: 16px 20px; min-width: 140px;
+        }
+        .stat-card .value { font-size: 2rem; font-weight: 700; }
+        .stat-card .label { color: var(--text-dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+        .stat-card.active .value { color: #34d399; }
+        .stat-card.pending .value { color: #fbbf24; }
+        .stat-card.failed .value { color: #f87171; }
+
+        /* Filter tabs */
+        .filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+        .filter-btn {
+            background: var(--card-bg); color: var(--text-dim); border: 1px solid var(--border);
+            border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 0.85rem;
+        }
+        .filter-btn:hover { border-color: var(--accent); color: var(--text); }
+        .filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+        /* Table */
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th { text-align: left; color: var(--text-dim); font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; padding: 10px 12px; border-bottom: 2px solid var(--border); }
+        td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+        tr:hover td { background: rgba(255,255,255,0.03); }
+
+        /* Status badges */
+        .badge {
+            display: inline-block; padding: 2px 10px; border-radius: 12px;
+            font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+        }
+        .badge-pending { background: #422006; color: #fbbf24; }
+        .badge-fetching { background: #172554; color: #60a5fa; }
+        .badge-analyzing { background: #1e1b4b; color: #a78bfa; }
+        .badge-complete { background: #052e16; color: #34d399; }
+        .badge-failed { background: #450a0a; color: #f87171; }
+
+        .user-link { color: var(--accent); text-decoration: none; }
+        .user-link:hover { text-decoration: underline; }
+        .error-msg { color: #f87171; font-size: 0.8rem; max-width: 250px; word-break: break-word; }
+        .msg { color: var(--text-dim); font-size: 0.8rem; max-width: 250px; }
+
+        /* Progress bar in table */
+        .mini-progress { background: var(--border); border-radius: 3px; height: 6px; width: 80px; display: inline-block; vertical-align: middle; }
+        .mini-progress-fill { background: var(--accent); height: 100%; border-radius: 3px; }
+
+        .refresh-btn {
+            background: var(--card-bg); color: var(--text); border: 1px solid var(--border);
+            border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 0.85rem;
+            float: right;
+        }
+        .refresh-btn:hover { border-color: var(--accent); }
+
+        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+
+        @media (max-width: 768px) {
+            body { padding: 12px; }
+            .summary { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>Jobs Dashboard</h1>
+            <p class="subtitle">Chess CoachAI &mdash; Analysis Pipeline Monitor</p>
+        </div>
+        <button class="refresh-btn" onclick="location.reload()">Refresh</button>
+    </div>
+
+    {% set active_jobs = jobs | selectattr('status', 'in', ['fetching', 'analyzing']) | list %}
+    {% set pending_jobs = jobs | selectattr('status', 'equalto', 'pending') | list %}
+    {% set complete_jobs = jobs | selectattr('status', 'equalto', 'complete') | list %}
+    {% set failed_jobs = jobs | selectattr('status', 'equalto', 'failed') | list %}
+
+    <div class="summary">
+        <div class="stat-card active">
+            <div class="value">{{ active_jobs | length }}</div>
+            <div class="label">Active</div>
+        </div>
+        <div class="stat-card pending">
+            <div class="value">{{ pending_jobs | length }}</div>
+            <div class="label">Queued</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ complete_jobs | length }}</div>
+            <div class="label">Complete</div>
+        </div>
+        <div class="stat-card failed">
+            <div class="value">{{ failed_jobs | length }}</div>
+            <div class="label">Failed</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ jobs | length }}</div>
+            <div class="label">Total</div>
+        </div>
+    </div>
+
+    <div class="filters">
+        <button class="filter-btn active" data-filter="all">All</button>
+        <button class="filter-btn" data-filter="active">Active</button>
+        <button class="filter-btn" data-filter="pending">Queued</button>
+        <button class="filter-btn" data-filter="complete">Complete</button>
+        <button class="filter-btn" data-filter="failed">Failed</button>
+    </div>
+
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>User</th>
+                    <th>Status</th>
+                    <th>Progress</th>
+                    <th>Games</th>
+                    <th>Duration</th>
+                    <th>Created</th>
+                    <th>Message</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in jobs %}
+                {% set is_active = job.status in ('fetching', 'analyzing') %}
+                <tr data-status="{{ 'active' if is_active else job.status }}">
+                    <td>{{ job.id }}</td>
+                    <td>
+                        {% if job.chesscom_user %}
+                            <a class="user-link" href="/u/{{ job.chesscom_user }}{% if job.lichess_user %}/{{ job.lichess_user }}{% endif %}">{{ job.chesscom_user }}</a>
+                        {% endif %}
+                        {% if job.lichess_user %}
+                            {% if job.chesscom_user %} / {% endif %}
+                            <a class="user-link" href="/u/{% if job.chesscom_user %}{{ job.chesscom_user }}/{% else %}-/{% endif %}{{ job.lichess_user }}">{{ job.lichess_user }}</a>
+                        {% endif %}
+                    </td>
+                    <td><span class="badge badge-{{ job.status }}">{{ job.status }}</span></td>
+                    <td>
+                        <div class="mini-progress"><div class="mini-progress-fill" style="width:{{ job.progress_pct or 0 }}%"></div></div>
+                        {{ job.progress_pct or 0 }}%
+                    </td>
+                    <td>{{ job.total_games or '-' }}</td>
+                    <td>
+                        {% if job.duration_seconds is not none %}
+                            {% set d = job.duration_seconds %}
+                            {% if d >= 3600 %}{{ (d // 3600) }}h {{ (d % 3600 // 60) }}m
+                            {% elif d >= 60 %}{{ (d // 60) }}m {{ (d % 60) }}s
+                            {% else %}{{ d }}s{% endif %}
+                        {% else %}-{% endif %}
+                    </td>
+                    <td>
+                        {% if job.created_at %}
+                            {{ job.created_at.strftime('%b %d %H:%M') }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if job.error_message %}
+                            <span class="error-msg">{{ job.error_message[:120] }}</span>
+                        {% elif job.message %}
+                            <span class="msg">{{ job.message[:120] }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        document.querySelectorAll('.filter-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                var filter = btn.getAttribute('data-filter');
+                document.querySelectorAll('tbody tr').forEach(function(row) {
+                    if (filter === 'all' || row.getAttribute('data-status') === filter) {
+                        row.style.display = '';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+            });
+        });
+
+        // Auto-refresh every 30s if there are active/pending jobs
+        {% if active_jobs or pending_jobs %}
+        setTimeout(function() { location.reload(); }, 30000);
+        {% endif %}
+    </script>
+</body>
+</html>

@@ -447,3 +447,21 @@ def cancel_job(job_id):
     if deleted:
         logger.info("Cancelled pending job %s", job_id)
     return deleted > 0
+
+
+def get_all_jobs(limit=100):
+    """Return recent jobs ordered by created_at desc, with computed duration."""
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """SELECT *,
+                          EXTRACT(EPOCH FROM
+                              COALESCE(completed_at, NOW()) - created_at
+                          )::int AS duration_seconds
+                   FROM analysis_jobs
+                   ORDER BY created_at DESC
+                   LIMIT %s""",
+                (limit,),
+            )
+            rows = cur.fetchall()
+    return [dict(r) for r in rows]
