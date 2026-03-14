@@ -376,33 +376,3 @@ class RepertoireAnalyzer:
             end_time=game.end_time,
         )
 
-    @staticmethod
-    def format_summary(stats, min_games=2):
-        """Format opening stats into human-readable summary lines.
-
-        Args:
-            stats: Dict from analyze_repertoire().
-            min_games: Only include openings played at least this many times.
-
-        Returns:
-            List of formatted strings, sorted by avg eval descending.
-        """
-        lines = []
-
-        filtered = {k: v for k, v in stats.items() if v.times_played >= min_games}
-        sorted_openings = sorted(filtered.values(), key=lambda s: s.avg_eval, reverse=True)
-
-        for s in sorted_openings:
-            eval_pawns = s.avg_eval / 100.0
-            sign = "+" if eval_pawns >= 0 else ""
-            eco_label = f" ({s.eco_code})" if s.eco_code else ""
-
-            line = (
-                f"{s.eco_name}{eco_label} as {s.color}: "
-                f"avg {sign}{eval_pawns:.1f} pawns, "
-                f"played {s.times_played}x, "
-                f"avg book depth {s.avg_deviation_ply} plies"
-            )
-            lines.append(line)
-
-        return lines

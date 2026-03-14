@@ -82,20 +82,29 @@ def register_routes(app):
         # Validate format
         if not validate_username(chesscom):
             logger.warning("Invalid Chess.com username: %s", chesscom)
-            return f'Invalid Chess.com username: {chesscom}', 400
+            return render_template(
+                'landing.html',
+                error_keys=[{'key': 'error_invalid_username', 'platform': 'Chess.com', 'username': chesscom}],
+                chesscom_value=chesscom, lichess_value=lichess,
+            ), 400
         if not validate_username(lichess):
             logger.warning("Invalid Lichess username: %s", lichess)
-            return f'Invalid Lichess username: {lichess}', 400
+            return render_template(
+                'landing.html',
+                error_keys=[{'key': 'error_invalid_username', 'platform': 'Lichess', 'username': lichess}],
+                chesscom_value=chesscom, lichess_value=lichess,
+            ), 400
 
         # Verify accounts actually exist before queueing
-        errors = []
+        error_keys = []
         if chesscom and not check_username_exists('chesscom', chesscom):
-            errors.append(f'Chess.com account "{chesscom}" was not found.')
+            error_keys.append({'key': 'error_account_not_found', 'platform': 'Chess.com', 'username': chesscom})
         if lichess and not check_username_exists('lichess', lichess):
-            errors.append(f'Lichess account "{lichess}" was not found.')
-        if errors:
-            logger.warning("Account validation failed: %s", '; '.join(errors))
-            return render_template('landing.html', error=' '.join(errors),
+            error_keys.append({'key': 'error_account_not_found', 'platform': 'Lichess', 'username': lichess})
+        if error_keys:
+            logger.warning("Account validation failed: %s",
+                           '; '.join(e['platform'] + ':' + e['username'] for e in error_keys))
+            return render_template('landing.html', error_keys=error_keys,
                                    chesscom_value=chesscom, lichess_value=lichess)
 
         chesscom_lower = chesscom.lower() if chesscom else None
@@ -312,6 +321,37 @@ def register_routes(app):
                             job['id'], user_path)
         return '', 204
 
+    # ── Feedback ──────────────────────────────────────────────────────
+
+    @app.route('/api/feedback', methods=['POST'])
+    def submit_feedback():
+        """Receive a bug report or contact form submission."""
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify({'error': 'Invalid JSON'}), 400
+
+        fb_type = (data.get('type') or '').strip()
+        email = (data.get('email') or '').strip()
+        details = (data.get('details') or '').strip()
+        screenshot = data.get('screenshot', '') or ''
+        page_url = data.get('page_url', '') or ''
+        console_logs = data.get('console_logs', '') or ''
+
+        if fb_type not in ('bug', 'contact'):
+            return jsonify({'error': 'Invalid type'}), 400
+        if not email:
+            return jsonify({'error': 'Email is required'}), 400
+        if not details:
+            return jsonify({'error': 'Details are required'}), 400
+
+        queries.create_feedback(
+            type=fb_type, email=email, details=details,
+            screenshot=screenshot, page_url=page_url,
+            console_logs=console_logs,
+        )
+        logger.info("Feedback submitted: type=%s email=%s", fb_type, email)
+        return jsonify({'ok': True}), 201
+
     # ── Admin ────────────────────────────────────────────────────────
 
     @app.route('/admin/jobs')
@@ -328,4 +368,19 @@ def register_routes(app):
             if log.get('logged_at'):
                 log['logged_at'] = log['logged_at'].strftime('%Y-%m-%d %H:%M:%S')
         return jsonify(logs)
+
+    @app.route('/admin/logs/flask')
+    def admin_flask_logs():
+        """Return recent Flask server logs from in-memory ring buffer."""
+        from config import memory_log_handler
+        level = request.args.get('level', '').upper() or None
+        limit = min(int(request.args.get('limit', '200')), 500)
+        logs = memory_log_handler.get_logs(level=level, limit=limit)
+        return jsonify(logs)
+
+    @app.route('/admin/feedback')
+    def admin_feedback():
+        """Admin page listing all feedback submissions."""
+        entries = queries.get_all_feedback(limit=200)
+        return render_template('admin_feedback.html', entries=entries)
 

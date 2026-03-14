@@ -135,7 +135,11 @@
             }
             if (state.sort) {
                 var sort = document.getElementById('sort-select') || document.getElementById('eg-sort-select');
-                if (sort) sort.value = state.sort;
+                if (sort) {
+                    /* Only restore if the saved value exists in this dropdown */
+                    var opts = Array.from(sort.options).map(function(o) { return o.value; });
+                    if (opts.indexOf(state.sort) !== -1) sort.value = state.sort;
+                }
             }
             return true;
         }

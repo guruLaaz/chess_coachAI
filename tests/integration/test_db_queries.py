@@ -21,6 +21,9 @@ from fetchers.repertoire_analyzer import OpeningEvaluation
 from fetchers.endgame_detector import EndgameInfo
 
 # We'll monkey-patch db.connection so every query uses our rolled-back transaction.
+# These imports may resolve to mocks if another test file (e.g. test_web_reports)
+# was collected first and injected mocks into sys.modules.  The _ensure_real_db
+# fixture below reloads them so tests always use the real modules.
 import db.connection as _db_conn
 import db.queries as queries
 
@@ -28,6 +31,30 @@ import db.queries as queries
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _ensure_real_db():
+    """Reload db modules so we get real implementations, not mocks.
+
+    Other test files (test_web_reports, test_web_routes, etc.) inject MagicMock
+    objects into sys.modules at collection time to avoid importing psycopg2.
+    If those files are collected before this one, our module-level
+    ``import db.queries`` binds to that mock.  Reloading here replaces the
+    mock with the real module and rebinds our module-level names.
+    """
+    import importlib
+    import unittest.mock
+    global _db_conn, queries
+    if isinstance(_db_conn, unittest.mock.MagicMock):
+        # Force real db package back into sys.modules
+        for key in ('db', 'db.connection', 'db.queries', 'db.models'):
+            sys.modules.pop(key, None)
+        import db.connection
+        import db.queries
+        _db_conn = importlib.reload(db.connection)
+        queries = importlib.reload(db.queries)
+
 
 _MIGRATIONS_DIR = os.path.join(
     os.path.dirname(__file__), "..", "..", "db", "migrations"
@@ -397,6 +424,60 @@ class TestJobLogs:
         queries.append_job_log(job_id, "INFO", long_msg)
         logs = queries.get_job_logs(job_id)
         assert len(logs[0]["message"]) == 2000
+
+
+class TestFeedback:
+    def test_create_feedback_bug(self):
+        logs_json = '[{"ts":"2026-03-13T10:00:00Z","level":"error","msg":"TypeError: x"}]'
+        fb_id = queries.create_feedback(
+            type="bug", email="user@example.com",
+            details="Button is broken", screenshot="data:image/png;base64,abc",
+            page_url="http://localhost/openings",
+            console_logs=logs_json,
+        )
+        assert fb_id is not None
+        entries = queries.get_all_feedback(limit=10)
+        match = [e for e in entries if e["id"] == fb_id]
+        assert len(match) == 1
+        assert match[0]["type"] == "bug"
+        assert match[0]["email"] == "user@example.com"
+        assert match[0]["details"] == "Button is broken"
+        assert match[0]["screenshot"] == "data:image/png;base64,abc"
+        assert match[0]["page_url"] == "http://localhost/openings"
+        assert match[0]["console_logs"] == logs_json
+
+    def test_create_feedback_contact(self):
+        fb_id = queries.create_feedback(
+            type="contact", email="contact@example.com",
+            details="Love the app!", screenshot="", page_url="/",
+        )
+        entries = queries.get_all_feedback(limit=10)
+        match = [e for e in entries if e["id"] == fb_id]
+        assert len(match) == 1
+        assert match[0]["type"] == "contact"
+        assert match[0]["screenshot"] == ""
+        assert match[0]["console_logs"] == ""
+
+    def test_create_feedback_console_logs_default_empty(self):
+        fb_id = queries.create_feedback(
+            type="bug", email="x@x.com", details="no logs provided",
+        )
+        entries = queries.get_all_feedback(limit=10)
+        match = [e for e in entries if e["id"] == fb_id]
+        assert match[0]["console_logs"] == ""
+
+    def test_get_all_feedback_ordering(self):
+        id1 = queries.create_feedback(type="bug", email="a@a.com", details="first")
+        id2 = queries.create_feedback(type="contact", email="b@b.com", details="second")
+        entries = queries.get_all_feedback(limit=10)
+        ids = [e["id"] for e in entries]
+        assert ids.index(id2) < ids.index(id1)
+
+    def test_get_all_feedback_limit(self):
+        for i in range(5):
+            queries.create_feedback(type="bug", email=f"u{i}@x.com", details=f"d{i}")
+        entries = queries.get_all_feedback(limit=3)
+        assert len(entries) == 3
 
 
 class TestConnectionPool:

@@ -100,6 +100,29 @@ pytest
 pytest -m "not network"  # skip live API tests
 ```
 
+## Internationalization (i18n)
+
+The app supports English and French via a client-side translation system.
+
+**How it works:**
+- All translatable text lives in a `translations` JS object in `web/templates/partials/controls.html`
+- HTML elements use `data-i18n="key_name"` attributes; the `applyLang()` function swaps text when the user toggles language
+- The EN/FR toggle is in the site controls bar (top-right)
+
+**Adding a new translatable string:**
+
+1. Add the translation key to the `translations` object in `controls.html`:
+   ```js
+   'my_new_key': { en: 'Hello, {name}!', fr: 'Bonjour, {name}\u00a0!' },
+   ```
+2. Use `data-i18n` in your template, with English as the default content:
+   ```html
+   <span data-i18n="my_new_key" data-i18n-name="Alice">Hello, Alice!</span>
+   ```
+3. For parameterized strings, use `{placeholder}` in translation values and pass data via `data-i18n-placeholder` HTML attributes.
+
+**Server-side errors:** Instead of returning pre-formatted English strings, pass structured `error_keys` to templates (list of `{key, ...params}` dicts) so the template can render them with `data-i18n` attributes.
+
 ## License
 
 [Add your license]

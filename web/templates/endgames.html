@@ -156,8 +156,8 @@
             flex: 1 1 45%;
             padding: 7px 8px;
             border: none;
-            border-right: 1px solid var(--border-input);
-            border-bottom: 1px solid var(--border-input);
+            border-right: 1px solid rgba(128, 128, 128, 0.3);
+            border-bottom: 1px solid rgba(128, 128, 128, 0.3);
             background: var(--bg-primary);
             color: var(--text-secondary);
             font-size: 0.78rem;
@@ -173,7 +173,7 @@
             flex: 1;
             padding: 7px 12px;
             border: none;
-            border-right: 1px solid var(--border-input);
+            border-right: 1px solid rgba(128, 128, 128, 0.3);
             background: var(--bg-primary);
             color: var(--text-secondary);
             font-size: 0.82rem;
@@ -444,22 +444,22 @@
 {% include "partials/sidebar.html" %}
         <main class="main">
             <h1>Chess Coach: <span class="user-badges">{% if chesscom_user %}<a class="user-badge" href="https://www.chess.com/member/{{ chesscom_user }}" target="_blank" rel="noopener"><svg viewBox="0 0 96.4 144"><path fill="#81b64c" d="M48.2 0C35.4-.1 25 10.3 24.9 23.1c0 7.5 3.6 14.6 9.7 18.9L17.9 53c0 3.5.9 6.9 2.6 9.9h14.8c-.3 6.6 2.4 22.6-21.8 41.1C5 110.4 0 121.3 0 134.6c0 .6 1.3 9.4 48.2 9.4s48.2-8.8 48.2-9.4c0-13.3-5-24.3-13.4-30.7-24.2-18.5-21.5-34.5-21.8-41.1H76c1.7-3 2.6-6.4 2.6-9.8L61.8 42c10.4-7.5 12.8-21.9 5.3-32.3C62.8 3.6 55.7 0 48.2 0z"/></svg>{{ chesscom_user }}</a>{% endif %}{% if lichess_user %}<a class="user-badge" href="https://lichess.org/@/{{ lichess_user }}" target="_blank" rel="noopener"><svg viewBox="0 0 50 50"><path fill="#000" stroke="#000" stroke-linejoin="round" d="M38.956.5c-3.53.418-6.452.902-9.286 2.984C5.534 1.786-.692 18.533.68 29.364 3.493 50.214 31.918 55.785 41.329 41.7c-7.444 7.696-19.276 8.752-28.323 3.084C3.959 39.116-.506 27.392 4.683 17.567 9.873 7.742 18.996 4.535 29.03 6.405c2.43-1.418 5.225-3.22 7.655-3.187l-1.694 4.86 12.752 21.37c-.439 5.654-5.459 6.112-5.459 6.112-.574-1.47-1.634-2.942-4.842-6.036-3.207-3.094-17.465-10.177-15.788-16.207-2.001 6.967 10.311 14.152 14.04 17.663 3.73 3.51 5.426 6.04 5.795 6.756 0 0 9.392-2.504 7.838-8.927L37.4 7.171z"/></svg>{{ lichess_user }}</a>{% endif %}</span></h1>
-            <div class="subtitle">Endgame performance &mdash; sorted by
+            <div class="subtitle"><span data-i18n="eg_performance">Endgame performance</span> &mdash; <span data-i18n="eg_sorted_by">sorted by</span>
                 <select id="eg-sort-select" class="sort-select">
-                    <option value="data-total" selected>Games</option>
-                    <option value="data-win-pct">Win %</option>
-                    <option value="data-loss-pct">Loss %</option>
-                    <option value="data-draw-pct">Draw %</option>
+                    <option value="data-total" selected data-i18n="eg_sort_games">Games</option>
+                    <option value="data-win-pct" data-i18n="eg_sort_win_pct">Win %</option>
+                    <option value="data-loss-pct" data-i18n="eg_sort_loss_pct">Loss %</option>
+                    <option value="data-draw-pct" data-i18n="eg_sort_draw_pct">Draw %</option>
                 </select></div>
 
             <div class="stats-bar">
                 <div class="stat-card" title="Total endgame games across all types in the default definition.">
                     <div class="stat-value">{{ "{:,}".format(eg_total_games) }}</div>
-                    <div class="stat-label">Endgame Games</div>
+                    <div class="stat-label" data-i18n="eg_stat_games">Endgame Games</div>
                 </div>
                 <div class="stat-card" title="Number of distinct endgame types detected (e.g. R vs R, Q vs Q).">
                     <div class="stat-value">{{ eg_types_count }}</div>
-                    <div class="stat-label">Endgame Types</div>
+                    <div class="stat-label" data-i18n="eg_stat_types">Endgame Types</div>
                 </div>
                 <div class="stat-card donut-card" title="Overall win percentage across all endgame types.">
                     <svg viewBox="0 0 120 120" class="donut-chart" width="100" height="100">
@@ -470,46 +470,39 @@
                         <text x="60" y="60" text-anchor="middle" dominant-baseline="central" font-size="20" font-weight="700"
                               fill="#1e293b">{{ eg_win_pct }}%</text>
                     </svg>
-                    <div class="stat-label">Win Rate</div>
+                    <div class="stat-label" data-i18n="eg_stat_winrate">Win Rate</div>
                 </div>
             </div>
 
             {% if stats %}
                 {% for s in stats %}
-                <div class="eg-card" style="display:none" data-win-pct="{{ s.win_pct }}" data-loss-pct="{{ s.loss_pct }}" data-draw-pct="{{ s.draw_pct }}" data-total="{{ s.total }}" data-balance="{{ s.balance }}" data-definition="{{ s.definition }}" data-fen="{{ s.get('example_fen', '') }}" data-color="{{ s.get('example_color', 'white') }}" data-tc-breakdown='{{ s.tc_breakdown_json|safe }}' data-game-details='{{ s.game_details_json|safe }}'>
+                <div class="eg-card" style="display:none" data-win-pct="{{ s.win_pct }}" data-loss-pct="{{ s.loss_pct }}" data-draw-pct="{{ s.draw_pct }}" data-total="{{ s.total }}" data-balance="{{ s.balance }}" data-definition="{{ s.definition }}" data-fen="{{ s.get('example_fen', '') }}" data-color="{{ s.get('example_color', 'white') }}" data-tc-breakdown='{{ s.tc_breakdown_json|safe }}' data-game-details='{{ s.game_details_json|safe }}' data-example-candidates='{{ s.example_candidates_json|safe }}' data-all-games-href="/u/{{ user_path }}/endgames/all?def={{ s.definition|urlencode }}&type={{ s.type|urlencode }}&balance={{ s.balance|urlencode }}">
                     <div class="eg-card-header">
                         <span class="type-label">{{ s.type }}</span>
                         <span class="balance-badge balance-{{ s.balance }}">{{ s.balance }}</span>
-                        <span class="eg-games">{{ s.total }} games</span>
+                        <span class="eg-games">{{ s.total }} <span data-i18n="eg_games_suffix">games</span></span>
                         <span class="eg-stat {{ 'pct-good' if s.win_pct >= 50 else 'pct-bad' if s.win_pct < 30 else 'pct-neutral' }}">W {{ s.win_pct }}%</span>
                         <span class="eg-stat {{ 'pct-bad' if s.loss_pct >= 50 else 'pct-good' if s.loss_pct < 20 else 'pct-neutral' }}">L {{ s.loss_pct }}%</span>
                         <span class="eg-stat pct-neutral">D {{ s.draw_pct }}%</span>
-                        {% if s.avg_my_clock is not none %}
-                        <span class="eg-clock" title="Avg time remaining when entering endgame (you / opponent)"><span class="eg-clock-icon">&#9201;</span> <span class="clock-you">{{ s.avg_my_clock_fmt }}</span><span class="clock-opp">{{ s.avg_opp_clock_fmt }}</span></span>
-                        {% endif %}
+                        <span class="eg-clock" style="display:none" title="Avg time remaining when entering endgame (you / opponent)"><span class="eg-clock-icon">&#9201;</span> <span class="clock-you"></span><span class="clock-opp"></span></span>
                     </div>
-                    {% if s.get('example_fen') %}
-                    <div class="eg-card-body" data-example-tc="{{ s.get('example_time_class', '') }}">
+                    <div class="eg-card-body">
                         <div class="board-panel">
-                            <h4>{% if s.example_game_url %}<a class="game-link" href="{{ s.example_game_url }}" target="_blank" rel="noopener">Example game{% if s.example_opponent_name or s.example_time_class or s.example_date %} ({% if s.example_opponent_name %}vs {{ s.example_opponent_name }}{% endif %}{% if s.example_time_class %}{% if s.example_opponent_name %}, {% endif %}{{ s.example_time_class }}{% endif %}{% if s.example_date %}{% if s.example_opponent_name or s.example_time_class %}, {% endif %}{{ s.example_date }}{% endif %}){% endif %} &rarr;</a>{% else %}Example game{% endif %}</h4>
-                            <div class="board-slot eg-board"><div class="board-spinner">Loading board&hellip;</div></div>
-                            {% set diff = s.get("example_material_diff", 0) %}
-                            <div class="eval-badge {{ 'eval-positive' if diff > 0 else 'eval-negative' if diff < 0 else 'eval-zero' }}">
-                                material {{ "+%d"|format(diff) if diff > 0 else diff }}
-                            </div>
+                            <h4 class="eg-example-heading"></h4>
+                            <div class="board-slot eg-board"></div>
+                            <div class="eval-badge eval-zero eg-eval-badge" style="display:none"></div>
                         </div>
-                        <a class="game-link" href="/u/{{ user_path }}/endgames/all?def={{ s.definition|urlencode }}&type={{ s.type|urlencode }}&balance={{ s.balance|urlencode }}" style="margin-left: 16px;">show all games &rarr;</a>
+                        <a class="game-link eg-all-games-link" href="/u/{{ user_path }}/endgames/all?def={{ s.definition|urlencode }}&type={{ s.type|urlencode }}&balance={{ s.balance|urlencode }}"><span data-i18n="eg_show_all">show all games</span> &rarr;</a>
                     </div>
-                    {% endif %}
                 </div>
                 {% endfor %}
             <div id="eg-no-results" class="empty-state" style="display:none">
-                <p>No endgames match the selected filters.</p>
+                <p data-i18n="eg_no_filter_results">No endgames match the selected filters.</p>
             </div>
             {% else %}
             <div class="empty-state">
-                <h2>No endgames detected</h2>
-                <p>None of the analyzed games reached an endgame position.</p>
+                <h2 data-i18n="eg_no_endgames_title">No endgames detected</h2>
+                <p data-i18n="eg_no_endgames_desc">None of the analyzed games reached an endgame position.</p>
             </div>
             {% endif %}
         </main>
@@ -604,6 +597,80 @@
         var shownCount = 0;
         var fetchingBoards = false;
 
+        function gameMatchesFilters(g, enabledTC, selectedPlat, activeColors, fromDate) {
+            if (tcBtns.length > 0 && g.tc && !enabledTC.has(g.tc)) return false;
+            if (selectedPlat !== 'all' && g.p !== selectedPlat) return false;
+            if (activeColors.size > 0 && !activeColors.has(g.c)) return false;
+            if (fromDate && g.d && g.d < fromDate) return false;
+            return true;
+        }
+
+        function formatClock(seconds) {
+            if (seconds == null) return '';
+            var s = Math.round(seconds);
+            var m = Math.floor(s / 60);
+            var sec = s % 60;
+            return m + ':' + String(sec).padStart(2, '0');
+        }
+
+        function pickExample(card, enabledTC, selectedPlat, activeColors, fromDate) {
+            var candidates = [];
+            try { candidates = JSON.parse(card.getAttribute('data-example-candidates') || '[]'); } catch(e) {}
+            for (var i = 0; i < candidates.length; i++) {
+                var c = candidates[i];
+                if (tcBtns.length > 0 && c.tc && !enabledTC.has(c.tc)) continue;
+                if (selectedPlat !== 'all' && c.p !== selectedPlat) continue;
+                if (activeColors.size > 0 && !activeColors.has(c.color)) continue;
+                /* date filter not checked — candidates don't cover every date combo */
+                return c;
+            }
+            return null;
+        }
+
+        function updateExample(card, ex) {
+            var body = card.querySelector('.eg-card-body');
+            var heading = card.querySelector('.eg-example-heading');
+            var boardSlot = card.querySelector('.eg-board');
+            var evalBadge = card.querySelector('.eg-eval-badge');
+            if (!body) return;
+
+            if (!ex || !ex.fen) {
+                body.style.display = 'none';
+                return;
+            }
+            body.style.display = '';
+
+            /* Update heading */
+            var label = _t('eg_example_game') || 'Example game';
+            var meta = [];
+            if (ex.opp) meta.push('vs ' + ex.opp);
+            if (ex.tc) meta.push(ex.tc);
+            if (ex.date) meta.push(ex.date);
+            if (meta.length) label += ' (' + meta.join(', ') + ')';
+            if (ex.url) {
+                heading.innerHTML = '<a class="game-link" href="' + ex.url + '" target="_blank" rel="noopener">' + label + ' &rarr;</a>';
+            } else {
+                heading.textContent = label;
+            }
+
+            /* Update data-fen/data-color on card so loadBoards picks it up */
+            card.setAttribute('data-fen', ex.fen);
+            card.setAttribute('data-color', ex.color || 'white');
+
+            /* Mark board as needing reload */
+            if (boardSlot) {
+                boardSlot.innerHTML = '<div class="board-spinner">' + (_t('loading_board') || 'Loading board\u2026') + '</div>';
+            }
+
+            /* Update eval badge */
+            if (evalBadge) {
+                var diff = ex.diff || 0;
+                evalBadge.style.display = '';
+                evalBadge.textContent = 'material ' + (diff > 0 ? '+' + diff : diff);
+                evalBadge.className = 'eval-badge eg-eval-badge ' + (diff > 0 ? 'eval-positive' : diff < 0 ? 'eval-negative' : 'eval-zero');
+            }
+        }
+
         function applyFilters() {
             var selectedDef = defSelect ? defSelect.value : defaultDef;
             var enabledBalance = new Set();
@@ -625,15 +692,15 @@
                 var details = [];
                 try { details = JSON.parse(card.getAttribute('data-game-details') || '[]'); } catch(e) {}
                 var fWins = 0, fLosses = 0, fDraws = 0;
+                var myClockSum = 0, myClockCount = 0, oppClockSum = 0, oppClockCount = 0;
                 for (var i = 0; i < details.length; i++) {
                     var g = details[i];
-                    if (tcBtns.length > 0 && g.tc && !enabledTC.has(g.tc)) continue;
-                    if (selectedPlat !== 'all' && g.p !== selectedPlat) continue;
-                    if (activeColors.size > 0 && !activeColors.has(g.c)) continue;
-                    if (fromDate && g.d && g.d < fromDate) continue;
+                    if (!gameMatchesFilters(g, enabledTC, selectedPlat, activeColors, fromDate)) continue;
                     if (g.r === 'win') fWins++;
                     else if (g.r === 'loss') fLosses++;
                     else fDraws++;
+                    if (g.mc != null) { myClockSum += g.mc; myClockCount++; }
+                    if (g.oc != null) { oppClockSum += g.oc; oppClockCount++; }
                 }
                 var fTotal = fWins + fLosses + fDraws;
                 /* If no per-game details exist, fall back to card totals */
@@ -646,13 +713,6 @@
                 card.setAttribute('data-filtered', (defOk && balOk && gamesOk && minOk) ? 'yes' : 'no');
                 card.style.display = 'none';
 
-                /* Hide example game if its time class is filtered out */
-                var exBody = card.querySelector('.eg-card-body');
-                if (exBody) {
-                    var exTc = exBody.getAttribute('data-example-tc');
-                    exBody.style.display = (tcBtns.length > 0 && exTc && !enabledTC.has(exTc)) ? 'none' : '';
-                }
-
                 /* Update displayed stats to reflect filtered counts */
                 if (defOk && balOk && gamesOk && minOk) {
                     var winPct = fTotal ? Math.round(100 * fWins / fTotal) : 0;
@@ -663,7 +723,7 @@
                     card.setAttribute('data-loss-pct', lossPct);
                     card.setAttribute('data-draw-pct', drawPct);
                     var gamesEl = card.querySelector('.eg-games');
-                    if (gamesEl) gamesEl.textContent = fTotal + ' games';
+                    if (gamesEl) gamesEl.textContent = fTotal + ' ' + (_t('eg_games_suffix') || 'games');
                     var stats = card.querySelectorAll('.eg-stat');
                     if (stats.length >= 3) {
                         stats[0].textContent = 'W ' + winPct + '%';
@@ -673,6 +733,20 @@
                         stats[2].textContent = 'D ' + drawPct + '%';
                         stats[2].className = 'eg-stat pct-neutral';
                     }
+                    /* Update clock averages */
+                    var clockEl = card.querySelector('.eg-clock');
+                    if (clockEl) {
+                        if (myClockCount > 0) {
+                            clockEl.style.display = '';
+                            clockEl.querySelector('.clock-you').textContent = formatClock(myClockSum / myClockCount);
+                            clockEl.querySelector('.clock-opp').textContent = oppClockCount > 0 ? formatClock(oppClockSum / oppClockCount) : '';
+                        } else {
+                            clockEl.style.display = 'none';
+                        }
+                    }
+                    /* Pick a matching example game */
+                    var ex = pickExample(card, enabledTC, selectedPlat, activeColors, fromDate);
+                    updateExample(card, ex);
                 }
             });
             shownCount = 0;

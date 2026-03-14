@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - Feedback | Chess CoachAI</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card-bg: #1e293b;
+            --border: #334155;
+            --text: #e2e8f0;
+            --text-dim: #94a3b8;
+            --accent: #818cf8;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 24px; }
+        h1 { font-size: 1.5rem; margin-bottom: 8px; }
+        .subtitle { color: var(--text-dim); font-size: 0.9rem; margin-bottom: 24px; }
+
+        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+        .refresh-btn, .nav-link {
+            background: var(--card-bg); color: var(--text); border: 1px solid var(--border);
+            border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 0.85rem;
+            text-decoration: none;
+        }
+        .refresh-btn:hover, .nav-link:hover { border-color: var(--accent); color: var(--accent); }
+
+        .summary { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+        .stat-card {
+            background: var(--card-bg); border: 1px solid var(--border);
+            border-radius: 10px; padding: 16px 20px; min-width: 140px;
+        }
+        .stat-card .value { font-size: 2rem; font-weight: 700; }
+        .stat-card .label { color: var(--text-dim); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th { text-align: left; color: var(--text-dim); font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; padding: 10px 12px; border-bottom: 2px solid var(--border); }
+        td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+        tr:hover td { background: rgba(255,255,255,0.03); }
+
+        .badge {
+            display: inline-block; padding: 2px 10px; border-radius: 12px;
+            font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+        }
+        .badge-bug { background: #450a0a; color: #f87171; }
+        .badge-contact { background: #172554; color: #60a5fa; }
+
+        .details-cell { max-width: 350px; word-break: break-word; }
+        .url-cell { max-width: 200px; word-break: break-all; color: var(--text-dim); font-size: 0.8rem; }
+
+        .screenshot-toggle, .logs-toggle {
+            color: var(--accent); cursor: pointer; font-size: 0.8rem;
+        }
+        .screenshot-toggle:hover, .logs-toggle:hover { text-decoration: underline; }
+        .screenshot-row td, .logs-row td { padding: 0; }
+        .screenshot-content {
+            padding: 12px 16px;
+            border-left: 3px solid var(--accent);
+        }
+        .screenshot-content img {
+            max-width: 100%;
+            max-height: 400px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        .logs-content {
+            background: #0c0f1a; color: #a5b4c8; font-family: 'Cascadia Code', 'Fira Code', monospace;
+            font-size: 0.78rem; line-height: 1.5; padding: 12px 16px; margin: 0;
+            max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+            border-left: 3px solid var(--accent);
+        }
+        .logs-content .log-warn { color: #fbbf24; }
+        .logs-content .log-error { color: #f87171; }
+
+        @media (max-width: 768px) {
+            body { padding: 12px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>Feedback</h1>
+            <p class="subtitle">Chess CoachAI &mdash; Bug Reports &amp; Contact Submissions</p>
+        </div>
+        <div style="display:flex;gap:8px">
+            <a class="nav-link" href="/admin/jobs">Jobs Dashboard</a>
+            <button class="refresh-btn" onclick="location.reload()">Refresh</button>
+        </div>
+    </div>
+
+    {% set bug_entries = entries | selectattr('type', 'equalto', 'bug') | list %}
+    {% set contact_entries = entries | selectattr('type', 'equalto', 'contact') | list %}
+
+    <div class="summary">
+        <div class="stat-card">
+            <div class="value">{{ entries | length }}</div>
+            <div class="label">Total</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ bug_entries | length }}</div>
+            <div class="label">Bug Reports</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">{{ contact_entries | length }}</div>
+            <div class="label">Contact</div>
+        </div>
+    </div>
+
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Type</th>
+                    <th>Email</th>
+                    <th>Details</th>
+                    <th>Page</th>
+                    <th>Date</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in entries %}
+                <tr>
+                    <td>{{ e.id }}</td>
+                    <td><span class="badge badge-{{ e.type }}">{{ e.type }}</span></td>
+                    <td>{{ e.email }}</td>
+                    <td class="details-cell">{{ e.details[:200] }}{% if e.details|length > 200 %}...{% endif %}</td>
+                    <td class="url-cell">{{ e.page_url }}</td>
+                    <td>{% if e.created_at %}{{ e.created_at.strftime('%b %d %H:%M') }}{% endif %}</td>
+                    <td>
+                        {% if e.screenshot %}
+                        <span class="screenshot-toggle" onclick="toggleScreenshot({{ e.id }})">Screenshot</span>
+                        {% endif %}
+                        {% if e.console_logs and e.console_logs != '[]' %}
+                        <span class="logs-toggle" onclick="toggleLogs({{ e.id }})">Logs</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% if e.screenshot %}
+                <tr class="screenshot-row" id="screenshot-{{ e.id }}" style="display:none">
+                    <td colspan="7">
+                        <div class="screenshot-content">
+                            <img src="{{ e.screenshot }}" alt="Screenshot for feedback #{{ e.id }}">
+                        </div>
+                    </td>
+                </tr>
+                {% endif %}
+                {% if e.console_logs and e.console_logs != '[]' %}
+                <tr class="logs-row" id="logs-{{ e.id }}" style="display:none">
+                    <td colspan="7">
+                        <pre class="logs-content" id="logs-content-{{ e.id }}"></pre>
+                    </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        function toggleScreenshot(id) {
+            var row = document.getElementById('screenshot-' + id);
+            row.style.display = row.style.display === 'none' ? '' : 'none';
+        }
+        function escapeHtml(str) {
+            var div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+        function toggleLogs(id) {
+            var row = document.getElementById('logs-' + id);
+            if (row.style.display === 'none') {
+                row.style.display = '';
+                var pre = document.getElementById('logs-content-' + id);
+                if (!pre.dataset.loaded) {
+                    try {
+                        var rawEl = document.getElementById('logs-data-' + id);
+                        var logs = JSON.parse(rawEl.textContent);
+                        pre.innerHTML = logs.map(function(l) {
+                            var cls = l.level === 'error' ? 'log-error' : l.level === 'warn' ? 'log-warn' : '';
+                            return '<span class="' + cls + '">' +
+                                escapeHtml(l.ts) + ' [' + l.level.toUpperCase() + '] ' +
+                                escapeHtml(l.msg) + '</span>';
+                        }).join('\n');
+                        if (!logs.length) pre.textContent = '(no console logs)';
+                    } catch(e) {
+                        pre.textContent = '(could not parse logs)';
+                    }
+                    pre.dataset.loaded = 'true';
+                }
+            } else {
+                row.style.display = 'none';
+            }
+        }
+    </script>
+    {% for e in entries %}
+    {% if e.console_logs and e.console_logs != '[]' %}
+    <script type="application/json" id="logs-data-{{ e.id }}">{{ e.console_logs|safe }}</script>
+    {% endif %}
+    {% endfor %}
+</body>
+</html>

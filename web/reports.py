@@ -103,6 +103,20 @@ def format_date(dt):
     return f"{dt.strftime('%B')} {dt.day}, {dt.year}"
 
 
+def _endgame_deep_link(game_url, ply):
+    """Build a deep link to a specific move in a chess game."""
+    if not game_url or not ply:
+        return game_url or ""
+    if "lichess.org" in game_url:
+        return f"{game_url}#{ply + 1}"
+    if "chess.com" in game_url:
+        analysis_url = game_url.replace(
+            "chess.com/game/", "chess.com/analysis/game/"
+        )
+        return f"{analysis_url}?tab=analysis&move={ply}"
+    return game_url
+
+
 def prepare_deviation(ev, deviation_counts, deviation_results):
     """Prepare template data for a single deviation."""
     played_san = move_to_san(ev.fen_at_deviation, ev.played_move_uci)
@@ -281,6 +295,28 @@ def load_endgames_data(chesscom_user, lichess_user):
     evaluations = dbq.get_all_evaluations_for_user(username, depth=14)
     game_urls = list({ev.game_url for ev in evaluations if ev.game_url})
 
+    # Build lookup of per-game metadata from evaluations
+    game_meta = {}  # game_url -> {my_color, time_class, end_time, opponent_name}
+    for ev in evaluations:
+        if ev.game_url and ev.game_url not in game_meta:
+            missing = []
+            if not ev.my_color:
+                missing.append("my_color")
+            if not ev.time_class:
+                missing.append("time_class")
+            if not ev.end_time:
+                missing.append("end_time")
+            if missing:
+                logger.error("Evaluation missing %s for game %s — skipping",
+                             ", ".join(missing), ev.game_url)
+                continue
+            game_meta[ev.game_url] = {
+                "my_color": ev.my_color,
+                "time_class": ev.time_class,
+                "end_time": ev.end_time,
+                "opponent_name": ev.opponent_name or "",
+            }
+
     if not game_urls:
         logger.info("No game URLs found for endgame data (user=%s)", username)
         return {
@@ -300,7 +336,7 @@ def load_endgames_data(chesscom_user, lichess_user):
     raw = dbq.get_all_endgames_for_user(game_urls)
 
     # Aggregate into the same format as EndgameClassifier.aggregate_all()
-    endgame_stats_by_def = _aggregate_endgames(raw)
+    endgame_stats_by_def = _aggregate_endgames(raw, game_meta)
 
     default_def = "minor-or-queen"
     default_stats = endgame_stats_by_def.get(default_def, [])
@@ -314,18 +350,10 @@ def load_endgames_data(chesscom_user, lichess_user):
             entry["definition"] = defn
 
             # Build deep-link URL for example game
-            game_url = s.get("example_game_url", "")
-            ply = s.get("example_endgame_ply", 0)
-            if game_url and ply:
-                if "lichess.org" in game_url:
-                    entry["example_game_url"] = f"{game_url}#{ply + 1}"
-                elif "chess.com" in game_url:
-                    analysis_url = game_url.replace(
-                        "chess.com/game/", "chess.com/analysis/game/"
-                    )
-                    entry["example_game_url"] = (
-                        f"{analysis_url}?tab=analysis&move={ply}"
-                    )
+            entry["example_game_url"] = _endgame_deep_link(
+                s.get("example_game_url", ""),
+                s.get("example_endgame_ply", 0),
+            )
 
             entry["example_date"] = format_date(s.get("example_end_time"))
             entry["avg_my_clock_fmt"] = format_clock(s.get("avg_my_clock"))
@@ -335,6 +363,7 @@ def load_endgames_data(chesscom_user, lichess_user):
             )
 
             # Compact per-game details for cross-filtering in JS
+            # Includes clock data so JS can recalculate averages
             game_details = []
             for g in s.get("all_games", []):
                 url = g.get("game_url", "")
@@ -349,14 +378,55 @@ def load_endgames_data(chesscom_user, lichess_user):
                     if et and hasattr(et, "strftime")
                     else ""
                 )
-                game_details.append({
+                gd = {
                     "r": g.get("my_result", "draw"),
                     "tc": g.get("time_class", ""),
                     "p": plat,
                     "c": g.get("my_color", "white"),
                     "d": dt,
-                })
+                }
+                mc = g.get("my_clock")
+                oc = g.get("opp_clock")
+                if mc is not None:
+                    gd["mc"] = round(mc, 1)
+                if oc is not None:
+                    gd["oc"] = round(oc, 1)
+                game_details.append(gd)
             entry["game_details_json"] = json.dumps(game_details)
+
+            # Example candidates: one per (tc, platform, color) combo
+            # so JS can pick one matching the active filters
+            seen_keys = set()
+            candidates = []
+            for g in s.get("all_games", []):
+                if not g.get("fen"):
+                    continue
+                tc = g.get("time_class", "")
+                url = g.get("game_url", "")
+                plat = (
+                    "chesscom" if "chess.com" in url
+                    else "lichess" if "lichess.org" in url
+                    else "unknown"
+                )
+                color = g.get("my_color", "white")
+                ckey = (tc, plat, color)
+                if ckey in seen_keys:
+                    continue
+                seen_keys.add(ckey)
+                et = g.get("end_time")
+                candidates.append({
+                    "fen": g["fen"],
+                    "color": color,
+                    "url": _endgame_deep_link(
+                        url, g.get("endgame_ply", 0)
+                    ),
+                    "diff": g.get("material_diff", 0),
+                    "tc": tc,
+                    "p": plat,
+                    "opp": g.get("opponent_name", ""),
+                    "date": format_date(et),
+                })
+            entry["example_candidates_json"] = json.dumps(candidates)
             enriched.append(entry)
 
     # Summary stats for the default definition
@@ -451,16 +521,24 @@ def load_endgames_all_data(chesscom_user, lichess_user, defn, eg_type,
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _aggregate_endgames(raw):
+def _aggregate_endgames(raw, game_meta=None):
     """Aggregate raw endgame rows into the same structure as
     EndgameClassifier.aggregate_all().
 
     raw: dict of game_url -> {definition -> EndgameInfo or None}
+    game_meta: dict of game_url -> {my_color, time_class, end_time}
     Returns: dict of definition -> list of aggregate stat dicts
     """
+    if game_meta is None:
+        game_meta = {}
     # Group by (definition, endgame_type, balance)
     buckets = {}  # (defn, type, balance) -> list of info dicts
     for game_url, defs in raw.items():
+        meta = game_meta.get(game_url)
+        if meta is None:
+            logger.error("No game metadata for endgame %s — skipping",
+                         game_url)
+            continue
         for defn, info in defs.items():
             if info is None:
                 continue
@@ -476,9 +554,10 @@ def _aggregate_endgames(raw):
                 "material_diff": info.material_diff or 0,
                 "my_clock": info.my_clock,
                 "opp_clock": info.opp_clock,
-                "my_color": "white",
-                "time_class": "",
-                "end_time": None,
+                "my_color": meta["my_color"],
+                "time_class": meta["time_class"],
+                "end_time": meta["end_time"],
+                "opponent_name": meta.get("opponent_name", ""),
             })
 
     # Build per-definition result
@@ -500,6 +579,20 @@ def _aggregate_endgames(raw):
         opp_clocks = [g["opp_clock"] for g in games
                       if g["opp_clock"] is not None]
 
+        # Time control breakdown: {tc -> {wins, losses, draws}}
+        tc_breakdown = {}
+        for g in games:
+            tc = g.get("time_class", "")
+            if tc not in tc_breakdown:
+                tc_breakdown[tc] = {"wins": 0, "losses": 0, "draws": 0}
+            r = g.get("my_result", "draw")
+            if r == "win":
+                tc_breakdown[tc]["wins"] += 1
+            elif r == "loss":
+                tc_breakdown[tc]["losses"] += 1
+            else:
+                tc_breakdown[tc]["draws"] += 1
+
         entry = {
             "type": etype,
             "balance": balance,
@@ -512,10 +605,10 @@ def _aggregate_endgames(raw):
             "draw_pct": draw_pct,
             "example_fen": example.get("fen", ""),
             "example_game_url": example.get("game_url", ""),
-            "example_color": example.get("my_color", "white"),
+            "example_color": example.get("my_color", ""),
             "example_material_diff": example.get("material_diff", 0),
             "example_endgame_ply": example.get("endgame_ply", 0),
-            "example_opponent_name": "",
+            "example_opponent_name": example.get("opponent_name", ""),
             "example_time_class": example.get("time_class", ""),
             "example_end_time": example.get("end_time"),
             "avg_my_clock": (
@@ -525,7 +618,7 @@ def _aggregate_endgames(raw):
                 sum(opp_clocks) / len(opp_clocks) if opp_clocks else None
             ),
             "all_games": games,
-            "tc_breakdown": {},
+            "tc_breakdown": tc_breakdown,
         }
 
         if defn not in by_def:

@@ -25,6 +25,7 @@ from web.reports import (  # noqa: E402
     get_opening_groups,
     load_openings_data,
     load_endgames_data,
+    _aggregate_endgames,
 )
 from web.app import create_app  # noqa: E402
 
@@ -231,6 +232,60 @@ class TestLoadEndgamesData:
         mock_dbq.get_all_endgames_for_user.return_value = {}
         data = load_endgames_data('testuser', None)
         assert data['eg_total_games'] == 0
+
+
+class TestAggregateEndgamesGameMeta:
+    """Verify that _aggregate_endgames propagates game metadata."""
+
+    def _make_endgame_info(self, **overrides):
+        from fetchers.endgame_detector import EndgameInfo
+        defaults = dict(
+            endgame_type='R vs R', endgame_ply=40,
+            material_balance='equal', my_result='win',
+            fen_at_endgame='8/8/8/8/8/8/8/8 w - - 0 1',
+            game_url='https://chess.com/game/1',
+            material_diff=0, my_clock=300.0, opp_clock=250.0,
+        )
+        defaults.update(overrides)
+        return EndgameInfo(**defaults)
+
+    def test_game_meta_propagated(self):
+        """Game color, time_class, end_time should come from game_meta."""
+        raw = {
+            'https://chess.com/game/1': {
+                'minor-or-queen': self._make_endgame_info(),
+            },
+        }
+        game_meta = {
+            'https://chess.com/game/1': {
+                'my_color': 'black',
+                'time_class': 'rapid',
+                'end_time': datetime(2025, 9, 1, tzinfo=timezone.utc),
+                'opponent_name': 'Magnus',
+            },
+        }
+        result = _aggregate_endgames(raw, game_meta)
+        entry = result['minor-or-queen'][0]
+        games = entry['all_games']
+        assert len(games) == 1
+        assert games[0]['my_color'] == 'black'
+        assert games[0]['time_class'] == 'rapid'
+        assert games[0]['end_time'] == datetime(2025, 9, 1, tzinfo=timezone.utc)
+        assert games[0]['opponent_name'] == 'Magnus'
+        # example_opponent_name should come from the example game
+        assert entry['example_opponent_name'] == 'Magnus'
+        # tc_breakdown should be computed from games
+        assert entry['tc_breakdown'] == {'rapid': {'wins': 1, 'losses': 0, 'draws': 0}}
+
+    def test_skipped_without_meta(self):
+        """Without game_meta, games should be skipped."""
+        raw = {
+            'https://chess.com/game/1': {
+                'minor-or-queen': self._make_endgame_info(),
+            },
+        }
+        result = _aggregate_endgames(raw)
+        assert result == {}
 
 
 # ---------------------------------------------------------------------------

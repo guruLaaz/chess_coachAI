@@ -26,6 +26,10 @@
             --error-text: #991b1b;
             --success: #16a34a;
             --text-muted: #94a3b8;
+            --text-label: #374151;
+            --border-input: #d1d5db;
+            --input-bg: #fff;
+            --input-text: #111;
             --ctrl-active-bg: #f1f5f9;
             --pulse-glow: 0 4px 32px rgba(37, 99, 235, 0.25);
         }
@@ -48,6 +52,10 @@
             --error-text: #fca5a5;
             --success: #4ade80;
             --text-muted: #64748b;
+            --text-label: #94a3b8;
+            --border-input: #475569;
+            --input-bg: #0f172a;
+            --input-text: #e2e8f0;
             --ctrl-active-bg: #334155;
             --pulse-glow: 0 4px 32px rgba(59, 130, 246, 0.2);
         }
@@ -280,6 +288,7 @@
             display: none !important;
         }
 
+
         /* Responsive */
         @media (max-width: 768px) {
             header {
@@ -313,8 +322,8 @@
             <div class="status-icon success hidden" id="icon-success">✓</div>
             <div class="status-icon error hidden" id="icon-error">✗</div>
 
-            <h2 class="status-title" id="status-title">Preparing your analysis...</h2>
-            <p class="status-message" id="status-message">Please wait while we get things ready.</p>
+            <h2 class="status-title" id="status-title" data-i18n="status_preparing">Preparing your analysis...</h2>
+            <p class="status-message" id="status-message" data-i18n="status_please_wait">Please wait while we get things ready.</p>
             <p class="queue-position hidden" id="queue-position"></p>
 
             <!-- Progress bar -->
@@ -414,7 +423,7 @@
                     progressFill.style.width = fetchPct + '%';
                     progressText.textContent = tFetchMsg + ' (' + fetchPct + '%)';
                     if (data.elapsed_seconds != null) {
-                        elapsedTime.textContent = 'Elapsed: ' + formatElapsed(data.elapsed_seconds);
+                        elapsedTime.textContent = (_t('status_elapsed') || 'Elapsed:') + ' ' + formatElapsed(data.elapsed_seconds);
                         elapsedTime.classList.remove('hidden');
                     }
                     break;
@@ -429,7 +438,7 @@
                     progressFill.style.width = pct + '%';
                     progressText.textContent = tAnalyzeMsg + ' (' + pct + '%)';
                     if (data.elapsed_seconds != null) {
-                        elapsedTime.textContent = 'Elapsed: ' + formatElapsed(data.elapsed_seconds);
+                        elapsedTime.textContent = (_t('status_elapsed') || 'Elapsed:') + ' ' + formatElapsed(data.elapsed_seconds);
                         elapsedTime.classList.remove('hidden');
                     }
                     break;
@@ -461,8 +470,8 @@
                 case 'not_found':
                     spinner.classList.add('hidden');
                     iconError.classList.remove('hidden');
-                    title.textContent = 'No analysis found';
-                    message.textContent = 'This analysis may have been cancelled or expired.';
+                    title.textContent = _t('status_not_found_title') || 'No analysis found';
+                    message.textContent = _t('status_not_found_msg') || 'This analysis may have been cancelled or expired.';
                     retryForm.classList.remove('hidden');
                     break;
 
@@ -476,29 +485,32 @@
             fetch(STATUS_URL)
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
+                    console.log('Status:', data.status,
+                        data.progress_pct != null ? data.progress_pct + '%' : '',
+                        data.message || '');
                     updateUI(data);
                     if (data.status === 'complete') {
+                        navigatingAway = true;
                         setTimeout(function() { window.location.href = REPORT_URL; }, 1000);
                     } else if (data.status !== 'failed' && data.status !== 'not_found') {
                         setTimeout(poll, 3000);
                     }
                 })
-                .catch(function() {
+                .catch(function(err) {
+                    console.error('Poll failed:', err);
                     setTimeout(poll, 5000);
                 });
         }
 
         document.addEventListener('DOMContentLoaded', poll);
 
-        // Cancel pending job when user leaves the page
+        // Cancel pending job only when user closes the tab (not on tab switch or internal navigation)
+        var navigatingAway = false;
         function cancelIfPending() {
-            if (currentStatus === 'pending' && !isComplete) {
+            if (!navigatingAway && currentStatus === 'pending' && !isComplete) {
                 navigator.sendBeacon(CANCEL_URL);
             }
         }
-        document.addEventListener('visibilitychange', function() {
-            if (document.visibilityState === 'hidden') cancelIfPending();
-        });
         window.addEventListener('beforeunload', cancelIfPending);
     </script>
 </body>

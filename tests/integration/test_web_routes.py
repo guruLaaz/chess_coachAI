@@ -470,6 +470,167 @@ class TestAnalyzeDispatch:
 # ── Admin endpoints ──────────────────────────────────────────────
 
 
+class TestSubmitFeedback:
+    def test_submit_bug_report_success(self, client):
+        with patch('web.routes.queries') as mock_q:
+            mock_q.create_feedback.return_value = 1
+            resp = client.post('/api/feedback',
+                               json={'type': 'bug', 'email': 'a@b.com',
+                                     'details': 'Broken', 'screenshot': 'data:img',
+                                     'page_url': '/openings',
+                                     'console_logs': '[{"ts":"t","level":"error","msg":"x"}]'})
+            assert resp.status_code == 201
+            assert resp.get_json()['ok'] is True
+            mock_q.create_feedback.assert_called_once_with(
+                type='bug', email='a@b.com', details='Broken',
+                screenshot='data:img', page_url='/openings',
+                console_logs='[{"ts":"t","level":"error","msg":"x"}]',
+            )
+
+    def test_submit_contact_success(self, client):
+        with patch('web.routes.queries') as mock_q:
+            mock_q.create_feedback.return_value = 2
+            resp = client.post('/api/feedback',
+                               json={'type': 'contact', 'email': 'c@d.com',
+                                     'details': 'Hello!'})
+            assert resp.status_code == 201
+            mock_q.create_feedback.assert_called_once_with(
+                type='contact', email='c@d.com', details='Hello!',
+                screenshot='', page_url='', console_logs='',
+            )
+
+    def test_submit_bug_without_console_logs(self, client):
+        """console_logs defaults to empty string when omitted."""
+        with patch('web.routes.queries') as mock_q:
+            mock_q.create_feedback.return_value = 3
+            resp = client.post('/api/feedback',
+                               json={'type': 'bug', 'email': 'a@b.com',
+                                     'details': 'No logs'})
+            assert resp.status_code == 201
+            mock_q.create_feedback.assert_called_once_with(
+                type='bug', email='a@b.com', details='No logs',
+                screenshot='', page_url='', console_logs='',
+            )
+
+    def test_submit_feedback_missing_email(self, client):
+        resp = client.post('/api/feedback',
+                           json={'type': 'bug', 'details': 'No email'})
+        assert resp.status_code == 400
+        assert b'Email' in resp.data or b'email' in resp.data
+
+    def test_submit_feedback_missing_details(self, client):
+        resp = client.post('/api/feedback',
+                           json={'type': 'bug', 'email': 'a@b.com'})
+        assert resp.status_code == 400
+        assert b'Details' in resp.data or b'details' in resp.data
+
+    def test_submit_feedback_invalid_type(self, client):
+        resp = client.post('/api/feedback',
+                           json={'type': 'spam', 'email': 'a@b.com',
+                                 'details': 'Hi'})
+        assert resp.status_code == 400
+        assert b'type' in resp.data.lower()
+
+    def test_submit_feedback_invalid_json(self, client):
+        resp = client.post('/api/feedback',
+                           data='not json',
+                           content_type='application/json')
+        assert resp.status_code == 400
+
+
+class TestAdminFeedback:
+    @patch('web.routes.queries')
+    def test_admin_feedback_page_loads(self, mock_q, client):
+        mock_q.get_all_feedback.return_value = []
+        resp = client.get('/admin/feedback')
+        assert resp.status_code == 200
+        assert b'Feedback' in resp.data
+
+    @patch('web.routes.queries')
+    def test_admin_feedback_shows_entries(self, mock_q, client):
+        from datetime import datetime, timezone
+        mock_q.get_all_feedback.return_value = [
+            {'id': 1, 'type': 'bug', 'email': 'test@test.com',
+             'details': 'Something broke', 'screenshot': '',
+             'page_url': '/status', 'console_logs': '',
+             'created_at': datetime(2026, 3, 13, tzinfo=timezone.utc)},
+        ]
+        resp = client.get('/admin/feedback')
+        assert resp.status_code == 200
+        assert b'test@test.com' in resp.data
+        assert b'Something broke' in resp.data
+
+    @patch('web.routes.queries')
+    def test_admin_feedback_hides_logs_when_empty(self, mock_q, client):
+        from datetime import datetime, timezone
+        mock_q.get_all_feedback.return_value = [
+            {'id': 10, 'type': 'bug', 'email': 'a@b.com',
+             'details': 'No logs here', 'screenshot': '',
+             'page_url': '/', 'console_logs': '[]',
+             'created_at': datetime(2026, 3, 13, tzinfo=timezone.utc)},
+        ]
+        resp = client.get('/admin/feedback')
+        assert resp.status_code == 200
+        assert b'toggleLogs(10)' not in resp.data
+
+    @patch('web.routes.queries')
+    def test_admin_feedback_shows_logs_when_present(self, mock_q, client):
+        from datetime import datetime, timezone
+        logs = '[{"ts":"2026-03-13T10:00:00Z","level":"error","msg":"TypeError"}]'
+        mock_q.get_all_feedback.return_value = [
+            {'id': 11, 'type': 'bug', 'email': 'a@b.com',
+             'details': 'Has logs', 'screenshot': '',
+             'page_url': '/', 'console_logs': logs,
+             'created_at': datetime(2026, 3, 13, tzinfo=timezone.utc)},
+        ]
+        resp = client.get('/admin/feedback')
+        assert resp.status_code == 200
+        assert b'toggleLogs(11)' in resp.data
+        assert b'logs-data-11' in resp.data
+
+    @patch('web.routes.queries')
+    def test_admin_feedback_logs_not_html_escaped(self, mock_q, client):
+        """Console logs with & and < must not be HTML-escaped in the JSON script tag."""
+        from datetime import datetime, timezone
+        logs = '[{"ts":"2026-03-13T10:00:00Z","level":"info","msg":"UA: Mozilla/5.0 (Windows NT 10.0; Win64; x64) & <test>"}]'
+        mock_q.get_all_feedback.return_value = [
+            {'id': 20, 'type': 'bug', 'email': 'a@b.com',
+             'details': 'Escaped test', 'screenshot': '',
+             'page_url': '/', 'console_logs': logs,
+             'created_at': datetime(2026, 3, 13, tzinfo=timezone.utc)},
+        ]
+        resp = client.get('/admin/feedback')
+        assert resp.status_code == 200
+        # The raw JSON must appear unescaped (|safe), not as &amp; or &lt;
+        assert b'&amp;' not in resp.data.split(b'logs-data-20')[1].split(b'</script>')[0]
+        assert b'&lt;' not in resp.data.split(b'logs-data-20')[1].split(b'</script>')[0]
+
+
+class TestAdminFlaskLogs:
+    def test_returns_empty_list_initially(self, client):
+        resp = client.get('/admin/logs/flask')
+        assert resp.status_code == 200
+        assert isinstance(resp.get_json(), list)
+
+    def test_captures_log_entries(self, client):
+        import logging
+        logging.getLogger('test.flask_logs').error('test error message')
+        resp = client.get('/admin/logs/flask?level=ERROR')
+        assert resp.status_code == 200
+        logs = resp.get_json()
+        msgs = [l['message'] for l in logs]
+        assert any('test error message' in m for m in msgs)
+
+    def test_level_filter(self, client):
+        import logging
+        logging.getLogger('test.flask_logs').info('info msg')
+        logging.getLogger('test.flask_logs').error('error msg')
+        resp = client.get('/admin/logs/flask?level=ERROR')
+        logs = resp.get_json()
+        levels = {l['level'] for l in logs}
+        assert 'INFO' not in levels
+
+
 class TestAdminJobLogs:
     @patch('web.routes.queries')
     def test_returns_logs_json(self, mock_q, client):

@@ -16,6 +16,16 @@
             --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
             --blue: #2563eb;
             --blue-hover: #1d4ed8;
+            --blue-focus: rgba(37, 99, 235, 0.1);
+            --border: #e5e7eb;
+            --border-input: #d1d5db;
+            --text-muted: #94a3b8;
+            --text-label: #374151;
+            --ctrl-active-bg: #f1f5f9;
+            --input-bg: #fff;
+            --input-text: #111;
+            --error: #dc2626;
+            --success: #16a34a;
         }
         [data-theme="dark"] {
             --bg-primary: #0f172a;
@@ -24,6 +34,18 @@
             --text-secondary: #94a3b8;
             --card-bg: #1e293b;
             --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+            --blue: #3b82f6;
+            --blue-hover: #2563eb;
+            --blue-focus: rgba(59, 130, 246, 0.2);
+            --border: #334155;
+            --border-input: #475569;
+            --text-muted: #64748b;
+            --text-label: #cbd5e1;
+            --ctrl-active-bg: #334155;
+            --input-bg: #0f172a;
+            --input-text: #e2e8f0;
+            --error: #f87171;
+            --success: #4ade80;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -58,23 +80,55 @@
         .btn-secondary { background: var(--bg-secondary); color: var(--text-primary); }
         .btn-secondary:hover { opacity: 0.8; }
         .hint { color: var(--text-secondary); font-size: 0.85rem; margin-top: 20px; }
+        header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            background: var(--bg-primary);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+            height: 60px;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 1.25rem;
+            font-weight: 500;
+            text-decoration: none;
+            color: var(--text-primary);
+        }
+        .logo .logo-icon { font-size: 1.5rem; }
+        .logo .ai { color: var(--blue); font-weight: 700; }
     </style>
 </head>
 <body>
+    <header>
+        <a href="/" class="logo">
+            <span class="logo-icon">&#9822;</span>
+            <span>Chess Coach<span class="ai">AI</span></span>
+        </a>
+        {% include "partials/controls.html" %}
+    </header>
     <div class="card">
         <div class="icon">&#9822;</div>
-        <h1>No games found</h1>
+        <h1 data-i18n="nogames_title">No games found</h1>
         <p>
-            We couldn't find any games for
+            <span data-i18n="nogames_desc">We couldn't find any games for</span>
             {% if chesscom_user %}<span class="username">{{ chesscom_user }}</span>{% endif %}
             {% if chesscom_user and lichess_user %} / {% endif %}
             {% if lichess_user %}<span class="username">{{ lichess_user }}</span>{% endif %}.
         </p>
-        <p>This could mean the username doesn't exist, or the account has no public games.</p>
+        <p data-i18n="nogames_no_public">This could mean the username doesn't exist, or the account has no public games.</p>
         <div class="actions">
-            <a class="btn btn-primary" href="/">Try another username</a>
+            <a class="btn btn-primary" href="/" data-i18n="nogames_try_another">Try another username</a>
         </div>
-        <p class="hint">Make sure the username matches exactly as it appears on Chess.com or Lichess.</p>
+        <p class="hint" data-i18n="nogames_hint">Make sure the username matches exactly as it appears on Chess.com or Lichess.</p>
     </div>
 </body>
 </html>

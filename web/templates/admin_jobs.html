@@ -108,9 +108,28 @@
             <p class="subtitle">Chess CoachAI &mdash; Analysis Pipeline Monitor</p>
         </div>
         <div style="display:flex;gap:8px">
+            <a class="refresh-btn" href="/admin/feedback" style="text-decoration:none">Feedback</a>
             <a class="refresh-btn" href="http://localhost:5555" target="_blank" style="text-decoration:none">Flower (Workers)</a>
+            <button class="refresh-btn" id="flask-logs-btn" onclick="toggleFlaskLogs()">Flask Logs</button>
             <button class="refresh-btn" onclick="location.reload()">Refresh</button>
         </div>
+    </div>
+
+    <!-- Flask server log panel -->
+    <div id="flask-logs-panel" style="display:none; margin-bottom:24px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <div style="display:flex; gap:8px; align-items:center;">
+                <span style="color:var(--text-dim); font-size:0.85rem; font-weight:600;">Flask Server Logs</span>
+                <select id="flask-log-level" style="background:var(--card-bg); color:var(--text); border:1px solid var(--border); border-radius:4px; padding:4px 8px; font-size:0.8rem;">
+                    <option value="">All levels</option>
+                    <option value="ERROR">Errors only</option>
+                    <option value="WARNING">Warning+</option>
+                    <option value="INFO">Info+</option>
+                </select>
+            </div>
+            <button class="refresh-btn" onclick="loadFlaskLogs()" style="padding:4px 12px; font-size:0.8rem;">Reload</button>
+        </div>
+        <pre class="log-content" id="flask-logs-content" style="max-height:500px;">Loading...</pre>
     </div>
 
     {% set active_jobs = jobs | selectattr('status', 'in', ['fetching', 'analyzing']) | list %}
@@ -286,6 +305,48 @@
                 });
             });
         });
+
+        /* Flask server logs */
+        function toggleFlaskLogs() {
+            var panel = document.getElementById('flask-logs-panel');
+            var btn = document.getElementById('flask-logs-btn');
+            if (panel.style.display === 'none') {
+                panel.style.display = '';
+                btn.style.borderColor = 'var(--accent)';
+                btn.style.color = 'var(--accent)';
+                loadFlaskLogs();
+            } else {
+                panel.style.display = 'none';
+                btn.style.borderColor = '';
+                btn.style.color = '';
+            }
+        }
+
+        function loadFlaskLogs() {
+            var pre = document.getElementById('flask-logs-content');
+            var level = document.getElementById('flask-log-level').value;
+            var url = '/admin/logs/flask?limit=300';
+            if (level) url += '&level=' + level;
+            pre.textContent = 'Loading...';
+            fetch(url)
+                .then(function(r) { return r.json(); })
+                .then(function(logs) {
+                    if (!logs.length) {
+                        pre.textContent = '(no logs)';
+                        return;
+                    }
+                    pre.innerHTML = logs.map(function(l) {
+                        var cls = 'log-level-' + l.level;
+                        return '<span class="' + cls + '">' +
+                            l.timestamp + ' [' + l.level + '] ' +
+                            escapeHtml(l.message) + '</span>';
+                    }).join('\n');
+                    pre.scrollTop = pre.scrollHeight;
+                })
+                .catch(function(err) { pre.textContent = 'Failed: ' + err; });
+        }
+
+        document.getElementById('flask-log-level').addEventListener('change', loadFlaskLogs);
 
         // Auto-refresh every 30s if there are active/pending jobs
         {% if active_jobs or pending_jobs %}

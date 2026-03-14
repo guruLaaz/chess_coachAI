@@ -158,8 +158,8 @@
             flex: 1 1 45%;
             padding: 7px 8px;
             border: none;
-            border-right: 1px solid var(--border-input);
-            border-bottom: 1px solid var(--border-input);
+            border-right: 1px solid rgba(128, 128, 128, 0.3);
+            border-bottom: 1px solid rgba(128, 128, 128, 0.3);
             background: var(--bg-primary);
             color: var(--text-secondary);
             font-size: 0.78rem;
@@ -175,7 +175,7 @@
             flex: 1;
             padding: 7px 12px;
             border: none;
-            border-right: 1px solid var(--border-input);
+            border-right: 1px solid rgba(128, 128, 128, 0.3);
             background: var(--bg-primary);
             color: var(--text-secondary);
             font-size: 0.82rem;
@@ -497,7 +497,7 @@
         <main class="main">
             <h1>Chess Coach: <span class="user-badges">{% if chesscom_user %}<a class="user-badge" href="https://www.chess.com/member/{{ chesscom_user }}" target="_blank" rel="noopener"><svg viewBox="0 0 96.4 144"><path fill="#81b64c" d="M48.2 0C35.4-.1 25 10.3 24.9 23.1c0 7.5 3.6 14.6 9.7 18.9L17.9 53c0 3.5.9 6.9 2.6 9.9h14.8c-.3 6.6 2.4 22.6-21.8 41.1C5 110.4 0 121.3 0 134.6c0 .6 1.3 9.4 48.2 9.4s48.2-8.8 48.2-9.4c0-13.3-5-24.3-13.4-30.7-24.2-18.5-21.5-34.5-21.8-41.1H76c1.7-3 2.6-6.4 2.6-9.8L61.8 42c10.4-7.5 12.8-21.9 5.3-32.3C62.8 3.6 55.7 0 48.2 0z"/></svg>{{ chesscom_user }}</a>{% endif %}{% if lichess_user %}<a class="user-badge" href="https://lichess.org/@/{{ lichess_user }}" target="_blank" rel="noopener"><svg viewBox="0 0 50 50"><path fill="#000" stroke="#000" stroke-linejoin="round" d="M38.956.5c-3.53.418-6.452.902-9.286 2.984C5.534 1.786-.692 18.533.68 29.364 3.493 50.214 31.918 55.785 41.329 41.7c-7.444 7.696-19.276 8.752-28.323 3.084C3.959 39.116-.506 27.392 4.683 17.567 9.873 7.742 18.996 4.535 29.03 6.405c2.43-1.418 5.225-3.22 7.655-3.187l-1.694 4.86 12.752 21.37c-.439 5.654-5.459 6.112-5.459 6.112-.574-1.47-1.634-2.942-4.842-6.036-3.207-3.094-17.465-10.177-15.788-16.207-2.001 6.967 10.311 14.152 14.04 17.663 3.73 3.51 5.426 6.04 5.795 6.756 0 0 9.392-2.504 7.838-8.927L37.4 7.171z"/></svg>{{ lichess_user }}</a>{% endif %}</span></h1>
             {% if filter_eco %}
-            <div class="subtitle">Showing {{ items|length }} deviations for {{ filter_eco }} as {{ filter_color }} &mdash; sorted by
+            <div class="subtitle"><span data-i18n="opening_deviations_for" data-i18n-count="{{ items|length }}" data-i18n-eco="{{ filter_eco }}" data-i18n-color="{{ filter_color }}">Showing {{ items|length }} deviations for {{ filter_eco }} as {{ filter_color }}</span> &mdash; sorted by
                 <select id="sort-select" class="sort-select">
                     <option value="eval-loss" data-i18n="sort_biggest">Biggest mistake</option>
                     <option value="loss-pct" data-i18n="sort_losspct">Loss %</option>
@@ -518,10 +518,10 @@
                         {% if new_games_analyzed > 0 %}
                         <div class="stat-delta positive">
                             <svg viewBox="0 0 12 12" width="12" height="12"><path d="M6 2 L10 7 H7 V10 H5 V7 H2 Z" fill="currentColor"/></svg>
-                            {{ new_games_analyzed }} new {{ "game" if new_games_analyzed == 1 else "games" }} analyzed
+                            <span data-i18n="{{ 'stat_new_games_analyzed' if new_games_analyzed == 1 else 'stat_new_games_analyzed_plural' }}" data-i18n-count="{{ new_games_analyzed }}">{{ new_games_analyzed }} new {{ "game" if new_games_analyzed == 1 else "games" }} analyzed</span>
                         </div>
                         {% else %}
-                        <div class="stat-delta neutral">No new games to analyze</div>
+                        <div class="stat-delta neutral" data-i18n="stat_no_new_games">No new games to analyze</div>
                         {% endif %}
                     </div>
                     <div class="stat-icon">
@@ -560,10 +560,10 @@
                         <span class="card-title">
                             {{ item.eco_name }}
                             <span class="eco-badge">{{ item.eco_code }}</span>
-                            as {{ item.color }}
+                            <span data-i18n="opening_as">as</span> {{ item.color }}
                         </span>
                         <div class="eval-badges">
-                            <span class="eval-badge {{ item.eval_loss_class }}">{{ item.eval_loss_display }} loss</span>
+                            <span class="eval-badge {{ item.eval_loss_class }}">{{ item.eval_loss_display }} <span data-i18n="opening_loss">loss</span></span>
                             <span class="eval-badge-secondary">pos {{ item.eval_display }}</span>
                             <span class="result-badge {{ 'win-high' if item.win_pct >= 50 else 'win-low' }}">W {{ item.win_pct }}% / L {{ item.loss_pct }}%</span>
                         </div>
@@ -571,30 +571,30 @@
 
                     <div class="boards">
                         <div class="board-panel">
-                            <h4 class="best">Best: {{ item.best_san }}</h4>
-                            <div class="board-slot board-best"><div class="board-spinner">Loading board&hellip;</div></div>
+                            <h4 class="best"><span data-i18n="board_best">Best:</span> {{ item.best_san }}</h4>
+                            <div class="board-slot board-best"><div class="board-spinner" data-i18n="loading_board">Loading board&hellip;</div></div>
                         </div>
                         <div class="board-panel">
-                            <h4 class="played">You played: {{ item.played_san }}</h4>
-                            <div class="board-slot board-played"><div class="board-spinner">Loading board&hellip;</div></div>
+                            <h4 class="played"><span data-i18n="board_played">You played:</span> {{ item.played_san }}</h4>
+                            <div class="board-slot board-played"><div class="board-spinner" data-i18n="loading_board">Loading board&hellip;</div></div>
                         </div>
                     </div>
 
                     <p class="meta">
-                        Move {{ item.move_label }} &bull;
-                        Book moves: {{ item.book_moves }} &bull;
-                        <span class="times-badge {{ 'recurring' if item.times_played > 1 else '' }}">{{ item.times_played }}&times; played</span>
+                        <span data-i18n="opening_move">Move</span> {{ item.move_label }} &bull;
+                        <span data-i18n="opening_book_moves">Book moves:</span> {{ item.book_moves }} &bull;
+                        <span class="times-badge {{ 'recurring' if item.times_played > 1 else '' }}">{{ item.times_played }}&times; <span data-i18n="opening_times_played">played</span></span>
                     </p>
                     <div class="recommendation">
-                        Play <strong>{{ item.best_san }}</strong> instead of {{ item.played_san }}
+                        <span data-i18n="opening_play_instead" data-i18n-best="{{ item.best_san }}" data-i18n-played="{{ item.played_san }}">Play <strong>{{ item.best_san }}</strong> instead of {{ item.played_san }}</span>
                         {% if item.game_url %}
-                        &mdash; <a class="game-link" href="{{ item.game_url }}" target="_blank" rel="noopener">view example game{% if item.opponent_name or item.time_class or item.game_date %} ({% if item.opponent_name %}vs {{ item.opponent_name }}{% endif %}{% if item.time_class and item.time_class != 'unknown' %}{% if item.opponent_name %}, {% endif %}{{ item.time_class }}{% endif %}{% if item.game_date %}{% if item.opponent_name or (item.time_class and item.time_class != 'unknown') %}, {% endif %}{{ item.game_date }}{% endif %}){% endif %} &rarr;</a>
+                        &mdash; <a class="game-link" href="{{ item.game_url }}" target="_blank" rel="noopener"><span data-i18n="opening_view_game">view example game</span>{% if item.opponent_name or item.time_class or item.game_date %} ({% if item.opponent_name %}vs {{ item.opponent_name }}{% endif %}{% if item.time_class and item.time_class != 'unknown' %}{% if item.opponent_name %}, {% endif %}{{ item.time_class }}{% endif %}{% if item.game_date %}{% if item.opponent_name or (item.time_class and item.time_class != 'unknown') %}, {% endif %}{{ item.game_date }}{% endif %}){% endif %} &rarr;</a>
                         {% endif %}
                     </div>
                 </div>
                 {% endfor %}
             <div id="no-results" class="empty-state" style="display:none">
-                <p>No openings match the selected filters.</p>
+                <p data-i18n="no_filter_results">No openings match the selected filters.</p>
             </div>
             {% else %}
                 <div class="empty-state">
@@ -679,7 +679,7 @@
         /* Infinite scroll state */
         var PAGE_SIZE = 10;
         var shownCount = 0;
-        var fetchingBoards = false;
+        window.window.fetchingBoards = false;
 
         function applyFilters() {
             var selectedPlat = platformSelect ? platformSelect.value : 'all';
@@ -715,7 +715,7 @@
         }
 
         function showNextBatch() {
-            if (fetchingBoards) return;
+            if (window.fetchingBoards) return;
             var passing = Array.from(document.querySelectorAll('.card[data-filtered="yes"]'));
             var end = Math.min(shownCount + PAGE_SIZE, passing.length);
             var newCards = [];
@@ -742,7 +742,7 @@
                 }
             });
             if (!specs.length) return;
-            fetchingBoards = true;
+            window.fetchingBoards = true;
             fetch('/u/{{ user_path }}/api/render-boards', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -754,13 +754,11 @@
                     targets[i].best.innerHTML = svgs[i * 2];
                     targets[i].played.innerHTML = svgs[i * 2 + 1];
                 }
-                fetchingBoards = false;
-                showNextBatch();
+                window.fetchingBoards = false;
             })
             .catch(function() {
                 targets.forEach(function(t) { t.best.innerHTML = ''; t.played.innerHTML = ''; });
-                fetchingBoards = false;
-                showNextBatch();
+                window.fetchingBoards = false;
             });
         }
 
@@ -801,7 +799,7 @@
         if (select) {
             select.addEventListener('change', function() {
                 sortCards();
-                fetchingBoards = false;
+                window.fetchingBoards = false;
                 applyFilters();
             });
         }

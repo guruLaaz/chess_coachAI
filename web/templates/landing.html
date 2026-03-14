@@ -313,8 +313,16 @@
                             </div>
                         </div>
                     </div>
-                    {% if error %}
-                    <p class="error-msg" style="display:block">{{ error }}</p>
+                    {% if error_keys %}
+                    {% for err in error_keys %}
+                    <p class="error-msg" style="display:block" data-i18n="{{ err.key }}" data-i18n-platform="{{ err.platform }}" data-i18n-username="{{ err.username }}">
+                        {%- if err.key == 'error_account_not_found' -%}
+                            {{ err.platform }} account "{{ err.username }}" was not found.
+                        {%- elif err.key == 'error_invalid_username' -%}
+                            Invalid {{ err.platform }} username: {{ err.username }}
+                        {%- endif -%}
+                    </p>
+                    {% endfor %}
                     {% endif %}
                     <p class="error-msg" id="error-msg" data-i18n="error_msg">Please enter at least one username.</p>
                     <button type="submit" class="submit-btn" data-i18n="submit_btn">Analyze My Games →</button>

@@ -483,6 +483,42 @@ def get_job_logs(job_id):
     return [dict(r) for r in rows]
 
 
+# ---------------------------------------------------------------------------
+# Feedback / bug reports
+# ---------------------------------------------------------------------------
+
+def create_feedback(type, email, details, screenshot='', page_url='',
+                    console_logs=''):
+    """Insert a feedback submission (bug report or contact message)."""
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO feedback (type, email, details, screenshot, page_url, console_logs)
+                   VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+                (type, email, details, screenshot, page_url, console_logs),
+            )
+            feedback_id = cur.fetchone()[0]
+        conn.commit()
+    logger.info("Created feedback %s (type=%s, email=%s)", feedback_id, type, email)
+    return feedback_id
+
+
+def get_all_feedback(limit=100):
+    """Return recent feedback entries ordered by created_at desc."""
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """SELECT id, type, email, details, screenshot, page_url,
+                          console_logs, created_at
+                   FROM feedback
+                   ORDER BY id DESC
+                   LIMIT %s""",
+                (limit,),
+            )
+            rows = cur.fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_all_jobs(limit=100):
     """Return recent jobs ordered by created_at desc, with computed duration."""
     with get_connection() as conn:

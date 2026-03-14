@@ -15,6 +15,14 @@ Read [README.md](README.md) for project overview, architecture, setup, and envir
 - Celery tasks in `worker/tasks.py`, app config in `worker/celery_app.py`
 - Templates are Jinja2 in `web/templates/`
 
+## Internationalization (i18n)
+- The app supports English and French via a client-side translation system in `web/templates/partials/controls.html`
+- All user-visible text in templates MUST use `data-i18n="key_name"` attributes with English as the default text content
+- Translation strings are defined in the `translations` JS object inside `controls.html` — add both `en` and `fr` entries for every new key
+- For parameterized strings (e.g., containing a username), use `{placeholder}` in translation values and pass data via `data-i18n-placeholder` attributes on the element
+- Server-side error messages in `web/routes.py` should pass structured `error_keys` (list of `{key, ...params}` dicts) to templates instead of pre-formatted English strings
+- The `applyLang()` function in `controls.html` handles substitution of `data-i18n-*` attributes into `{placeholder}` patterns
+
 ## Testing
 - pytest with pytest-asyncio (asyncio_mode = auto)
 - `pytest -m "not network"` to skip live Chess.com/Lichess API tests

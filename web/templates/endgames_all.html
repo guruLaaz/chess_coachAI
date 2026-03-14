@@ -121,7 +121,7 @@
         .tc-toggle { flex-wrap: wrap; }
         .tc-btn {
             flex: 1 1 45%; padding: 7px 8px; border: none;
-            border-right: 1px solid var(--border-input); border-bottom: 1px solid var(--border-input);
+            border-right: 1px solid rgba(128, 128, 128, 0.3); border-bottom: 1px solid rgba(128, 128, 128, 0.3);
             background: var(--bg-primary); color: var(--text-secondary);
             font-size: 0.78rem; font-weight: 500; cursor: pointer; transition: all 0.15s;
         }
@@ -131,7 +131,8 @@
         .tc-btn.active { background: var(--toggle-active-bg); color: var(--text-primary); }
         .color-btn {
             flex: 1; padding: 7px 12px; border: none;
-            border-right: 1px solid var(--border-input); background: var(--bg-primary);
+            border-right: 1px solid rgba(128, 128, 128, 0.3);
+            background: var(--bg-primary);
             color: var(--text-secondary); font-size: 0.82rem; font-weight: 500;
             cursor: pointer; transition: all 0.15s;
         }
@@ -276,17 +277,17 @@
     <div class="layout">
 {% include "partials/sidebar.html" %}
         <main class="main">
-            <a class="back-link" href="/u/{{ user_path }}/endgames">&larr; Back to endgames</a>
+            <a class="back-link" href="/u/{{ user_path }}/endgames" data-i18n="eg_back">&larr; Back to endgames</a>
             <h1>{{ eg_type }} <span class="balance-badge balance-{{ balance }}">{{ balance }}</span></h1>
-            <div class="subtitle"><span id="ag-game-count">{{ games|length }}</span> games &mdash; definition: {{ definition }} &mdash; sorted by most recent</div>
+            <div class="subtitle"><span id="ag-game-count">{{ games|length }}</span> <span data-i18n="eg_games_suffix">games</span> &mdash; <span data-i18n="eg_definition">definition:</span> {{ definition }} &mdash; <span data-i18n="eg_sorted_recent">sorted by most recent</span></div>
             <div style="margin-bottom:16px">
                 <span class="filter-wrapper">
-                    <button class="filter-btn" id="ag-tc-btn">Time class &#9662;</button>
+                    <button class="filter-btn" id="ag-tc-btn"><span data-i18n="eg_time_class">Time class</span> &#9662;</button>
                     <div class="filter-panel" id="ag-tc-panel">
-                        <label><input type="checkbox" class="ag-tc-filter" value="bullet" checked> Bullet</label>
-                        <label><input type="checkbox" class="ag-tc-filter" value="blitz" checked> Blitz</label>
-                        <label><input type="checkbox" class="ag-tc-filter" value="rapid" checked> Rapid</label>
-                        <label><input type="checkbox" class="ag-tc-filter" value="daily" checked> Daily</label>
+                        <label><input type="checkbox" class="ag-tc-filter" value="bullet" checked> <span data-i18n="tc_bullet">Bullet</span></label>
+                        <label><input type="checkbox" class="ag-tc-filter" value="blitz" checked> <span data-i18n="tc_blitz">Blitz</span></label>
+                        <label><input type="checkbox" class="ag-tc-filter" value="rapid" checked> <span data-i18n="tc_rapid">Rapid</span></label>
+                        <label><input type="checkbox" class="ag-tc-filter" value="daily" checked> <span data-i18n="tc_daily">Daily</span></label>
                     </div>
                 </span>
             </div>
@@ -296,7 +297,7 @@
                 <div class="game-row" style="display:none" data-fen="{{ g.get('fen', '') }}" data-color="{{ g.get('my_color', 'white') }}" data-time-class="{{ g.get('time_class', '') }}">
                     {% if g.get('fen') %}
                     <div class="game-board">
-                        <div class="board-slot allgames-board"><div class="board-spinner">Loading board&hellip;</div></div>
+                        <div class="board-slot allgames-board"><div class="board-spinner" data-i18n="loading_board">Loading board…</div></div>
                     </div>
                     {% endif %}
                     <div class="game-info">
@@ -315,18 +316,18 @@
                             {% endif %}
                         </div>
                         {% if g.deep_link %}
-                        <a class="game-link" href="{{ g.deep_link }}" target="_blank" rel="noopener">view game &rarr;</a>
+                        <a class="game-link" href="{{ g.deep_link }}" target="_blank" rel="noopener"><span data-i18n="eg_view_game">view game</span> &rarr;</a>
                         {% endif %}
                     </div>
                 </div>
                 {% endfor %}
             <div id="ag-no-results" class="empty-state" style="display:none">
-                <p>No games match the selected filters.</p>
+                <p data-i18n="eg_no_games_filter">No games match the selected filters.</p>
             </div>
             {% else %}
                 <div class="empty-state">
-                    <h2>No games found</h2>
-                    <p>No games matched this endgame type and balance.</p>
+                    <h2 data-i18n="eg_no_games_title">No games found</h2>
+                    <p data-i18n="eg_no_games_desc">No games matched this endgame type and balance.</p>
                 </div>
             {% endif %}
         </main>
