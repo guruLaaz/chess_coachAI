@@ -1,0 +1,76 @@
+@import url('https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400;500;700&display=swap');
+
+/* ── Global Reset ── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Ubuntu', sans-serif;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  line-height: 1.6;
+}
+
+/* ── Light Theme (default) ── */
+:root {
+  /* Shared across pages */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f0f4f8;
+  --bg-body: #f8fafc;
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  --text-muted: #94a3b8;
+  --text-label: #334155;
+  --border: #e2e8f0;
+  --border-input: #d1d5db;
+  --card-bg: #ffffff;
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --badge-bg: #f1f5f9;
+  --badge-border: #d1d5db;
+  --badge-text: #374151;
+  --input-bg: #f8fafc;
+  --input-text: #111;
+  --input-placeholder: #9ca3af;
+  --toggle-active-bg: #e2e8f0;
+  --ctrl-active-bg: #f1f5f9;
+  --donut-text: #1e293b;
+  --sort-bg: #ffffff;
+  --blue: #2563eb;
+  --blue-hover: #1d4ed8;
+  --blue-focus: rgba(37, 99, 235, 0.1);
+  --error: #dc2626;
+  --icon-dark: #1f2937;
+}
+
+/* ── Dark Theme ── */
+[data-theme="dark"] {
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-body: #0f172a;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-label: #cbd5e1;
+  --border: #334155;
+  --border-input: #475569;
+  --card-bg: #1e293b;
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --badge-bg: #334155;
+  --badge-border: #475569;
+  --badge-text: #cbd5e1;
+  --input-bg: #0f172a;
+  --input-text: #e2e8f0;
+  --input-placeholder: #64748b;
+  --toggle-active-bg: #475569;
+  --ctrl-active-bg: #334155;
+  --donut-text: #e2e8f0;
+  --sort-bg: #1e293b;
+  --blue: #3b82f6;
+  --blue-hover: #2563eb;
+  --blue-focus: rgba(59, 130, 246, 0.2);
+  --error: #f87171;
+  --icon-dark: #cbd5e1;
+}

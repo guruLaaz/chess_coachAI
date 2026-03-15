@@ -33,3 +33,9 @@ Read [README.md](README.md) for project overview, architecture, setup, and envir
 - `docker-compose up -d` — run all services
 - `pytest` — run tests
 - Local dev: `flask --app app run --port 5050 --debug` + `celery -A worker.celery_app worker --loglevel=info`
+
+## Frontend Development
+- `cd frontend && npm run dev` — Vue dev server with hot reload (port 5173, proxies API to Flask)
+- `cd frontend && npm run build` — Build Vue SPA to static/dist/
+- `cd frontend && npm run test` — Run frontend unit tests (Vitest)
+- Production: Flask serves the built SPA from static/dist/

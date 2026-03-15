@@ -1,0 +1,153 @@
+export default {
+  /* Landing */
+  badge: 'Propuls\u00e9 par Stockfish 16',
+  hero_line1: 'Trouvez vos faiblesses en ouverture.',
+  hero_line2: 'Corrigez vos habitudes en finale.',
+  subtitle: 'Connectez vos comptes pour lancer une analyse moteur approfondie. Identifiez pr\u00e9cis\u00e9ment o\u00f9 vous quittez la th\u00e9orie et d\u00e9couvrez les meilleurs coups.',
+  label_chesscom: 'Nom d\u2019utilisateur Chess.com',
+  label_lichess: 'Nom d\u2019utilisateur Lichess',
+  submit_btn: 'Analyser mes parties \u2192',
+  error_msg: 'Veuillez entrer au moins un nom d\u2019utilisateur.',
+
+  /* Status */
+  back_home: '\u2190 Retour \u00e0 l\u2019accueil',
+  retry_btn: 'R\u00e9essayer \u2192',
+
+  /* Sidebar */
+  nav_openings: 'Ouvertures',
+  nav_endgames: 'Finales',
+  filter_label: 'Filtres',
+  filter_platform: 'Plateforme',
+  filter_all_platforms: 'Toutes les plateformes',
+  filter_time_control: 'Cadence',
+  filter_playing_as: 'Jouer avec',
+  filter_min_games: 'Min. parties\u00a0:',
+  filter_from: 'Depuis',
+  filter_alltime: 'Tout',
+  filter_lastweek: 'Semaine',
+  filter_6months: '6 mois',
+  filter_lastyear: '1 an',
+  sync_btn: 'Synchroniser',
+
+  /* Report stats */
+  stat_total_games: 'Parties analys\u00e9es',
+  stat_avg_eval: 'Perte moy.',
+  stat_theory: 'Connaissance th\u00e9orique',
+  stat_accuracy: 'Taux de pr\u00e9cision',
+  sort_biggest: 'Plus grosse erreur',
+  sort_losspct: '% de d\u00e9faites',
+  empty_title: 'Aucune d\u00e9viation trouv\u00e9e',
+  empty_desc: 'Tous vos coups d\u2019ouverture correspondent au livre ou aux recommandations du moteur. Bravo\u00a0!',
+  no_filter_results: 'Aucune ouverture ne correspond aux filtres.',
+
+  /* Endgame specific */
+  endgame_subtitle_prefix: 'positions o\u00f9 vous avez d\u00e9vi\u00e9 du livre/moteur',
+
+  /* Status page (dynamic) */
+  status_queued_title: 'Votre analyse est en file d\u2019attente\u2026',
+  status_queued_msg: 'Vous \u00eates en file d\u2019attente. L\u2019analyse commencera bient\u00f4t.',
+  status_queue_position: 'Position\u00a0: {0} sur {1}',
+  status_fetching_title: 'R\u00e9cup\u00e9ration de vos parties\u2026',
+  status_fetching_msg: 'T\u00e9l\u00e9chargement des parties depuis Chess.com et Lichess.',
+  status_analyzing_title: 'Analyse de vos ouvertures\u2026',
+  status_analyzing_msg: 'Analyse moteur en cours\u2026',
+  status_complete_title: 'Analyse termin\u00e9e\u00a0!',
+  status_complete_msg: 'Redirection vers votre rapport\u2026',
+  status_failed_title: 'L\u2019analyse a \u00e9chou\u00e9',
+  status_failed_msg: 'Une erreur s\u2019est produite lors de l\u2019analyse.',
+  status_checking_title: 'V\u00e9rification du statut\u2026',
+  status_checking_msg: 'Veuillez patienter.',
+  status_pct_complete: 'termin\u00e9',
+  status_fetching_chesscom: 'R\u00e9cup\u00e9ration des parties Chess.com\u2026',
+  status_fetching_lichess: 'R\u00e9cup\u00e9ration des parties Lichess\u2026',
+  status_analyzing_game: 'Analyse de la partie',
+
+  /* Backend progress messages */
+  status_fetching_archive: 'R\u00e9cup\u00e9ration de l\u2019archive Chess.com',
+  status_fetched_lichess: '{0} parties Lichess r\u00e9cup\u00e9r\u00e9es',
+  status_fetched_starting: '{0} parties r\u00e9cup\u00e9r\u00e9es, d\u00e9but de l\u2019analyse',
+  status_endgame_done: 'Analyse des finales termin\u00e9e, d\u00e9but des ouvertures',
+  status_all_cached: 'Toutes les parties en cache, analyse moteur ignor\u00e9e',
+  status_analysis_done: 'Analyse termin\u00e9e\u00a0: {0} parties',
+  status_no_games: 'Aucune partie trouv\u00e9e.',
+
+  /* Feedback modal */
+  feedback_title: 'Rapport de bogue / Nous contacter',
+  feedback_type_label: 'Type',
+  feedback_bug_report: 'Rapport de bogue',
+  feedback_contact: 'Nous contacter',
+  feedback_screenshot_btn: 'Joindre une capture d\u2019\u00e9cran automatiquement',
+  feedback_screenshot_loading: 'Capture d\u2019\u00e9cran en cours\u2026',
+  feedback_email: 'Votre courriel',
+  feedback_details: 'D\u00e9tails',
+  feedback_submit: 'Envoyer',
+  feedback_success: 'Merci\u00a0! Votre message a \u00e9t\u00e9 envoy\u00e9.',
+  feedback_error_email: 'Veuillez entrer une adresse courriel valide.',
+  feedback_error_details: 'Veuillez entrer des d\u00e9tails.',
+  feedback_error_generic: 'Une erreur s\u2019est produite. Veuillez r\u00e9essayer.',
+
+  /* Server-side validation errors */
+  error_account_not_found: 'Le compte {platform} \u00ab {username} \u00bb est introuvable.',
+  error_invalid_username: 'Nom d\u2019utilisateur {platform} invalide\u00a0: {username}',
+
+  /* No games page */
+  nogames_title: 'Aucune partie trouv\u00e9e',
+  nogames_desc: 'Nous n\u2019avons trouv\u00e9 aucune partie pour',
+  nogames_no_public: 'Cela peut signifier que le nom d\u2019utilisateur n\u2019existe pas ou que le compte n\u2019a pas de parties publiques.',
+  nogames_try_another: 'Essayer un autre nom d\u2019utilisateur',
+  nogames_hint: 'Assurez-vous que le nom d\u2019utilisateur correspond exactement \u00e0 celui affich\u00e9 sur Chess.com ou Lichess.',
+
+  /* Openings page */
+  opening_as: 'avec',
+  opening_loss: 'perte',
+  board_best: 'Meilleur\u00a0:',
+  board_played: 'Vous avez jou\u00e9\u00a0:',
+  loading_board: 'Chargement\u2026',
+  opening_move: 'Coup',
+  opening_book_moves: 'Coups du livre\u00a0:',
+  opening_times_played: 'jou\u00e9e(s)',
+  opening_play_instead: 'Jouez {best} au lieu de {played}',
+  opening_view_game: 'voir un exemple de partie',
+  stat_new_games_analyzed: '{count} nouvelle partie analys\u00e9e',
+  stat_new_games_analyzed_plural: '{count} nouvelles parties analys\u00e9es',
+  stat_no_new_games: 'Aucune nouvelle partie \u00e0 analyser',
+  opening_deviations_for: '{count} d\u00e9viations pour {eco} avec {color}',
+
+  /* Endgames page */
+  eg_performance: 'Performance en finale',
+  eg_sorted_by: 'tri\u00e9 par',
+  eg_sort_games: 'Parties',
+  eg_sort_win_pct: '% victoire',
+  eg_sort_loss_pct: '% d\u00e9faite',
+  eg_sort_draw_pct: '% nulle',
+  eg_stat_games: 'Parties en finale',
+  eg_stat_types: 'Types de finale',
+  eg_stat_winrate: 'Taux de victoire',
+  eg_games_suffix: 'parties',
+  eg_show_all: 'voir toutes les parties',
+  eg_no_filter_results: 'Aucune finale ne correspond aux filtres.',
+  eg_no_endgames_title: 'Aucune finale d\u00e9tect\u00e9e',
+  eg_no_endgames_desc: 'Aucune des parties analys\u00e9es n\u2019a atteint une position de finale.',
+  eg_example_game: 'Exemple de partie',
+
+  /* Endgames all page */
+  eg_back: '\u2190 Retour aux finales',
+  eg_definition: 'd\u00e9finition\u00a0:',
+  eg_sorted_recent: 'tri\u00e9 par plus r\u00e9cent',
+  eg_time_class: 'Cadence',
+  tc_bullet: 'Bullet',
+  tc_blitz: 'Blitz',
+  tc_rapid: 'Rapide',
+  tc_daily: 'Quotidien',
+  eg_view_game: 'voir la partie',
+  eg_no_games_filter: 'Aucune partie ne correspond aux filtres.',
+  eg_no_games_title: 'Aucune partie trouv\u00e9e',
+  eg_no_games_desc: 'Aucune partie ne correspond \u00e0 ce type de finale et cet \u00e9quilibre.',
+
+  /* Status page */
+  status_preparing: 'Pr\u00e9paration de votre analyse\u2026',
+  status_please_wait: 'Veuillez patienter pendant la pr\u00e9paration.',
+  status_elapsed: '\u00c9coul\u00e9\u00a0:',
+  status_not_found_title: 'Aucune analyse trouv\u00e9e',
+  status_not_found_msg: 'Cette analyse a peut-\u00eatre \u00e9t\u00e9 annul\u00e9e ou a expir\u00e9.',
+}

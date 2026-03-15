@@ -138,7 +138,7 @@ def client():
 def test_landing_page(client):
     resp = client.get('/')
     assert resp.status_code == 200
-    assert b'Chess CoachAI' in resp.data
+    assert b'<div id="app"></div>' in resp.data
 
 
 # ── POST /analyze validation ──────────────────────────────────────
@@ -187,6 +187,37 @@ class TestAnalyzeValidation:
             })
             assert resp.status_code == 302
 
+    # ── JSON variants ──
+
+    def test_no_usernames_json(self, client):
+        resp = client.post('/analyze',
+                           json={},
+                           headers={'Accept': 'application/json'})
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert 'error_keys' in data
+        assert data['error_keys'][0]['key'] == 'error_no_username'
+
+    def test_invalid_chesscom_username_json(self, client):
+        resp = client.post('/analyze',
+                           json={'chesscom_username': 'bad user!@#'},
+                           headers={'Accept': 'application/json'})
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert data['error_keys'][0]['key'] == 'error_invalid_username'
+        assert data['error_keys'][0]['platform'] == 'Chess.com'
+
+    def test_valid_username_json_redirect(self, client):
+        with patch('web.routes.queries') as mock_q:
+            mock_q.get_latest_job.return_value = None
+            mock_q.create_job.return_value = 42
+            resp = client.post('/analyze',
+                               json={'chesscom_username': 'hikaru'},
+                               headers={'Accept': 'application/json'})
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data['redirect'] == '/u/hikaru/status'
+
 
 # ── POST /analyze account existence checks ───────────────────────
 
@@ -224,6 +255,27 @@ class TestAnalyzeAccountExists:
                 'lichess_username': 'hansmoke',
             })
             mock_q.create_job.assert_not_called()
+
+    # ── JSON variants ──
+
+    @patch('web.routes.check_username_exists', return_value=False)
+    def test_invalid_lichess_json(self, mock_check, client):
+        resp = client.post('/analyze',
+                           json={'lichess_username': 'hansmoke'},
+                           headers={'Accept': 'application/json'})
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert any(e['key'] == 'error_account_not_found' for e in data['error_keys'])
+
+    @patch('web.routes.check_username_exists', return_value=False)
+    def test_invalid_chesscom_json(self, mock_check, client):
+        resp = client.post('/analyze',
+                           json={'chesscom_username': 'totallynotauser999'},
+                           headers={'Accept': 'application/json'})
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert data['error_keys'][0]['key'] == 'error_account_not_found'
+        assert data['error_keys'][0]['platform'] == 'Chess.com'
 
 
 # ── POST /analyze redirect logic ─────────────────────────────────
@@ -309,61 +361,61 @@ class TestAnalyzeRedirects:
 
 
 class TestUserReport:
+    """Tests for the /api/report/openings JSON endpoint."""
+
     @patch('web.routes.queries')
-    def test_no_job_redirects_to_landing(self, mock_q, client):
+    def test_no_job_returns_redirect_json(self, mock_q, client):
         mock_q.get_latest_job.return_value = None
-        resp = client.get('/u/hikaru')
-        assert resp.status_code == 302
-        assert resp.headers['Location'].endswith('/')
+        resp = client.get('/api/report/openings/hikaru')
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['redirect'] == '/'
 
     @patch('web.routes.load_endgames_data')
     @patch('web.routes.load_openings_data')
     @patch('web.routes.queries')
-    def test_complete_shows_report(self, mock_q, mock_openings, mock_endgames,
-                                   client):
-        mock_q.get_latest_job.return_value = {'status': 'complete'}
+    def test_complete_returns_report_json(self, mock_q, mock_openings,
+                                          mock_endgames, client):
+        mock_q.get_latest_job.return_value = {
+            'status': 'complete', 'total_games': 10,
+        }
         mock_openings.return_value = {
             'username': 'hikaru',
             'chesscom_user': 'hikaru',
             'lichess_user': None,
-            'items': [],
-            'groups': [],
-            'total_games_analyzed': 0,
-            'avg_eval_loss': 0,
-            'theory_knowledge_pct': 0,
-            'accuracy_pct': 0,
+            'items': [{'eco_code': 'B20', 'color': 'white'}],
+            'groups': [{'eco_code': 'B20', 'color': 'white', 'count': 1}],
+            'total_games_analyzed': 10,
+            'avg_eval_loss': 0.5,
+            'theory_knowledge_pct': 80,
+            'accuracy_pct': 70,
             'new_games_analyzed': 0,
         }
-        mock_endgames.return_value = {'endgame_count': 0}
-        resp = client.get('/u/hikaru')
+        mock_endgames.return_value = {'endgame_count': 5}
+        resp = client.get('/api/report/openings/hikaru')
         assert resp.status_code == 200
-        assert b'Chess Coach' in resp.data
+        data = resp.get_json()
+        assert data['username'] == 'hikaru'
+        assert 'items' in data
+        assert 'groups' in data
+        assert data['total_games_analyzed'] == 10
 
     @patch('web.routes.queries')
-    def test_in_progress_redirects_to_status(self, mock_q, client):
+    def test_in_progress_returns_redirect_json(self, mock_q, client):
         mock_q.get_latest_job.return_value = {'status': 'analyzing'}
-        resp = client.get('/u/hikaru')
-        assert resp.status_code == 302
-        assert '/u/hikaru/status' in resp.headers['Location']
+        resp = client.get('/api/report/openings/hikaru')
+        data = resp.get_json()
+        assert data['redirect'] == '/u/hikaru/status'
 
     @patch('web.routes.queries')
-    def test_zero_games_shows_no_games_page(self, mock_q, client):
-        """Complete job with 0 games should render no_games.html."""
+    def test_zero_games_returns_no_games_json(self, mock_q, client):
         mock_q.get_latest_job.return_value = {
-            'status': 'complete',
-            'total_games': 0,
+            'status': 'complete', 'total_games': 0,
         }
-        resp = client.get('/u/hikaru')
-        assert resp.status_code == 200
-        assert b'No games found' in resp.data
-
-    @patch('web.routes.queries')
-    def test_failed_redirects_to_status(self, mock_q, client):
-        """Failed jobs should redirect to status page (not landing)."""
-        mock_q.get_latest_job.return_value = {'status': 'failed'}
-        resp = client.get('/u/hikaru')
-        assert resp.status_code == 302
-        assert '/u/hikaru/status' in resp.headers['Location']
+        resp = client.get('/api/report/openings/hikaru')
+        data = resp.get_json()
+        assert data['no_games'] is True
+        assert data['chesscom_user'] == 'hikaru'
 
 
 # ── GET /u/{path}/status/json ────────────────────────────────────
@@ -539,71 +591,44 @@ class TestSubmitFeedback:
 
 
 class TestAdminFeedback:
-    @patch('web.routes.queries')
-    def test_admin_feedback_page_loads(self, mock_q, client):
-        mock_q.get_all_feedback.return_value = []
-        resp = client.get('/admin/feedback')
-        assert resp.status_code == 200
-        assert b'Feedback' in resp.data
+    """Tests for the /api/admin/feedback JSON endpoint."""
 
     @patch('web.routes.queries')
-    def test_admin_feedback_shows_entries(self, mock_q, client):
-        from datetime import datetime, timezone
+    def test_returns_entries_json(self, mock_q, client):
         mock_q.get_all_feedback.return_value = [
             {'id': 1, 'type': 'bug', 'email': 'test@test.com',
              'details': 'Something broke', 'screenshot': '',
              'page_url': '/status', 'console_logs': '',
              'created_at': datetime(2026, 3, 13, tzinfo=timezone.utc)},
         ]
-        resp = client.get('/admin/feedback')
+        resp = client.get('/api/admin/feedback')
         assert resp.status_code == 200
-        assert b'test@test.com' in resp.data
-        assert b'Something broke' in resp.data
+        data = resp.get_json()
+        assert 'entries' in data
+        assert len(data['entries']) == 1
 
     @patch('web.routes.queries')
-    def test_admin_feedback_hides_logs_when_empty(self, mock_q, client):
-        from datetime import datetime, timezone
+    def test_entries_include_fields(self, mock_q, client):
         mock_q.get_all_feedback.return_value = [
-            {'id': 10, 'type': 'bug', 'email': 'a@b.com',
-             'details': 'No logs here', 'screenshot': '',
-             'page_url': '/', 'console_logs': '[]',
+            {'id': 1, 'type': 'bug', 'email': 'a@b.com',
+             'details': 'Broken', 'screenshot': 'data:img',
+             'page_url': '/openings', 'console_logs': '[]',
              'created_at': datetime(2026, 3, 13, tzinfo=timezone.utc)},
         ]
-        resp = client.get('/admin/feedback')
-        assert resp.status_code == 200
-        assert b'toggleLogs(10)' not in resp.data
+        resp = client.get('/api/admin/feedback')
+        data = resp.get_json()
+        entry = data['entries'][0]
+        assert entry['id'] == 1
+        assert entry['type'] == 'bug'
+        assert entry['email'] == 'a@b.com'
+        assert entry['details'] == 'Broken'
 
     @patch('web.routes.queries')
-    def test_admin_feedback_shows_logs_when_present(self, mock_q, client):
-        from datetime import datetime, timezone
-        logs = '[{"ts":"2026-03-13T10:00:00Z","level":"error","msg":"TypeError"}]'
-        mock_q.get_all_feedback.return_value = [
-            {'id': 11, 'type': 'bug', 'email': 'a@b.com',
-             'details': 'Has logs', 'screenshot': '',
-             'page_url': '/', 'console_logs': logs,
-             'created_at': datetime(2026, 3, 13, tzinfo=timezone.utc)},
-        ]
-        resp = client.get('/admin/feedback')
-        assert resp.status_code == 200
-        assert b'toggleLogs(11)' in resp.data
-        assert b'logs-data-11' in resp.data
-
-    @patch('web.routes.queries')
-    def test_admin_feedback_logs_not_html_escaped(self, mock_q, client):
-        """Console logs with & and < must not be HTML-escaped in the JSON script tag."""
-        from datetime import datetime, timezone
-        logs = '[{"ts":"2026-03-13T10:00:00Z","level":"info","msg":"UA: Mozilla/5.0 (Windows NT 10.0; Win64; x64) & <test>"}]'
-        mock_q.get_all_feedback.return_value = [
-            {'id': 20, 'type': 'bug', 'email': 'a@b.com',
-             'details': 'Escaped test', 'screenshot': '',
-             'page_url': '/', 'console_logs': logs,
-             'created_at': datetime(2026, 3, 13, tzinfo=timezone.utc)},
-        ]
-        resp = client.get('/admin/feedback')
-        assert resp.status_code == 200
-        # The raw JSON must appear unescaped (|safe), not as &amp; or &lt;
-        assert b'&amp;' not in resp.data.split(b'logs-data-20')[1].split(b'</script>')[0]
-        assert b'&lt;' not in resp.data.split(b'logs-data-20')[1].split(b'</script>')[0]
+    def test_empty_feedback_list(self, mock_q, client):
+        mock_q.get_all_feedback.return_value = []
+        resp = client.get('/api/admin/feedback')
+        data = resp.get_json()
+        assert data['entries'] == []
 
 
 class TestAdminFlaskLogs:
@@ -651,3 +676,268 @@ class TestAdminJobLogs:
         resp = client.get('/admin/jobs/99/logs')
         assert resp.status_code == 200
         assert resp.get_json() == []
+
+
+# ── JSON API endpoints ──────────────────────────────────────────
+
+
+class TestApiEndpoints:
+    """Tests for the /api/ JSON endpoints."""
+
+    # ── Openings API ──
+
+    @patch('web.routes.load_endgames_data')
+    @patch('web.routes.load_openings_data')
+    @patch('web.routes.queries')
+    def test_api_openings_complete(self, mock_q, mock_openings, mock_endgames,
+                                    client):
+        mock_q.get_latest_job.return_value = {
+            'status': 'complete', 'total_games': 10,
+        }
+        mock_openings.return_value = {
+            'username': 'hikaru', 'chesscom_user': 'hikaru',
+            'lichess_user': None, 'items': [{'eco_code': 'B20', 'color': 'white'}],
+            'groups': [{'eco_code': 'B20', 'color': 'white', 'count': 1}],
+            'total_games_analyzed': 10, 'avg_eval_loss': 0.5,
+            'theory_knowledge_pct': 80, 'accuracy_pct': 70,
+            'new_games_analyzed': 0,
+        }
+        mock_endgames.return_value = {'endgame_count': 5}
+
+        resp = client.get('/api/report/openings/hikaru')
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['username'] == 'hikaru'
+        assert data['filter_eco'] is None
+        assert data['filter_color'] is None
+        assert data['endgame_count'] == 5
+        assert len(data['items']) == 1
+
+    @patch('web.routes.queries')
+    def test_api_openings_no_job(self, mock_q, client):
+        mock_q.get_latest_job.return_value = None
+        resp = client.get('/api/report/openings/hikaru')
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['redirect'] == '/'
+
+    @patch('web.routes.queries')
+    def test_api_openings_in_progress(self, mock_q, client):
+        mock_q.get_latest_job.return_value = {'status': 'analyzing'}
+        resp = client.get('/api/report/openings/hikaru')
+        data = resp.get_json()
+        assert data['redirect'] == '/u/hikaru/status'
+
+    @patch('web.routes.queries')
+    def test_api_openings_zero_games(self, mock_q, client):
+        mock_q.get_latest_job.return_value = {
+            'status': 'complete', 'total_games': 0,
+        }
+        resp = client.get('/api/report/openings/hikaru')
+        data = resp.get_json()
+        assert data['no_games'] is True
+        assert data['chesscom_user'] == 'hikaru'
+
+    # ── Openings filtered API ──
+
+    @patch('web.routes.load_endgames_data')
+    @patch('web.routes.load_openings_data')
+    @patch('web.routes.queries')
+    def test_api_openings_filtered(self, mock_q, mock_openings, mock_endgames,
+                                    client):
+        mock_q.get_latest_job.return_value = {
+            'status': 'complete', 'total_games': 10,
+        }
+        mock_openings.return_value = {
+            'username': 'hikaru', 'chesscom_user': 'hikaru',
+            'lichess_user': None,
+            'items': [
+                {'eco_code': 'B20', 'color': 'white'},
+                {'eco_code': 'C50', 'color': 'black'},
+            ],
+            'groups': [], 'total_games_analyzed': 10,
+            'avg_eval_loss': 0.5, 'theory_knowledge_pct': 80,
+            'accuracy_pct': 70, 'new_games_analyzed': 0,
+        }
+        mock_endgames.return_value = {'endgame_count': 3}
+
+        resp = client.get('/api/report/openings/hikaru/B20/white')
+        data = resp.get_json()
+        assert data['filter_eco'] == 'B20'
+        assert data['filter_color'] == 'white'
+        assert len(data['items']) == 1
+        assert data['items'][0]['eco_code'] == 'B20'
+
+    # ── Endgames API ──
+
+    @patch('web.routes.load_openings_data')
+    @patch('web.routes.load_endgames_data')
+    @patch('web.routes.queries')
+    def test_api_endgames(self, mock_q, mock_endgames, mock_openings, client):
+        mock_q.get_latest_job.return_value = {
+            'status': 'complete', 'total_games': 10,
+        }
+        mock_endgames.return_value = {
+            'username': 'hikaru', 'chesscom_user': 'hikaru',
+            'lichess_user': None, 'stats': [],
+            'endgame_count': 5, 'definitions': [],
+            'default_definition': 'minor-or-queen',
+            'eg_total_games': 5, 'eg_types_count': 2, 'eg_win_pct': 60,
+        }
+        mock_openings.return_value = {
+            'items': [{'eco_code': 'B20'}],
+            'groups': [{'eco_code': 'B20', 'count': 1}],
+        }
+
+        resp = client.get('/api/report/endgames/hikaru')
+        data = resp.get_json()
+        assert data['endgame_count'] == 5
+        assert data['total'] == 1
+        assert len(data['groups']) == 1
+
+    @patch('web.routes.queries')
+    def test_api_endgames_redirect(self, mock_q, client):
+        mock_q.get_latest_job.return_value = {'status': 'failed'}
+        resp = client.get('/api/report/endgames/hikaru')
+        data = resp.get_json()
+        assert 'redirect' in data
+
+    # ── Endgames-all API ──
+
+    @patch('web.routes.load_endgames_all_data')
+    @patch('web.routes.queries')
+    def test_api_endgames_all(self, mock_q, mock_eg_all, client):
+        mock_q.get_latest_job.return_value = {
+            'status': 'complete', 'total_games': 10,
+        }
+        mock_eg_all.return_value = {
+            'username': 'hikaru', 'chesscom_user': 'hikaru',
+            'lichess_user': None, 'eg_type': 'RvR',
+            'balance': 'equal', 'definition': 'minor-or-queen',
+            'games': [{'end_time': datetime(2026, 1, 15, tzinfo=timezone.utc)}],
+            'groups': [], 'endgame_count': 5, 'total': 0,
+            'page': 'endgames_all', 'sidebar_filters': False,
+        }
+
+        resp = client.get('/api/report/endgames-all/hikaru?def=minor-or-queen&type=RvR&balance=equal')
+        data = resp.get_json()
+        assert data['eg_type'] == 'RvR'
+        # Verify datetime was serialized
+        assert data['games'][0]['end_time'] == '2026-01-15T00:00:00+00:00'
+
+    # ── Admin API ──
+
+    @patch('web.routes.queries')
+    def test_api_admin_jobs(self, mock_q, client):
+        mock_q.get_all_jobs.return_value = [
+            {'id': 1, 'status': 'complete', 'duration_seconds': 120,
+             'created_at': datetime(2026, 3, 10, tzinfo=timezone.utc),
+             'completed_at': datetime(2026, 3, 10, 0, 2, tzinfo=timezone.utc)},
+        ]
+        resp = client.get('/api/admin/jobs')
+        data = resp.get_json()
+        assert len(data['jobs']) == 1
+        assert data['jobs'][0]['duration_seconds'] == 120
+        # Verify datetime serialization
+        assert data['jobs'][0]['created_at'] == '2026-03-10T00:00:00+00:00'
+
+    @patch('web.routes.queries')
+    def test_api_admin_feedback(self, mock_q, client):
+        mock_q.get_all_feedback.return_value = [
+            {'id': 1, 'type': 'bug', 'email': 'a@b.com',
+             'details': 'Broken', 'created_at': datetime(2026, 3, 13, tzinfo=timezone.utc)},
+        ]
+        resp = client.get('/api/admin/feedback')
+        data = resp.get_json()
+        assert len(data['entries']) == 1
+        assert data['entries'][0]['email'] == 'a@b.com'
+
+    # ── POST /analyze JSON Accept header ──
+
+    @patch('web.routes.queries')
+    def test_analyze_json_validation_error(self, mock_q, client):
+        resp = client.post('/analyze',
+                           json={},
+                           headers={'Accept': 'application/json'})
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert 'error_keys' in data
+
+    @patch('web.routes.queries')
+    def test_analyze_json_invalid_username(self, mock_q, client):
+        resp = client.post('/analyze',
+                           json={'chesscom_username': 'bad user!@#'},
+                           headers={'Accept': 'application/json'})
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert data['error_keys'][0]['key'] == 'error_invalid_username'
+
+    @patch('web.routes.queries')
+    def test_analyze_json_success_new_job(self, mock_q, client):
+        mock_q.get_latest_job.return_value = None
+        mock_q.create_job.return_value = 42
+
+        resp = client.post('/analyze',
+                           json={'chesscom_username': 'hikaru'},
+                           headers={'Accept': 'application/json'})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['redirect'] == '/u/hikaru/status'
+
+    @patch('web.routes.queries')
+    def test_analyze_json_reuses_recent_job(self, mock_q, client):
+        mock_q.get_latest_job.return_value = {
+            'id': 10, 'status': 'complete',
+            'completed_at': datetime.now(timezone.utc) - timedelta(minutes=30),
+        }
+        resp = client.post('/analyze',
+                           json={'chesscom_username': 'hikaru'},
+                           headers={'Accept': 'application/json'})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['redirect'] == '/u/hikaru'
+
+    @patch('web.routes.queries')
+    def test_analyze_html_still_redirects(self, mock_q, client):
+        """Non-JSON Accept header should still return HTTP redirect."""
+        mock_q.get_latest_job.return_value = None
+        mock_q.create_job.return_value = 1
+        resp = client.post('/analyze', data={'chesscom_username': 'hikaru'})
+        assert resp.status_code == 302
+
+    # ── Lichess-only path in API ──
+
+    @patch('web.routes.queries')
+    def test_api_openings_lichess_only(self, mock_q, client):
+        mock_q.get_latest_job.return_value = None
+        resp = client.get('/api/report/openings/-/drnykterstein')
+        data = resp.get_json()
+        assert data['redirect'] == '/'
+        mock_q.get_latest_job.assert_called_with(
+            chesscom_user=None, lichess_user='drnykterstein',
+        )
+
+    # ── Serialization of complex types ──
+
+    @patch('web.routes.load_endgames_all_data')
+    @patch('web.routes.queries')
+    def test_api_serializes_datetimes(self, mock_q, mock_eg_all, client):
+        """Datetimes in response data should be serialized as ISO strings."""
+        mock_q.get_latest_job.return_value = {
+            'status': 'complete', 'total_games': 10,
+        }
+        mock_eg_all.return_value = {
+            'username': 'hikaru', 'chesscom_user': 'hikaru',
+            'lichess_user': None, 'eg_type': '', 'balance': '',
+            'definition': 'minor-or-queen',
+            'games': [
+                {'end_time': datetime(2026, 6, 15, 14, 30, tzinfo=timezone.utc)},
+                {'end_time': None},
+            ],
+            'groups': [], 'endgame_count': 0, 'total': 0,
+            'page': 'endgames_all', 'sidebar_filters': False,
+        }
+        resp = client.get('/api/report/endgames-all/hikaru')
+        data = resp.get_json()
+        assert data['games'][0]['end_time'] == '2026-06-15T14:30:00+00:00'
+        assert data['games'][1]['end_time'] is None

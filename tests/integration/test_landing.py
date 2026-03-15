@@ -1,4 +1,4 @@
-"""Tests for the landing page."""
+"""Tests for the landing page (now served by Vue SPA)."""
 
 import pytest
 from web.app import create_app
@@ -17,24 +17,21 @@ def test_landing_returns_200(client):
     assert resp.status_code == 200
 
 
-def test_landing_contains_brand(client):
+def test_landing_serves_vue_spa(client):
     resp = client.get('/')
     html = resp.data.decode()
-    assert 'Chess Coach' in html
-    assert 'AI' in html
+    assert '<div id="app"></div>' in html
 
 
-def test_landing_contains_form(client):
-    resp = client.get('/')
+def test_spa_catch_all_serves_index(client):
+    """Non-API paths should return the SPA index.html."""
+    resp = client.get('/u/someuser')
+    assert resp.status_code == 200
     html = resp.data.decode()
-    assert 'action="/analyze"' in html
-    assert 'method="POST"' in html
-    assert 'chesscom_username' in html
-    assert 'lichess_username' in html
+    assert '<div id="app"></div>' in html
 
 
-def test_landing_contains_headline(client):
-    resp = client.get('/')
-    html = resp.data.decode()
-    assert 'Find your opening weaknesses.' in html
-    assert 'Fix your endgame habits.' in html
+def test_catch_all_404_for_unknown_api(client):
+    """API-prefixed paths with no matching route should 404."""
+    resp = client.get('/api/nonexistent')
+    assert resp.status_code == 404

@@ -302,11 +302,13 @@ def client():
 
 
 class TestOpeningsRoute:
+    """Tests for /api/report/openings JSON endpoint."""
+
     @patch('web.routes.load_endgames_data')
     @patch('web.routes.load_openings_data')
     @patch('web.routes.queries')
-    def test_returns_200_with_items(self, mock_q, mock_openings,
-                                    mock_endgames, client):
+    def test_returns_json_with_items(self, mock_q, mock_openings,
+                                     mock_endgames, client):
         mock_q.get_latest_job.return_value = {'id': 1, 'status': 'complete', 'total_games': 10}
         mock_openings.return_value = {
             'username': 'hikaru',
@@ -348,53 +350,38 @@ class TestOpeningsRoute:
         }
         mock_endgames.return_value = {'endgame_count': 5}
 
-        resp = client.get('/u/hikaru')
+        resp = client.get('/api/report/openings/hikaru')
         assert resp.status_code == 200
-        html = resp.data.decode()
-        assert 'Chess Coach' in html
-        assert 'Sicilian Najdorf' in html
-        assert 'B90' in html
-        assert '/u/hikaru/api/render-boards' in html
-        assert '/u/hikaru/endgames' in html
+        data = resp.get_json()
+        assert data['username'] == 'hikaru'
+        assert len(data['items']) == 1
+        assert data['items'][0]['eco_code'] == 'B90'
+        assert data['endgame_count'] == 5
+
+    @patch('web.routes.queries')
+    def test_no_job_returns_redirect(self, mock_q, client):
+        mock_q.get_latest_job.return_value = None
+        resp = client.get('/api/report/openings/hikaru')
+        data = resp.get_json()
+        assert data['redirect'] == '/'
+
+
+class TestOpeningDetailRoute:
+    """Tests for /api/report/openings/{path}/{eco}/{color} JSON filtering."""
 
     @patch('web.routes.load_endgames_data')
     @patch('web.routes.load_openings_data')
     @patch('web.routes.queries')
-    def test_no_job_redirects(self, mock_q, mock_openings, mock_endgames,
-                              client):
-        mock_q.get_latest_job.return_value = None
-        resp = client.get('/u/hikaru')
-        assert resp.status_code == 302
-
-
-class TestOpeningDetailRoute:
-    @patch('web.routes.load_endgames_data')
-    @patch('web.routes.load_openings_data')
-    def test_filters_by_eco_and_color(self, mock_openings, mock_endgames,
-                                      client):
+    def test_filters_by_eco_and_color(self, mock_q, mock_openings,
+                                      mock_endgames, client):
+        mock_q.get_latest_job.return_value = {'status': 'complete', 'total_games': 5}
         mock_openings.return_value = {
             'username': 'hikaru',
             'chesscom_user': 'hikaru',
             'lichess_user': None,
             'items': [
-                {'eco_code': 'B90', 'color': 'white', 'eco_name': 'Najdorf',
-                 'eval_loss_display': '-1.0', 'eval_loss_class': 'bad',
-                 'eval_display': '+0.1', 'eval_class': 'good',
-                 'move_label': '6.', 'played_san': 'd5', 'best_san': 'e5',
-                 'book_moves': 'e5', 'fen': 'start', 'best_move_uci': 'e7e5',
-                 'played_move_uci': 'd7d5', 'times_played': 1,
-                 'game_url': '', 'eval_loss_raw': 100, 'win_pct': 50,
-                 'loss_pct': 50, 'time_class': 'blitz', 'platform': 'chesscom',
-                 'opponent_name': '', 'game_date': '', 'game_date_iso': ''},
-                {'eco_code': 'C50', 'color': 'black', 'eco_name': 'Italian',
-                 'eval_loss_display': '-0.5', 'eval_loss_class': 'bad',
-                 'eval_display': '-0.1', 'eval_class': 'bad',
-                 'move_label': '5...', 'played_san': 'Nf6', 'best_san': 'Bc5',
-                 'book_moves': 'Bc5', 'fen': 'start', 'best_move_uci': 'f8c5',
-                 'played_move_uci': 'g8f6', 'times_played': 1,
-                 'game_url': '', 'eval_loss_raw': 50, 'win_pct': 0,
-                 'loss_pct': 100, 'time_class': 'rapid', 'platform': 'lichess',
-                 'opponent_name': '', 'game_date': '', 'game_date_iso': ''},
+                {'eco_code': 'B90', 'color': 'white', 'eco_name': 'Najdorf'},
+                {'eco_code': 'C50', 'color': 'black', 'eco_name': 'Italian'},
             ],
             'groups': [],
             'total_games_analyzed': 5,
@@ -405,41 +392,51 @@ class TestOpeningDetailRoute:
         }
         mock_endgames.return_value = {'endgame_count': 0}
 
-        resp = client.get('/u/hikaru/opening/B90/white')
+        resp = client.get('/api/report/openings/hikaru/B90/white')
         assert resp.status_code == 200
-        html = resp.data.decode()
-        assert 'Najdorf' in html
-        # C50 item should be filtered out
-        assert 'Italian' not in html
+        data = resp.get_json()
+        assert data['filter_eco'] == 'B90'
+        assert data['filter_color'] == 'white'
+        assert len(data['items']) == 1
+        assert data['items'][0]['eco_code'] == 'B90'
 
 
 class TestEndgameRoutes:
+    """Tests for /api/report/endgames and /api/report/endgames-all JSON."""
+
     @patch('web.routes.load_openings_data')
     @patch('web.routes.load_endgames_data')
-    def test_endgame_summary_200(self, mock_endgames, mock_openings, client):
+    @patch('web.routes.queries')
+    def test_endgames_json(self, mock_q, mock_endgames, mock_openings, client):
+        mock_q.get_latest_job.return_value = {'status': 'complete', 'total_games': 10}
         mock_endgames.return_value = {
             'username': 'hikaru',
             'chesscom_user': 'hikaru',
             'lichess_user': None,
             'stats': [],
-            'endgame_count': 0,
+            'endgame_count': 5,
             'definitions': ['minor-or-queen'],
             'default_definition': 'minor-or-queen',
-            'eg_total_games': 0,
-            'eg_types_count': 0,
-            'eg_win_pct': 0,
+            'eg_total_games': 5,
+            'eg_types_count': 2,
+            'eg_win_pct': 60,
         }
         mock_openings.return_value = {
-            'items': [], 'groups': [],
+            'items': [{'eco_code': 'B20'}],
+            'groups': [{'eco_code': 'B20', 'count': 1}],
         }
 
-        resp = client.get('/u/hikaru/endgames')
+        resp = client.get('/api/report/endgames/hikaru')
         assert resp.status_code == 200
-        assert b'Endgame' in resp.data
-        assert b'/u/hikaru' in resp.data
+        data = resp.get_json()
+        assert data['endgame_count'] == 5
+        assert data['total'] == 1
+        assert len(data['groups']) == 1
 
     @patch('web.routes.load_endgames_all_data')
-    def test_endgames_all_200(self, mock_all, client):
+    @patch('web.routes.queries')
+    def test_endgames_all_json(self, mock_q, mock_all, client):
+        mock_q.get_latest_job.return_value = {'status': 'complete', 'total_games': 10}
         mock_all.return_value = {
             'username': 'hikaru',
             'chesscom_user': 'hikaru',
@@ -455,12 +452,12 @@ class TestEndgameRoutes:
             'sidebar_filters': False,
         }
 
-        resp = client.get('/u/hikaru/endgames/all?def=minor-or-queen'
+        resp = client.get('/api/report/endgames-all/hikaru?def=minor-or-queen'
                           '&type=R+vs+R&balance=equal')
         assert resp.status_code == 200
-        html = resp.data.decode()
-        assert 'R vs R' in html
-        assert '/u/hikaru/endgames' in html
+        data = resp.get_json()
+        assert data['eg_type'] == 'R vs R'
+        assert data['balance'] == 'equal'
 
 
 class TestRenderBoardsAPI:
@@ -488,57 +485,3 @@ class TestRenderBoardsAPI:
         assert '<svg' in data[0]
 
 
-class TestSyncButton:
-    @patch('web.routes.load_endgames_data')
-    @patch('web.routes.load_openings_data')
-    @patch('web.routes.queries')
-    def test_sync_button_is_form(self, mock_q, mock_openings, mock_endgames,
-                                  client):
-        """Sync button should be a form POST to /analyze, not a JS reload."""
-        mock_q.get_latest_job.return_value = {'id': 1, 'status': 'complete', 'total_games': 1}
-        mock_openings.return_value = {
-            'username': 'hikaru',
-            'chesscom_user': 'hikaru',
-            'lichess_user': None,
-            'items': [],
-            'groups': [],
-            'total_games_analyzed': 0,
-            'avg_eval_loss': 0,
-            'theory_knowledge_pct': 0,
-            'accuracy_pct': 0,
-            'new_games_analyzed': 0,
-        }
-        mock_endgames.return_value = {'endgame_count': 0}
-
-        resp = client.get('/u/hikaru')
-        html = resp.data.decode()
-        assert 'action="/analyze"' in html
-        assert 'method="POST"' in html
-        assert 'window.location.reload()' not in html
-
-
-class TestUbuntuFont:
-    @patch('web.routes.load_endgames_data')
-    @patch('web.routes.load_openings_data')
-    @patch('web.routes.queries')
-    def test_ubuntu_font_link(self, mock_q, mock_openings, mock_endgames,
-                               client):
-        mock_q.get_latest_job.return_value = {'id': 1, 'status': 'complete', 'total_games': 1}
-        mock_openings.return_value = {
-            'username': 'hikaru',
-            'chesscom_user': 'hikaru',
-            'lichess_user': None,
-            'items': [],
-            'groups': [],
-            'total_games_analyzed': 0,
-            'avg_eval_loss': 0,
-            'theory_knowledge_pct': 0,
-            'accuracy_pct': 0,
-            'new_games_analyzed': 0,
-        }
-        mock_endgames.return_value = {'endgame_count': 0}
-
-        resp = client.get('/u/hikaru')
-        html = resp.data.decode()
-        assert 'fonts.googleapis.com' in html
-        assert 'Ubuntu' in html

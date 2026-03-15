@@ -13,7 +13,10 @@ import pytest
 
 from conftest import mock_db_modules
 
-pytestmark = pytest.mark.e2e
+pytestmark = [
+    pytest.mark.e2e,
+    pytest.mark.skip(reason="Pending Vue SPA E2E rewrite"),
+]
 
 PAGE_SIZE = 10  # must match the JS PAGE_SIZE in openings.html
 TOTAL_CARDS = 50  # enough to need multiple scroll batches

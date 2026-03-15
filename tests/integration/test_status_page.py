@@ -23,99 +23,27 @@ def client():
         yield c
 
 
-# ── GET /u/{path}/status ──────────────────────────────────────────
+# ── GET /u/{path}/status (now served by SPA catch-all) ────────────
 
 
 class TestStatusPage:
-    @patch('web.routes.queries')
-    def test_no_job_redirects_to_landing(self, mock_q, client):
-        mock_q.get_latest_job.return_value = None
-        resp = client.get('/u/hikaru/status')
-        assert resp.status_code == 302
-        assert resp.headers['Location'].endswith('/')
+    """Status page HTML is now served by the Vue SPA catch-all.
+    These tests verify the catch-all returns the SPA shell."""
 
-    @patch('web.routes.queries')
-    def test_complete_job_redirects_to_report(self, mock_q, client):
-        mock_q.get_latest_job.return_value = {'status': 'complete'}
-        resp = client.get('/u/hikaru/status')
-        assert resp.status_code == 302
-        loc = resp.headers['Location']
-        assert '/u/hikaru' in loc
-        assert '/status' not in loc
-
-    @patch('web.routes.queries')
-    def test_pending_renders_status_template(self, mock_q, client):
-        mock_q.get_latest_job.return_value = {
-            'status': 'pending',
-            'progress_pct': 0,
-            'total_games': 0,
-            'message': '',
-            'error_message': '',
-        }
+    def test_status_path_serves_spa(self, client):
         resp = client.get('/u/hikaru/status')
         assert resp.status_code == 200
-        assert b'Chess CoachAI' in resp.data
-        assert b'status/json' in resp.data
+        assert b'<div id="app"></div>' in resp.data
 
-    @patch('web.routes.queries')
-    def test_analyzing_renders_status_template(self, mock_q, client):
-        mock_q.get_latest_job.return_value = {
-            'status': 'analyzing',
-            'progress_pct': 50,
-            'total_games': 100,
-            'message': 'Analyzing game 50 of 100...',
-            'error_message': '',
-        }
-        resp = client.get('/u/hikaru/status')
-        assert resp.status_code == 200
-        assert b'/u/hikaru/status/json' in resp.data
-
-    @patch('web.routes.queries')
-    def test_failed_renders_status_template(self, mock_q, client):
-        mock_q.get_latest_job.return_value = {
-            'status': 'failed',
-            'progress_pct': 0,
-            'total_games': 0,
-            'message': '',
-            'error_message': 'API rate limited',
-        }
-        resp = client.get('/u/hikaru/status')
-        assert resp.status_code == 200
-        # Retry form should contain the username
-        assert b'chesscom_username' in resp.data
-
-    @patch('web.routes.queries')
-    def test_lichess_only_path(self, mock_q, client):
-        mock_q.get_latest_job.return_value = {
-            'status': 'fetching',
-            'progress_pct': 10,
-            'total_games': 0,
-            'message': '',
-            'error_message': '',
-        }
+    def test_lichess_status_path_serves_spa(self, client):
         resp = client.get('/u/-/drnykterstein/status')
         assert resp.status_code == 200
-        mock_q.get_latest_job.assert_called_with(
-            chesscom_user=None,
-            lichess_user='drnykterstein',
-        )
-        assert b'lichess_username' in resp.data
+        assert b'<div id="app"></div>' in resp.data
 
-    @patch('web.routes.queries')
-    def test_both_users_path(self, mock_q, client):
-        mock_q.get_latest_job.return_value = {
-            'status': 'pending',
-            'progress_pct': 0,
-            'total_games': 0,
-            'message': '',
-            'error_message': '',
-        }
+    def test_both_users_status_path_serves_spa(self, client):
         resp = client.get('/u/hikaru/drnykterstein/status')
         assert resp.status_code == 200
-        mock_q.get_latest_job.assert_called_with(
-            chesscom_user='hikaru',
-            lichess_user='drnykterstein',
-        )
+        assert b'<div id="app"></div>' in resp.data
 
 
 # ── GET /u/{path}/status/json ─────────────────────────────────────

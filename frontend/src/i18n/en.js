@@ -1,0 +1,153 @@
+export default {
+  /* Landing */
+  badge: 'Powered by Stockfish 16',
+  hero_line1: 'Find your opening weaknesses.',
+  hero_line2: 'Fix your endgame habits.',
+  subtitle: 'Connect your accounts to run deep engine analysis. Pinpoint exactly where you leave book theory and discover the best moves.',
+  label_chesscom: 'Chess.com Username',
+  label_lichess: 'Lichess Username',
+  submit_btn: 'Analyze My Games \u2192',
+  error_msg: 'Please enter at least one username.',
+
+  /* Status */
+  back_home: '\u2190 Back to Home',
+  retry_btn: 'Try Again \u2192',
+
+  /* Sidebar */
+  nav_openings: 'Openings',
+  nav_endgames: 'Endgames',
+  filter_label: 'Filters',
+  filter_platform: 'Platform',
+  filter_all_platforms: 'All Platforms',
+  filter_time_control: 'Time Control',
+  filter_playing_as: 'Playing As',
+  filter_min_games: 'Min. Games:',
+  filter_from: 'From',
+  filter_alltime: 'All-time',
+  filter_lastweek: 'Last week',
+  filter_6months: '6 months',
+  filter_lastyear: 'Last year',
+  sync_btn: 'Sync Games',
+
+  /* Report stats */
+  stat_total_games: 'Total Games Analyzed',
+  stat_avg_eval: 'Avg. Eval Loss',
+  stat_theory: 'Theory Knowledge',
+  stat_accuracy: 'Accuracy Rate',
+  sort_biggest: 'Biggest mistake',
+  sort_losspct: 'Loss %',
+  empty_title: 'No deviations found',
+  empty_desc: 'All your opening moves match book or engine recommendations. Nice!',
+  no_filter_results: 'No openings match the selected filters.',
+
+  /* Endgame specific */
+  endgame_subtitle_prefix: 'positions where you deviated from book/engine',
+
+  /* Status page (dynamic) */
+  status_queued_title: 'Your analysis is queued...',
+  status_queued_msg: "You're in line. Analysis will begin shortly.",
+  status_queue_position: 'Position: {0} of {1}',
+  status_fetching_title: 'Fetching your games...',
+  status_fetching_msg: 'Downloading games from Chess.com and Lichess.',
+  status_analyzing_title: 'Analyzing your openings...',
+  status_analyzing_msg: 'Running engine analysis...',
+  status_complete_title: 'Analysis complete!',
+  status_complete_msg: 'Redirecting to your report...',
+  status_failed_title: 'Analysis failed',
+  status_failed_msg: 'Something went wrong during analysis.',
+  status_checking_title: 'Checking status...',
+  status_checking_msg: 'Please wait.',
+  status_pct_complete: 'complete',
+  status_fetching_chesscom: 'Fetching Chess.com games...',
+  status_fetching_lichess: 'Fetching Lichess games...',
+  status_analyzing_game: 'Analyzing game',
+
+  /* Backend progress messages */
+  status_fetching_archive: 'Fetching Chess.com archive',
+  status_fetched_lichess: 'Fetched {0} Lichess games',
+  status_fetched_starting: 'Fetched {0} games, starting analysis',
+  status_endgame_done: 'Endgame analysis complete, starting openings',
+  status_all_cached: 'All games cached, skipping engine analysis',
+  status_analysis_done: 'Analysis complete: {0} games',
+  status_no_games: 'No games found.',
+
+  /* Feedback modal */
+  feedback_title: 'Bug Report / Contact Us',
+  feedback_type_label: 'Type',
+  feedback_bug_report: 'Bug report',
+  feedback_contact: 'Contact us',
+  feedback_screenshot_btn: 'Attach screenshot automatically',
+  feedback_screenshot_loading: 'Capturing screenshot...',
+  feedback_email: 'Your email',
+  feedback_details: 'Details',
+  feedback_submit: 'Submit',
+  feedback_success: 'Thank you! Your message has been sent.',
+  feedback_error_email: 'Please enter a valid email address.',
+  feedback_error_details: 'Please enter some details.',
+  feedback_error_generic: 'Something went wrong. Please try again.',
+
+  /* Server-side validation errors */
+  error_account_not_found: '{platform} account "{username}" was not found.',
+  error_invalid_username: 'Invalid {platform} username: {username}',
+
+  /* No games page */
+  nogames_title: 'No games found',
+  nogames_desc: 'We couldn\u2019t find any games for',
+  nogames_no_public: 'This could mean the username doesn\u2019t exist, or the account has no public games.',
+  nogames_try_another: 'Try another username',
+  nogames_hint: 'Make sure the username matches exactly as it appears on Chess.com or Lichess.',
+
+  /* Openings page */
+  opening_as: 'as',
+  opening_loss: 'loss',
+  board_best: 'Best:',
+  board_played: 'You played:',
+  loading_board: 'Loading board\u2026',
+  opening_move: 'Move',
+  opening_book_moves: 'Book moves:',
+  opening_times_played: 'played',
+  opening_play_instead: 'Play {best} instead of {played}',
+  opening_view_game: 'view example game',
+  stat_new_games_analyzed: '{count} new game analyzed',
+  stat_new_games_analyzed_plural: '{count} new games analyzed',
+  stat_no_new_games: 'No new games to analyze',
+  opening_deviations_for: 'Showing {count} deviations for {eco} as {color}',
+
+  /* Endgames page */
+  eg_performance: 'Endgame performance',
+  eg_sorted_by: 'sorted by',
+  eg_sort_games: 'Games',
+  eg_sort_win_pct: 'Win %',
+  eg_sort_loss_pct: 'Loss %',
+  eg_sort_draw_pct: 'Draw %',
+  eg_stat_games: 'Endgame Games',
+  eg_stat_types: 'Endgame Types',
+  eg_stat_winrate: 'Win Rate',
+  eg_games_suffix: 'games',
+  eg_show_all: 'show all games',
+  eg_no_filter_results: 'No endgames match the selected filters.',
+  eg_no_endgames_title: 'No endgames detected',
+  eg_no_endgames_desc: 'None of the analyzed games reached an endgame position.',
+  eg_example_game: 'Example game',
+
+  /* Endgames all page */
+  eg_back: '\u2190 Back to endgames',
+  eg_definition: 'definition:',
+  eg_sorted_recent: 'sorted by most recent',
+  eg_time_class: 'Time class',
+  tc_bullet: 'Bullet',
+  tc_blitz: 'Blitz',
+  tc_rapid: 'Rapid',
+  tc_daily: 'Daily',
+  eg_view_game: 'view game',
+  eg_no_games_filter: 'No games match the selected filters.',
+  eg_no_games_title: 'No games found',
+  eg_no_games_desc: 'No games matched this endgame type and balance.',
+
+  /* Status page */
+  status_preparing: 'Preparing your analysis...',
+  status_please_wait: 'Please wait while we get things ready.',
+  status_elapsed: 'Elapsed:',
+  status_not_found_title: 'No analysis found',
+  status_not_found_msg: 'This analysis may have been cancelled or expired.',
+}
